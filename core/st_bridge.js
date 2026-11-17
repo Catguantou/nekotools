@@ -420,14 +420,31 @@ export const stBridge = {
         }
     },
 
-    /** 删除所有绑定了这本书的角色卡（走官方 /api/characters/delete，保留聊天记录） */
+    /** 删除所有绑定了这本书的角色卡（优先走 ST 官方 deleteCharacter，才会刷新角色列表） */
     async deleteBoundCharacters(bookName) {
         const ctx = this.getContext();
         const chars = Array.isArray(ctx.characters) ? ctx.characters : [];
         const targets = chars.filter(c => c?.data?.extensions?.world === bookName);
+        if (!targets.length) return 0;
+
+        // 直接 POST /api/characters/delete 只会删文件，ST 内存里还留着这张卡
+        // （表现就是头像变默认、卡片还在）。必须走 script.js 的 deleteCharacter。
+        let scriptMod = null;
+        try {
+            // script.js 在 public 根，不在 scripts/ 下，所以要比 world-info.js 多退一层
+            scriptMod = await import('../../../../../script.js');
+        } catch (e) {
+            console.warn('[nekotools] 无法加载 script.js，退回裸接口删除（可能残留列表）', e);
+        }
+
         let deleted = 0;
         for (const c of targets) {
             try {
+                if (scriptMod && typeof scriptMod.deleteCharacter === 'function') {
+                    await scriptMod.deleteCharacter(c.avatar, { deleteChats: false });
+                    deleted++;
+                    continue;
+                }
                 const res = await fetch('/api/characters/delete', {
                     method: 'POST',
                     headers: {
