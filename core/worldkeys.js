@@ -39,16 +39,6 @@ function addEntities(out, text, maxLen, max) {
     }
 }
 
-/** 只抽具体实体词（地名/机构），不从抽象标题里造词 */
-export function extractEntityKeys(text, { max = 12, maxLen = 6 } = {}) {
-    const out = [];
-    for (const clause of String(text || '').split(/[，。！？；;、]/)) {
-        addEntities(out, clause, maxLen, max);
-        if (out.length >= max) break;
-    }
-    return out.slice(0, max);
-}
-
 /** 解析条目里显式写的「关键词：A、B」 */
 export function parseKeywordSpec(value) {
     const m = String(value || '').match(/关键词[：:]\s*([^；;。\n]+)/);
