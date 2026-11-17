@@ -5,7 +5,6 @@ import { stBridge } from './st_bridge.js';
 import { settings } from './settings.js';
 import {
     slotName,
-    slotNumber,
     sanitizeWorldName,
     buildSaveFile,
     parseSaveFile,
@@ -33,18 +32,18 @@ function removeSlotMeta(bookName) {
     }
 }
 
-function currentAiCount() {
+function currentLayer() {
     const ctx = stBridge.getContext();
     const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
-    return chat.filter(m => m && !m.is_user && !m.is_system).length;
+    return chat.length;
 }
 
-/** 记录这一档最后一次被使用的时间与层数（列表显示用） */
+/** 记录这一档最后一次被使用的时间与层数（列表显示用，层号与酒馆一致） */
 export function touchSlot(bookName) {
     if (!bookName) return;
     setSlotMeta(bookName, {
         lastPlayed: new Date().toISOString(),
-        lastLayer: currentAiCount(),
+        lastLayer: currentLayer(),
     });
 }
 
@@ -152,7 +151,8 @@ function downloadJson(filename, obj) {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    // 立刻 revoke 在部分浏览器会取消下载，延后释放
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 /** 快速存档：把当前档导成 JSON 下载；返回导出的档名 */
@@ -161,21 +161,30 @@ export async function exportCurrent() {
     if (!charName) throw new Error('还没有选中角色卡');
     const name = stBridge.currentTrackerName();
     if (!name) throw new Error('当前没有可导出的存档');
+    // 存在性只认 /list：没有书时 /get 会返回假书 {entries:{}}
+    if (!(await stBridge.bookExists(name))) throw new Error('当前档还没建，先发一条消息让追踪书写入');
 
     const book = await stBridge.loadWorldInfoAsync(name, true);
     if (!book || !book.entries) throw new Error('读取当前存档失败');
 
-    const slot = slotNumber(name) || 1;
+    // 档位按「当前角色的列表」算，不直接解析书名：
+    // 角色名本身以 ·数字 结尾时，基础档也会被 parseSlotName 误判成第 N 档
+    const entry = stBridge.listTrackerBooksForCurrentChar().find(b => b.name === name);
+    const slot = entry ? entry.slot : 1;
     const payload = buildSaveFile({ card: charName, slot, book });
     downloadJson(`nekotool_${sanitizeWorldName(charName)}_slot${slot}_${dateStamp()}.json`, payload);
     touchSlot(name);
     return { name, slot };
 }
 
-/** 快速导入：校验后覆盖当前档；覆盖前自动下载当前档备份 */
+/**
+ * 快速导入：按存档里记录的档位恢复（不是覆盖当前档）。
+ * 目标档已存在时先确认、自动备份，再整本覆盖；导入完切到该档。
+ */
 export async function importCurrent(file) {
     const charName = stBridge.getCharacterName();
     if (!charName) throw new Error('还没有选中角色卡');
+    if (stBridge._batch) throw new Error('正在结算上一轮，稍后再导入');
 
     const text = await file.text();
     const parsed = parseSaveFile(text);
@@ -183,21 +192,33 @@ export async function importCurrent(file) {
         throw new Error(`这是「${parsed.card}」的存档，不能导入到当前角色`);
     }
 
-    const name = stBridge.currentTrackerName();
-    if (!name) throw new Error('当前没有可写入的存档');
-    const slot = slotNumber(name) || 1;
+    const targetName = slotName(charName, parsed.slot);
+    const exists = await stBridge.bookExists(targetName);
 
-    const before = await stBridge.loadWorldInfoAsync(name, true);
-    if (before && before.entries) {
-        downloadJson(
-            `nekotool_backup_${sanitizeWorldName(charName)}_slot${slot}_${dateStamp()}.json`,
-            buildSaveFile({ card: charName, slot, book: before })
-        );
+    if (exists) {
+        const ok = window.confirm(`第 ${parsed.slot} 档已有内容，导入会整本覆盖（会先自动备份一份）。继续？`);
+        if (!ok) throw new Error('已取消导入');
+        const before = await stBridge.loadWorldInfoAsync(targetName, true);
+        if (before && before.entries) {
+            downloadJson(
+                `nekotool_backup_${sanitizeWorldName(charName)}_slot${parsed.slot}_${dateStamp()}.json`,
+                buildSaveFile({ card: charName, slot: parsed.slot, book: before })
+            );
+        }
+    } else {
+        const created = await stBridge.createWorldbook(targetName);
+        if (!created) throw new Error('新建目标档失败');
     }
 
-    await stBridge._writeBook(name, parsed.book);
-    const after = await stBridge.loadWorldInfoAsync(name, true);
+    const wrote = await stBridge._writeBook(targetName, parsed.book);
+    if (!wrote) throw new Error('写入失败（没落盘）');
+
+    const after = await stBridge.loadWorldInfoAsync(targetName, true);
     if (!after || !after.entries) throw new Error('导入后读取失败');
-    touchSlot(name);
-    return { name, entries: Object.keys(after.entries).length };
+    const want = Object.keys(parsed.book.entries).length;
+    const got = Object.keys(after.entries).length;
+    if (got !== want) throw new Error(`导入后条目数不对（期望 ${want}，实际 ${got}）`);
+
+    await switchSlot(parsed.slot);
+    return { name: targetName, entries: got, slot: parsed.slot };
 }

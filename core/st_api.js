@@ -241,8 +241,10 @@ export async function deleteWorldInfo(name) {
     const m = await loadWorldInfoModule();
     if (m && typeof m.deleteWorldInfo === 'function') {
         try {
-            await m.deleteWorldInfo(name);
-            return true;
+            // ST 会返回真实布尔值（列表里没有 / HTTP 失败都是 false），必须原样带出去，
+            // 否则 st_bridge 永远以为删成功，文件其实还在。
+            const ok = await m.deleteWorldInfo(name);
+            return ok !== false;
         } catch (e) {
             console.warn('[nekotools] deleteWorldInfo 失败，回退裸 API', e);
         }

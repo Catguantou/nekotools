@@ -5,33 +5,64 @@
 //   第 1 档：【NEKOTOOL世界加载器·角色名】
 //   第 N 档：【NEKOTOOL世界加载器·角色名·N】   (N >= 2)
 // 解析只认结尾的「·数字」，角色名中间带 · 不会误伤。
-// 已知边界：角色名本身以「·数字」结尾（例如真有人叫 Alice·2）会和档位后缀混淆，
-// 这种名字极少见，暂不特殊处理。
+//
+// 两个必须守住的边界：
+//   1. 同一角色所有档的「角色名部分」必须完全一致，否则 isSlotOf 会漏档；
+//   2. ST 后端按 255 字节截文件名，这里按 UTF-8 字节截，避免中文长名对不上磁盘。
 
 export const TRACKER_PREFIX = '【NEKOTOOL世界加载器·';
 export const TRACKER_SUFFIX = '】';
 export const SLOT_SEP = '·';
 export const SAVE_VERSION = 1;
 
-// 世界书文件名能用的字符（与 st_bridge 现有规则保持一致）
-const MAX_WORLD_NAME = 120;
+// 世界书文件名预算：ST 后端上限 255 字节，留一点余量
+const MAX_WORLD_BYTES = 220;
+// 所有档共用同一段角色名预算；后缀按最大四位数预留，保证各档角色名部分一致
+const SLOT_ROOM = `${SLOT_SEP}9999`;
 
 export function sanitizeWorldName(name) {
     return String(name ?? '')
         .replace(/[\\/:*?"<>|]/g, '_')
         .replace(/\s+/g, ' ')
         .trim()
-        .slice(0, MAX_WORLD_NAME);
+        .slice(0, 120);
+}
+
+function byteLength(str) {
+    let n = 0;
+    for (const ch of String(str)) {
+        const code = ch.codePointAt(0);
+        if (code <= 0x7f) n += 1;
+        else if (code <= 0x7ff) n += 2;
+        else if (code <= 0xffff) n += 3;
+        else n += 4;
+    }
+    return n;
+}
+
+/** 按 UTF-8 字节数截断，不会切坏字符 */
+export function truncateWorldName(str, maxBytes = MAX_WORLD_BYTES) {
+    let used = 0;
+    let out = '';
+    for (const ch of String(str ?? '')) {
+        const b = byteLength(ch);
+        if (used + b > maxBytes) break;
+        used += b;
+        out += ch;
+    }
+    return out;
 }
 
 function composeTrackerName(charName, suffix = '') {
     const safe = sanitizeWorldName(charName);
     if (!safe) return '';
-    const tail = `${suffix}${TRACKER_SUFFIX}`;
-    const room = MAX_WORLD_NAME - TRACKER_PREFIX.length - tail.length;
+    const fixedBytes = byteLength(TRACKER_PREFIX) + byteLength(`${SLOT_ROOM}${TRACKER_SUFFIX}`);
+    const room = MAX_WORLD_BYTES - fixedBytes;
     if (room <= 0) return '';
-    // 超长角色名截断在角色名部分，保证结尾的 】 永远在，不然解析会坏
-    return `${TRACKER_PREFIX}${safe.slice(0, room)}${tail}`;
+    // 角色名部分对所有档用同一预算，保证 isSlotOf 能对上
+    const charPart = truncateWorldName(safe, room);
+    if (!charPart) return '';
+    return `${TRACKER_PREFIX}${charPart}${suffix}${TRACKER_SUFFIX}`;
 }
 
 /** 第 1 档（基础名）；没有角色名时返回空串 */
@@ -76,11 +107,16 @@ export function slotNumber(name) {
     return parsed ? parsed.slot : 0;
 }
 
-/** 这本书是否属于某个角色（角色名按清洗后的形式比较） */
+/**
+ * 这本书是否属于某个角色。
+ * 用「基础名前缀」比较，避免长角色名被截断后重算基础名对不上。
+ * 角色名本身以 ·数字 结尾时存在歧义（极少见），以当前角色名为准优先匹配。
+ */
 export function isSlotOf(name, charName) {
-    const parsed = parseSlotName(name);
-    if (!parsed) return false;
-    return slotBaseName(parsed.charName) === slotBaseName(charName);
+    const base = slotBaseName(charName);
+    if (!base || typeof name !== 'string') return false;
+    const prefix = base.slice(0, -TRACKER_SUFFIX.length);
+    return name === base || name.startsWith(`${prefix}${SLOT_SEP}`);
 }
 
 /** 存档列表里的显示名 */
@@ -96,7 +132,7 @@ export function slotLabel(n) {
 export function buildSaveFile({ card, slot = 1, book, exportedAt } = {}) {
     const name = String(card ?? '').trim();
     if (!name) throw new Error('缺少角色名');
-    if (!book || typeof book !== 'object' || !book.entries || typeof book.entries !== 'object') {
+    if (!book || typeof book !== 'object' || !book.entries || typeof book.entries !== 'object' || Array.isArray(book.entries)) {
         throw new Error('缺少世界书内容');
     }
     const num = Math.max(1, Math.floor(Number(slot)) || 1);
@@ -125,9 +161,21 @@ export function parseSaveFile(input) {
     }
     if (!obj || typeof obj !== 'object') throw new Error('存档内容为空');
     if (obj.__nekotool_save !== true) throw new Error('不是 NEKOTOOL 存档文件');
-    if (!obj.book || typeof obj.book !== 'object' || !obj.book.entries || typeof obj.book.entries !== 'object') {
+    if (!obj.book || typeof obj.book !== 'object') throw new Error('存档里没有世界书内容');
+    if (!obj.book.entries || typeof obj.book.entries !== 'object' || Array.isArray(obj.book.entries)) {
         throw new Error('存档里没有世界书内容');
     }
+
+    const version = Number(obj.version) || 0;
+    if (version > SAVE_VERSION) throw new Error('存档版本比插件新，先升级插件再导入');
+
+    for (const [key, entry] of Object.entries(obj.book.entries)) {
+        if (!entry || typeof entry !== 'object') throw new Error(`存档条目 ${key} 格式不对`);
+        if (entry.uid !== undefined && String(entry.uid) !== String(key)) {
+            throw new Error(`存档条目 ${key} 的 uid 对不上`);
+        }
+    }
+
     const card = String(obj.card ?? '').trim();
     if (!card) throw new Error('存档缺少角色名');
 
@@ -136,6 +184,6 @@ export function parseSaveFile(input) {
         slot: Math.max(1, Math.floor(Number(obj.slot)) || 1),
         book: obj.book,
         exportedAt: String(obj.exportedAt || ''),
-        version: Number(obj.version) || 0,
+        version,
     };
 }

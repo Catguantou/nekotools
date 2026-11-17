@@ -71,6 +71,7 @@ for (const file of jsFiles) {
 }
 const allJsText = [...jsTexts.values()].join('\n');
 const idRefs = [];
+const idConsts = new Set();
 for (const [rel, text] of jsTexts) {
     for (const m of text.matchAll(/querySelector(?:All)?\(\s*['"]#(nt-[A-Za-z0-9_-]+)['"]/g)) {
         idRefs.push({ rel, id: m[1] });
@@ -78,12 +79,17 @@ for (const [rel, text] of jsTexts) {
     for (const m of text.matchAll(/getElementById\(\s*['"](nt-[A-Za-z0-9_-]+)['"]/g)) {
         idRefs.push({ rel, id: m[1] });
     }
+    // 常量写法：const FOO_ID = 'nt-...'（quickmenu 这类用 $() 取 id 的模块）
+    for (const m of text.matchAll(/const\s+[A-Z][A-Z0-9_]*\s*=\s*['"](nt-[A-Za-z0-9_-]+)['"]/g)) {
+        idRefs.push({ rel, id: m[1] });
+        idConsts.add(m[1]);
+    }
 }
 const ids = [...new Set(idRefs.map(r => r.id))];
 for (const id of ids) {
-    const declared = allJsText.includes(`id="${id}"`)
-        || allJsText.includes(`id='${id}'`)
-        || new RegExp(`\\.id\\s*=\\s*['"]${id}['"]`).test(allJsText);
+    const declared = idConsts.has(id)
+        || new RegExp(`\\bid\\s*=\\s*["']${id}["']`).test(allJsText)
+        || new RegExp(`\\.id\\s*=\\s*["']${id}["']`).test(allJsText);
     if (!declared) {
         const ref = idRefs.find(r => r.id === id);
         failures.push(`[DOM] ${ref.rel} 引用了 #${id}，但没有任何模板声明这个 id`);
@@ -122,6 +128,16 @@ try {
     assert(wf.isSlotOf('【NEKOTOOL世界加载器·A_B·2】', 'A/B'), '第 2 档归属判断失败');
     assert(!wf.isSlotOf(base, 'Bob'), '别人的档不应算自己的');
 
+    // 长中文名：各档角色名部分必须一致，且总字节不超预算
+    const longName = '很长的角色名字'.repeat(12);
+    const longBytes = new TextEncoder().encode(wf.slotBaseName(longName)).length;
+    assert(longBytes <= 220, '档名 UTF-8 字节超预算');
+    assert(wf.isSlotOf(wf.slotName(longName, 2), longName), '超长角色名的第 2 档归属失败');
+    assert(wf.isSlotOf(wf.slotBaseName(longName), longName), '超长角色名的基础档归属失败');
+
+    // 角色名本身以 ·数字 结尾：基础档必须仍算自己
+    assert(wf.isSlotOf(wf.slotBaseName('Alice·2'), 'Alice·2'), '以 ·数字 结尾的角色名归属失败');
+
     const saved = wf.buildSaveFile({ card: 'Alice', slot: 2, book: { entries: {} } });
     const parsed = wf.parseSaveFile(JSON.stringify(saved));
     assert(parsed.card === 'Alice' && parsed.slot === 2, '存档往返失败');
@@ -129,6 +145,18 @@ try {
     let threw = false;
     try { wf.parseSaveFile('{"foo":1}'); } catch { threw = true; }
     assert(threw, '非法存档应当报错');
+
+    let badUid = false;
+    try {
+        wf.parseSaveFile({ __nekotool_save: true, version: 1, card: 'A', book: { entries: { 1: { uid: '2' } } } });
+    } catch { badUid = true; }
+    assert(badUid, 'uid 对不上应当报错');
+
+    let arrEntries = false;
+    try {
+        wf.parseSaveFile({ __nekotool_save: true, version: 1, card: 'A', book: { entries: [] } });
+    } catch { arrEntries = true; }
+    assert(arrEntries, 'entries 是数组应当报错');
 } catch (e) {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }

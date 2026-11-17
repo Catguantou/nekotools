@@ -1323,10 +1323,10 @@ body {
     font-family: "Helvetica Neue", "Microsoft YaHei", "PingFang SC", sans-serif;
 }
 
-#nt-quick-btn {
-    width: 26px;
-    height: 26px;
-    margin: 0 4px;
+#leftSendForm > #nt-quick-btn {
+    width: 26px !important;
+    height: 26px !important;
+    margin: 0 4px !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1342,7 +1342,7 @@ body {
     user-select: none;
     transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
-#nt-quick-btn:hover {
+#leftSendForm > #nt-quick-btn:hover {
     border-color: var(--ntq-blue);
     color: #fff;
     box-shadow: 0 0 8px rgba(93, 111, 174, 0.55);
@@ -1363,25 +1363,25 @@ body {
 }
 #nt-quick-pop[hidden] { display: none !important; }
 
-.nt-quick-pop-head {
+#nt-quick-pop .nt-quick-pop-head {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 2px 4px 8px;
 }
-.nt-quick-dot {
+#nt-quick-pop .nt-quick-dot {
     width: 5px;
     height: 5px;
     background: var(--ntq-blue);
     box-shadow: 0 0 6px var(--ntq-blue);
 }
-.nt-quick-pop-title {
+#nt-quick-pop .nt-quick-pop-title {
     color: #fff;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1.5px;
 }
-.nt-quick-pop-tag {
+#nt-quick-pop .nt-quick-pop-tag {
     margin-left: auto;
     color: var(--ntq-dim);
     font-family: 'Courier New', monospace;
@@ -1389,13 +1389,13 @@ body {
     letter-spacing: 1px;
 }
 
-.nt-quick-pop-list {
+#nt-quick-pop .nt-quick-pop-list {
     display: flex;
     flex-direction: column;
     gap: 2px;
 }
 
-.nt-quick-item {
+#nt-quick-pop .nt-quick-item {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -1409,23 +1409,23 @@ body {
     cursor: pointer;
     transition: background 0.12s, border-color 0.12s;
 }
-.nt-quick-item:hover {
+#nt-quick-pop .nt-quick-item:hover {
     background: rgba(93, 111, 174, 0.13);
     border-color: rgba(93, 111, 174, 0.5);
 }
-.nt-quick-item.disabled {
+#nt-quick-pop .nt-quick-item.disabled {
     opacity: 0.45;
     cursor: default;
 }
-.nt-quick-item.disabled:hover {
+#nt-quick-pop .nt-quick-item.disabled:hover {
     background: transparent;
     border-color: transparent;
 }
-.nt-quick-item-label {
+#nt-quick-pop .nt-quick-item-label {
     font-size: 12px;
     letter-spacing: 0.5px;
 }
-.nt-quick-item-hint {
+#nt-quick-pop .nt-quick-item-hint {
     color: var(--ntq-dim);
     font-size: 9px;
 }
@@ -1443,7 +1443,7 @@ body {
     -webkit-backdrop-filter: blur(2px);
 }
 
-.nt-quick-modal {
+#nt-quick-modal .nt-quick-modal {
     width: min(440px, 100%);
     max-height: 86vh;
     display: flex;
@@ -1453,19 +1453,19 @@ body {
     border-top: 2px solid var(--ntq-blue);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);
 }
-.nt-quick-modal-head {
+#nt-quick-modal .nt-quick-modal-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 12px 14px;
     border-bottom: 1px solid var(--ntq-line);
 }
-.nt-quick-modal-title {
+#nt-quick-modal .nt-quick-modal-title {
     color: #fff;
     font-size: 13px;
     letter-spacing: 1px;
 }
-.nt-quick-modal-x {
+#nt-quick-modal .nt-quick-modal-x {
     width: 24px;
     height: 24px;
     background: transparent;
@@ -1475,25 +1475,25 @@ body {
     line-height: 1;
     cursor: pointer;
 }
-.nt-quick-modal-x:hover {
+#nt-quick-modal .nt-quick-modal-x:hover {
     color: #fff;
     border-color: var(--ntq-blue);
 }
-.nt-quick-modal-body {
+#nt-quick-modal .nt-quick-modal-body {
     padding: 14px;
     overflow: auto;
     color: var(--ntq-text);
     font-size: 12px;
     line-height: 1.7;
 }
-.nt-quick-modal-foot {
+#nt-quick-modal .nt-quick-modal-foot {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
     padding: 10px 14px;
     border-top: 1px solid var(--ntq-line);
 }
-.nt-quick-btn-text {
+#nt-quick-modal .nt-quick-btn-text {
     padding: 6px 14px;
     background: transparent;
     border: 1px solid var(--ntq-line);
@@ -1502,29 +1502,37 @@ body {
     letter-spacing: 0.5px;
     cursor: pointer;
 }
-.nt-quick-btn-text:hover {
+#nt-quick-modal .nt-quick-btn-text:hover {
     border-color: var(--ntq-blue);
     color: #fff;
 }
-.nt-quick-btn-text.primary {
+#nt-quick-modal .nt-quick-btn-text:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+#nt-quick-modal .nt-quick-btn-text:disabled:hover {
+    border-color: var(--ntq-line);
+    color: #d2d5dd;
+}
+#nt-quick-modal .nt-quick-btn-text.primary {
     border-color: rgba(100, 120, 185, 0.55);
     color: #e2e5ee;
 }
-.nt-quick-btn-text.primary:hover {
+#nt-quick-modal .nt-quick-btn-text.primary:hover {
     background: rgba(100, 120, 185, 0.14);
     border-color: rgba(120, 140, 205, 0.8);
 }
-.nt-quick-note {
+#nt-quick-modal .nt-quick-note {
     color: var(--ntq-dim);
 }
 
-.nt-quick-slots {
+#nt-quick-modal .nt-quick-slots {
     display: flex;
     flex-direction: column;
     gap: 6px;
 }
 
-.nt-quick-slot {
+#nt-quick-modal .nt-quick-slot {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1532,34 +1540,34 @@ body {
     border: 1px solid var(--ntq-line);
     background: rgba(255, 255, 255, 0.02);
 }
-.nt-quick-slot.current {
+#nt-quick-modal .nt-quick-slot.current {
     border-color: rgba(93, 111, 174, 0.75);
     background: rgba(93, 111, 174, 0.09);
 }
-.nt-quick-slot-main {
+#nt-quick-modal .nt-quick-slot-main {
     flex: 1;
     min-width: 0;
 }
-.nt-quick-slot-title {
+#nt-quick-modal .nt-quick-slot-title {
     color: #fff;
     font-size: 12px;
     letter-spacing: 0.3px;
 }
-.nt-quick-slot-meta {
+#nt-quick-modal .nt-quick-slot-meta {
     margin-top: 2px;
     color: var(--ntq-dim);
     font-size: 10px;
 }
-.nt-quick-slot-actions {
+#nt-quick-modal .nt-quick-slot-actions {
     display: flex;
     flex: 0 0 auto;
     gap: 6px;
 }
-.nt-quick-btn-text.danger {
+#nt-quick-modal .nt-quick-btn-text.danger {
     color: #c9a0a0;
     border-color: rgba(180, 106, 106, 0.4);
 }
-.nt-quick-btn-text.danger:hover {
+#nt-quick-modal .nt-quick-btn-text.danger:hover {
     color: #e6b3b3;
     border-color: #b46a6a;
 }
@@ -1569,7 +1577,7 @@ body {
         align-items: flex-end;
         padding: 0;
     }
-    .nt-quick-modal {
+    #nt-quick-modal .nt-quick-modal {
         width: 100%;
         max-height: 80vh;
         border-left: 0;

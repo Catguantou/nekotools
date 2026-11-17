@@ -700,14 +700,19 @@ export function mountPanel() {
     };
 
     wrap.querySelector('#nt-ws-new').onclick = async () => {
-        const charName = stBridge.getCharacterName();
-        const defaultName = charName ? `【NEKOTOOL世界加载器·${charName}】` : '【NEKOTOOL新建世界书】';
+        // 默认名必须和存档位规则一致；不能手拼，否则会和第 1 档同名
+        const defaultName = stBridge.trackerBaseName() || '【NEKOTOOL新建世界书】';
         const targetName = prompt('请输入新世界书名称：', defaultName);
         if (!targetName) return;
 
-        const success = await stBridge.createWorldbook(targetName.trim());
+        const name = targetName.trim();
+        if (await stBridge.bookExists(name)) {
+            if (window.toastr) toastr.warning('同名世界书已存在，换个名字');
+            return;
+        }
+        const success = await stBridge.createWorldbook(name);
         if (success) {
-            await stBridge.mountGlobalWorldbook(targetName.trim(), true);
+            await stBridge.mountGlobalWorldbook(name, true);
             await renderLoreList();
             if (window.toastr) toastr.success('已创建并激活到全局世界书');
         } else if (window.toastr) {

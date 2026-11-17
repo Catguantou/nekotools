@@ -49,6 +49,12 @@ async function restoreLastApplied(reason) {
         return false;
     }
     try {
+        // 删档后重 roll：旧快照不能把已删除的书写回来
+        if (!(await stBridge.bookExists(lastAppliedUpdate.bookName))) {
+            console.warn('[worldsim] 追踪书已删除，丢弃回滚快照');
+            lastAppliedUpdate = null;
+            return false;
+        }
         await stBridge._writeBook(lastAppliedUpdate.bookName, lastAppliedUpdate.pre);
         console.log('[worldsim] 已回滚上一次追踪更新（' + reason + '）');
         lastAppliedUpdate = null;
@@ -456,6 +462,8 @@ registry.register({
 
         // 追踪书确实存在才注入追踪契约；被删掉时不复活、也不让模型空写
         const bookName = getLorebookName();
+        // 记下本轮用的是哪一档：生成期间用户切档时，结算仍写回发起时那一档
+        ctx.__nt_bookName = bookName;
         const includeTracking = Boolean(bookName) && stBridge.getWorldNames().includes(bookName);
         if (!includeTracking) {
             console.warn('[worldsim] 追踪书不存在，本轮只注入世界规则与状态栏，跳过追踪契约:', bookName || '(无角色)');
@@ -482,20 +490,29 @@ registry.register({
         this._settling = true;
         try {
 
-        const currentLorebook = getLorebookName();
+        // 用 onRequest 时记下的那一档，避免生成期间切档把结算写进新档
+        const ctx = stBridge.getContext();
+        const currentLorebook = ctx.__nt_bookName || getLorebookName();
         if (!currentLorebook) return;
+        delete ctx.__nt_bookName;
 
         // 先收拾模型漏到正文的标签/推演块
         sanitizeLastMessage();
 
-        // 强制从磁盘读，避免书被删后仍从旧缓存写回去（导致「已删除的追踪书复活」）
-        let book = await stBridge.loadWorldInfoAsync(currentLorebook, true);
-        if (!book) {
+        // 存在性只认 /list：/get 对不存在的书会返回假书 {entries:{}}
+        if (!(await stBridge.bookExists(currentLorebook))) {
             console.warn('[worldsim] 追踪书不存在（可能已被删除），本次不写入:', currentLorebook);
             // 顺手把幽灵全局激活关掉，免得酒馆每轮报 does not exist
             if (stBridge.isGloballyActivated(currentLorebook)) {
                 await stBridge.mountGlobalWorldbook(currentLorebook, false);
             }
+            return;
+        }
+
+        // 强制从磁盘读，避免书被删后仍从旧缓存写回去（导致「已删除的追踪书复活」）
+        let book = await stBridge.loadWorldInfoAsync(currentLorebook, true);
+        if (!book || !book.entries) {
+            console.warn('[worldsim] 追踪书读取失败，本次不写入:', currentLorebook);
             return;
         }
         if (!stBridge.isGloballyActivated(currentLorebook)) {

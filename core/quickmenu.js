@@ -99,12 +99,16 @@ export function openModal({ title = '', body = null, footer = null, onClose = nu
         b.className = `nt-quick-btn-text${action.primary ? ' primary' : ''}`;
         b.textContent = action.label;
         b.addEventListener('click', async () => {
+            if (b.disabled) return;
+            b.disabled = true;
             let keep = true;
             try {
                 if (typeof action.onClick === 'function') keep = await action.onClick();
             } catch (e) {
                 toast(e && e.message ? e.message : String(e), 'error');
                 return;
+            } finally {
+                b.disabled = false;
             }
             if (keep === false) return;
             closeModal();
@@ -133,10 +137,11 @@ function pickImportFile(after) {
         if (!file) return;
         try {
             const r = await importCurrent(file);
-            toast(`已导入：${r.entries} 个条目`, 'success');
+            toast(`已导入：第 ${r.slot} 档 / ${r.entries} 个条目`, 'success');
             after();
         } catch (e) {
-            toast(e && e.message ? e.message : '导入失败', 'error');
+            const msg = e && e.message ? e.message : '导入失败';
+            toast(msg, msg.includes('已取消') ? 'info' : 'error');
         }
     };
     input.click();
@@ -164,7 +169,8 @@ function renderSlots(container) {
 
         const title = document.createElement('div');
         title.className = 'nt-quick-slot-title';
-        title.textContent = `${s.label}${s.current ? ' · 当前' : ''}${s.exists ? '' : '（未创建）'}`;
+        const state = s.active ? ' · 已激活' : (s.current ? ' · 当前（未激活）' : '');
+        title.textContent = `${s.label}${state}${s.exists ? '' : '（未创建）'}`;
 
         const meta = document.createElement('div');
         meta.className = 'nt-quick-slot-meta';
@@ -180,19 +186,23 @@ function renderSlots(container) {
         const actions = document.createElement('div');
         actions.className = 'nt-quick-slot-actions';
 
-        if (s.exists && !s.current) {
+        if (s.exists && !s.active) {
             const enter = document.createElement('button');
             enter.type = 'button';
             enter.className = 'nt-quick-btn-text';
             enter.textContent = '进入';
             enter.addEventListener('click', async (e) => {
                 e.stopPropagation();
+                if (enter.disabled) return;
+                enter.disabled = true;
                 try {
                     await switchSlot(s.n);
                     toast(`已切到${s.label}`, 'success');
                     renderSlots(container);
                 } catch (err) {
                     toast(err && err.message ? err.message : '切换失败', 'error');
+                } finally {
+                    enter.disabled = false;
                 }
             });
             actions.appendChild(enter);
@@ -205,13 +215,17 @@ function renderSlots(container) {
             del.textContent = '删除';
             del.addEventListener('click', async (e) => {
                 e.stopPropagation();
+                if (del.disabled) return;
                 if (!window.confirm(`确定删除${s.label}？这一档的进度会消失（建议先快速存档）。`)) return;
+                del.disabled = true;
                 try {
                     await deleteSlot(s.n);
                     toast('已删除', 'success');
                     renderSlots(container);
                 } catch (err) {
                     toast(err && err.message ? err.message : '删除失败', 'error');
+                } finally {
+                    del.disabled = false;
                 }
             });
             actions.appendChild(del);

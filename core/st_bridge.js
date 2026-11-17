@@ -101,9 +101,11 @@ export const stBridge = {
         for (const n of this.getWorldNames()) names.add(n);
         for (const n of this.getGloballyActivatedWorlds()) names.add(n);
         const active = new Set(this.getGloballyActivatedWorlds());
+        const base = slotBaseName(charName);
         return [...names]
             .filter(n => isSlotOf(n, charName))
-            .map(n => ({ name: n, slot: slotNumber(n), active: active.has(n) }))
+            // 基础名固定算第 1 档：角色名本身以 ·数字 结尾时也不会把它错排成第 N 档
+            .map(n => ({ name: n, slot: n === base ? 1 : slotNumber(n), active: active.has(n) }))
             .sort((a, b) => a.slot - b.slot);
     },
 
@@ -319,6 +321,12 @@ export const stBridge = {
     async createWorldbook(name, initContent = '') {
         const ctx = this.getContext();
         if (!ctx || !name) return false;
+
+        // 已存在的书绝不能用空内容覆盖（面板“新建”手滑填了同名书时尤其危险）
+        if (await this.bookExists(name)) {
+            console.warn('[nekotools] 世界书已存在，拒绝覆盖:', name);
+            return false;
+        }
 
         // 空书就是空书。以前默认塞一条 constant 的「NEKOTOOL初始化」，
         // 一旦全局激活，这条会被 ST 每一轮都注入，等于往提示词里灌垃圾。
@@ -600,15 +608,32 @@ export const stBridge = {
         const booksToDelete = [];
         const bound = char.data?.extensions?.world;
         if (cfg.syncCharLifecycle && bound && !this.isTrackerBook(bound)) booksToDelete.push(bound);
-        for (const name of this.getWorldNames()) {
+
+        // 列表可能还没刷新，把激活列表也算上，避免漏删
+        const names = new Set();
+        for (const n of this.getWorldNames()) names.add(n);
+        for (const n of this.getGloballyActivatedWorlds()) names.add(n);
+        for (const name of names) {
             if (this.isTrackerBook(name) && isSlotOf(name, charName)) booksToDelete.push(name);
         }
         
         for (const book of booksToDelete) {
-            const worldNames = this.getWorldNames();
-            if (worldNames.includes(book)) {
+            if (this.getWorldNames().includes(book) || this.isGloballyActivated(book)) {
                 await this.deleteWorldbook(book, { syncUnbindChar: false });
             }
+        }
+
+        // 顺带清掉这些档的「最后游玩/进度」元数据，避免重名新卡继承旧数据
+        const ws = settings.get('worldsim');
+        if (ws && ws.slotMeta && typeof ws.slotMeta === 'object') {
+            let dirty = false;
+            for (const book of booksToDelete) {
+                if (ws.slotMeta[book]) {
+                    delete ws.slotMeta[book];
+                    dirty = true;
+                }
+            }
+            if (dirty) settings.set('worldsim', { slotMeta: ws.slotMeta });
         }
     },
 
@@ -752,14 +777,17 @@ export const stBridge = {
                     ...(typeof ctx.getRequestHeaders === 'function' ? ctx.getRequestHeaders() : {}),
                     'Content-Type': 'application/json'
                 };
-                await fetch('/api/worldinfo/edit', {
+                const res = await fetch('/api/worldinfo/edit', {
                     method: 'POST',
                     headers,
                     body: JSON.stringify({ name: bookName, data: bookData })
                 });
+                if (!res.ok) return false;
             }
+            return true;
         } catch (e) {
             console.warn('[nekotools] 保存世界书失败', e);
+            return false;
         }
     },
 
