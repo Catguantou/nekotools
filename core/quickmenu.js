@@ -569,14 +569,16 @@ function charAge(item) {
 
 function charFields(content) {
     const parsed = parseCharacterYaml(content);
-    return Object.entries(parsed).map(([key, value]) => {
-        let text;
-        if (Array.isArray(value)) text = value.join('\n');
-        else if (value && typeof value === 'object') {
-            text = Object.entries(value).map(([k, v]) => `${k}: ${v}`).join('\n');
-        } else text = String(value ?? '');
-        return { key, value: text };
-    });
+    return Object.entries(parsed)
+        .filter(([key]) => key !== '日程')
+        .map(([key, value]) => {
+            let text;
+            if (Array.isArray(value)) text = value.join('\n');
+            else if (value && typeof value === 'object') {
+                text = Object.entries(value).map(([k, v]) => `${k}: ${v}`).join('\n');
+            } else text = String(value ?? '');
+            return { key, value: text };
+        });
 }
 
 async function showRosterModal(preselectName = '') {

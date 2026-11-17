@@ -2,6 +2,7 @@
 
 import { stBridge } from './st_bridge.js';
 import { parseGameDate, daysBetween } from './worldfmt.js';
+import { deriveGreenKeys } from './worldkeys.js';
 
 export const MAIN_TITLE = '主线';
 export const QUEST_TITLE = '支线';
@@ -232,7 +233,7 @@ export async function pruneQuests(bookName, todayText = '') {
     if (!result.removed.length && !result.marked.length) return result;
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: false,
-        keywords: Object.keys(data),
+        keywords: deriveGreenKeys(Object.keys(data)),
         extra: { position: 0, depth: 0, order: 812 },
     });
     await stBridge.persistLorebook(bookName, book);
@@ -281,7 +282,7 @@ export async function applyQuests(bookName, raw, { today = '' } = {}) {
 
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: false,
-        keywords: Object.keys(data),
+        keywords: deriveGreenKeys(Object.keys(data)),
         extra: { position: 0, depth: 0, order: 812 },
     });
     await stBridge.persistLorebook(bookName, book);
@@ -301,7 +302,7 @@ export async function saveQuests(bookName, quests) {
     }
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: false,
-        keywords: Object.keys(data),
+        keywords: deriveGreenKeys(Object.keys(data)),
         extra: { position: 0, depth: 0, order: 812 },
     });
     await stBridge.persistLorebook(bookName, book);

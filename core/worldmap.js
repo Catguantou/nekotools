@@ -2,6 +2,7 @@
 // 「当前」由插件每轮从状态栏写入；层级节点由模型增删。
 
 import { stBridge } from './st_bridge.js';
+import { deriveGreenKeys } from './worldkeys.js';
 
 export const MAP_TITLE = '地图';
 const CURRENT_HDR = '【当前】';
@@ -61,7 +62,7 @@ function mapEntryKeys(data) {
         ...Object.keys((data && data.cities) || {}),
         ...Object.keys((data && data.sites) || {}),
     ].filter(Boolean);
-    return [...new Set(names)].slice(0, 30);
+    return deriveGreenKeys(names, { max: 24 });
 }
 
 /** 解析「A=1天、B=10分钟」这类路程字段 */

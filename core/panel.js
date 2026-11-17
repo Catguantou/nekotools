@@ -113,7 +113,7 @@ export function mountPanel() {
             ['map', 'P_13', '开局地图生成'],
             ['quest', 'P_14', '开局主线生成'],
             ['cognition', 'P_15', '认知隔离'],
-            ['presence', 'P_16', '在场与日程'],
+            ['presence', 'P_16', '在场判断'],
         ];
         return map.map(([key, code, name]) => {
             const val = (s.customPrompts && s.customPrompts[key]) || '';
@@ -326,7 +326,7 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-bigsummary" class="nt-hidden-cb" ${s.enableBigSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">大总结</span><span class="nt-code">T_09</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quests" class="nt-hidden-cb" ${s.enableQuests ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">主线支线</span><span class="nt-code">T_10</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">认知隔离</span><span class="nt-code">T_11</span></label>
-                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-presence" class="nt-hidden-cb" ${s.enablePresence ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">日程在场</span><span class="nt-code">T_12</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-presence" class="nt-hidden-cb" ${s.enablePresence ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">在场判断</span><span class="nt-code">T_12</span></label>
                         </div>
                     </div>
 

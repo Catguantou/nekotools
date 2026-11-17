@@ -6,6 +6,7 @@ import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, refreshBriefs, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, findPath, MAP_TITLE } from '../core/worldmap.js';
 import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent } from '../core/worldquest.js';
+import { deriveGreenKeys, deriveNewsKeys } from '../core/worldkeys.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -153,15 +154,14 @@ function buildTickPrompt({ needWorldTick, targets = [] }) {
     if (targets.length) {
         lines.push('- 只写插件指定的这些角色，不要写名单外的人：');
         for (const t of targets) lines.push(`  · ${t.name}（${t.reason}）`);
-        lines.push('  "tick": {"角色名": {"位置":"地图小地点名","日程":{"早晨":"地点｜做什么","白天":"地点｜做什么","夜晚":"地点｜做什么"},"当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
-        lines.push('- 日程有变化时写「日程」对象；没变化可省略，插件保留旧日程。');
+        lines.push('  "tick": {"角色名": {"位置":"地图小地点名","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
         lines.push('- 玩家不在场也要推进他们自己的计划；tick 写在本轮 ws_update 里。');
     }
     if (needWorldTick) {
         lines.push('- 本轮同时做世界 tick：只更新国家/势力/社会新闻里发生的变化，输出 world。');
         lines.push('- 顺带检查主线/支线：推进主线一步，完成/失败/新增 0–1 条支线（写 main / quests）。');
     }
-    lines.push('- 若有角色本轮出场/相遇，必须结合他的日程或当前行动解释“为什么在这里”，不能凭空出现。');
+    lines.push('- 若有角色本轮出场/相遇，必须结合他的当前行动解释“为什么在这里”，不能凭空出现。');
     lines.push('</nekotools:tick>');
 
     let p = lines.join('\n');
@@ -170,7 +170,7 @@ function buildTickPrompt({ needWorldTick, targets = [] }) {
     return p;
 }
 
-/** 每轮只读快照：角色位置/日程 + 索引等级，不写回 */
+/** 每轮只读快照：角色位置/行动 + 索引等级，不写回 */
 function refreshSnapshots(bookName, book) {
     if (!bookName || !book || !book.entries) return;
     const chars = [];
@@ -181,7 +181,6 @@ function refreshSnapshots(bookName, book) {
             name: entry.comment.slice(3),
             location: parsed['位置'] || '',
             action: parsed['当前行动'] || '',
-            schedule: parsed['日程'] || {},
         });
     }
     presenceCache.set(bookName, chars);
@@ -429,7 +428,7 @@ function buildCognitionPrompt() {
     return p;
 }
 
-/** 在场与日程：角色不能凭空出现在当前场景 */
+/** 在场：角色不能凭空出现在当前场景 */
 function buildPresencePrompt(bookName) {
     const clock = bookName ? getSlotClock(bookName) : null;
     const placeText = clock && clock.place ? String(clock.place) : '';
@@ -439,11 +438,11 @@ function buildPresencePrompt(bookName) {
     if (placeText) {
         const chars = presenceCache.get(bookName) || [];
         const here = chars
-            .filter(c => [c.location, c.action, ...Object.values(c.schedule || {})].join(' ').includes(placeText))
+            .filter(c => [c.location, c.action].join(' ').includes(placeText))
             .map(c => c.name)
             .slice(0, 10);
         if (here.length) {
-            candidates = `按当前档案/日程，此刻在「${placeText}」的候选：${here.join('、')}。只能让这些人在场；其他角色要出场必须写明怎么赶来。`;
+            candidates = `按当前档案，此刻在「${placeText}」的候选：${here.join('、')}。只能让这些人在场；其他角色要出场必须写明怎么赶来。`;
         }
         const map = mapCache.get(bookName);
         const path = map ? findPath(map, placeText) : null;
@@ -455,8 +454,8 @@ function buildPresencePrompt(bookName) {
         }
     }
     let p = `<nekotools:presence>
-【在场与日程】${place}${candidates}${travel}
-- 角色出场必须满足：索引里的位置就是当前地点，或按他的日程/当前行动确实在此地。
+【在场】${place}${candidates}${travel}
+- 角色出场必须满足：索引里的位置就是当前地点，或按他的当前行动确实在此地。
 - 不在场的角色不能凭空出现；若要出场，必须先写清他如何赶到（路程、时间、理由）。
 - 每次让角色出场前先检查：他真的会在这里吗？不确定就让他不在。
 - T4 路人只在需要时出现，不要为了热闹塞人。
@@ -522,10 +521,9 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
         const userName = stBridge.getUserName() || '用户';
         const recordUserChar = settings.recordUserCharacter === true;
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","日程":{"早晨":"地点｜做什么","白天":"地点｜做什么","夜晚":"地点｜做什么"},"人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
 要求：记录活跃角色${recordUserChar ? `（包括用户角色${userName}）` : `（不包括用户角色${userName}）`}。以下字段尽量写完整，每个字段写完整的句子，不要合并成一句话：
 - 位置：优先使用「地图」里的小地点名；没有就写当前地点
-- 日程：**必须是对象**，早晨/白天/夜晚 各写「地点｜做什么」，地点同样用地图小地点名；不要写成一整句字符串。首次记录或日程变化时必须写；如果这个角色还没有日程，本轮必须补一次。
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
 - 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
 - 长期目标：最重要的长期追求
@@ -698,7 +696,6 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
     };
     const mergedSchedule = {
         ...normalizeSchedule(old['日程']),
-        ...normalizeSchedule(info && info['日程']),
     };
 
     const finalInfo = { ...(info && typeof info === 'object' ? info : {}) };
@@ -859,7 +856,7 @@ function writeWorldEntries(book, data) {
         const names = Object.keys(map);
         stBridge.upsertEntryInBook(book, title, `【以下为${title}】\n${formatAggregate(map)}`, {
             isConstant: false,
-            keywords: names,
+            keywords: section === '社会新闻' ? deriveNewsKeys(names) : deriveGreenKeys(names),
             extra: { position: 0, depth: 0, order: WORLD_ORDERS[section] },
         });
     }
@@ -930,23 +927,7 @@ function fixRosterValue(value) {
 }
 
 function deriveKeys(map, title) {
-    const keys = [];
-    for (const name of Object.keys(map || {})) {
-        const n = String(name || '').trim();
-        if (!n) continue;
-        if (n.length <= 6) keys.push(n);
-        for (const part of n.split(/[·｜|、\s]+/)) {
-            if (part.length >= 2 && part.length <= 8) keys.push(part);
-        }
-        if (n.includes('的')) {
-            const tail = n.split('的').pop().trim();
-            if (tail.length >= 2 && tail.length <= 8) keys.push(tail);
-        }
-        if (n.length >= 4) keys.push(n.slice(-2));
-        if (n.length >= 5) keys.push(n.slice(-3));
-    }
-    keys.push(title);
-    return [...new Set(keys)].filter(k => k.length >= 2).slice(0, 60);
+    return deriveGreenKeys(Object.keys(map || {}));
 }
 
 /** 解析增量指令：{ add: {名:描述}, del: [名] }；兼容旧的整表格式 */
@@ -1149,7 +1130,7 @@ async function normalizeEntryLayout(bookName) {
             }
 
             const keys = layout.keyword
-                ? (isChar ? [c.slice(3)] : (c === '地图' ? mapEntryKeys(entry.content) : deriveKeys(readAggregate(entry.content), c)))
+                ? (isChar ? [c.slice(3)] : (c === '地图' ? mapEntryKeys(entry.content) : (c === '社会新闻' ? deriveNewsKeys(Object.keys(readAggregate(entry.content))) : deriveKeys(readAggregate(entry.content), c))))
                 : [];
             if (JSON.stringify(entry.key || []) !== JSON.stringify(keys)) {
                 entry.key = keys;
