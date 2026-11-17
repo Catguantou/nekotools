@@ -13,12 +13,28 @@ function splitParts(line) {
     return String(line || '').split('｜').map(s => s.trim());
 }
 
-function parseSiteDesc(desc) {
+function parsePlaceDesc(desc) {
     const parts = splitParts(desc);
-    const out = { type: '', exits: [], interact: '', regulars: '' };
+    const out = { direction: '', type: '', desc: '' };
+    const rest = [];
     for (const part of parts) {
         if (!part) continue;
-        if (part.startsWith('出口')) {
+        if (part.startsWith('方位')) out.direction = part.replace(/^方位[：:]\s*/, '');
+        else if (!out.type) out.type = part;
+        else rest.push(part);
+    }
+    out.desc = rest.join('｜');
+    return out;
+}
+
+function parseSiteDesc(desc) {
+    const parts = splitParts(desc);
+    const out = { direction: '', type: '', exits: [], interact: '', regulars: '' };
+    for (const part of parts) {
+        if (!part) continue;
+        if (part.startsWith('方位')) {
+            out.direction = part.replace(/^方位[：:]\s*/, '');
+        } else if (part.startsWith('出口')) {
             out.exits = part.replace(/^出口[：:]\s*/, '').split(/[、,，]/).map(s => s.trim()).filter(Boolean);
         } else if (part.startsWith('可交互')) {
             out.interact = part.replace(/^可交互[：:]\s*/, '');
@@ -66,11 +82,9 @@ export function parseMap(content) {
         const rest = m[2].trim();
 
         if (section === 'regions') {
-            const parts = splitParts(rest);
-            data.regions[name] = { type: parts[0] || '', desc: parts.slice(1).join('｜') };
+            data.regions[name] = parsePlaceDesc(rest);
         } else if (section === 'cities') {
-            const parts = splitParts(rest);
-            data.cities[name] = { region: parent, type: parts[0] || '', desc: parts.slice(1).join('｜') };
+            data.cities[name] = { region: parent, ...parsePlaceDesc(rest) };
         } else if (section === 'sites') {
             data.sites[name] = { city: parent, ...parseSiteDesc(rest) };
         }
@@ -89,7 +103,7 @@ export function renderMap(data) {
     if (!regionNames.length) lines.push('（暂无）');
     for (const name of regionNames) {
         const r = regions[name] || {};
-        lines.push(`- ${name}｜${r.type || ''}｜${r.desc || ''}`);
+        lines.push(`- ${name}｜${r.direction ? `方位：${r.direction}｜` : ''}${r.type || ''}｜${r.desc || ''}`);
     }
 
     for (const regionName of regionNames) {
@@ -98,7 +112,7 @@ export function renderMap(data) {
         if (!list.length) lines.push('（暂无）');
         for (const cityName of list) {
             const c = cities[cityName] || {};
-            lines.push(`- ${cityName}｜${c.type || ''}｜${c.desc || ''}`);
+            lines.push(`- ${cityName}｜${c.direction ? `方位：${c.direction}｜` : ''}${c.type || ''}｜${c.desc || ''}`);
         }
     }
 
@@ -108,7 +122,9 @@ export function renderMap(data) {
         if (!list.length) lines.push('（暂无）');
         for (const siteName of list) {
             const s = sites[siteName] || {};
-            const bits = [`- ${siteName}`, s.type || ''];
+            const bits = [`- ${siteName}`];
+            if (s.direction) bits.push(`方位：${s.direction}`);
+            if (s.type) bits.push(s.type);
             if (s.exits && s.exits.length) bits.push(`出口：${s.exits.join('、')}`);
             if (s.interact) bits.push(`可交互：${s.interact}`);
             if (s.regulars) bits.push(`常驻：${s.regulars}`);
@@ -212,15 +228,13 @@ export async function applyMapOps(bookName, raw) {
     const del = raw.del && typeof raw.del === 'object' ? raw.del : {};
 
     for (const [regionName, desc] of Object.entries(regions)) {
-        const parts = splitParts(desc);
-        data.regions[regionName] = { type: parts[0] || '', desc: parts.slice(1).join('｜') };
+        data.regions[regionName] = parsePlaceDesc(desc);
     }
     for (const [regionName, cityBlock] of Object.entries(cities)) {
-        if (!cityBlock || typeof cityBlock !== 'object') continue;
+        if (!cityBlock || typeof cityBlock !== 'object' || Array.isArray(cityBlock)) continue;
         ensureRegion(data, regionName);
         for (const [cityName, desc] of Object.entries(cityBlock)) {
-            const parts = splitParts(desc);
-            data.cities[cityName] = { region: regionName, type: parts[0] || '', desc: parts.slice(1).join('｜') };
+            data.cities[cityName] = { region: regionName, ...parsePlaceDesc(desc) };
         }
     }
     for (const [cityName, siteBlock] of Object.entries(sites)) {

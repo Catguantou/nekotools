@@ -924,6 +924,92 @@ async function showActionModal() {
     });
 }
 
+const MAP_DIR_POS = {
+    '北': [50, 14], '东北': [75, 24], '东': [87, 50], '东南': [75, 76],
+    '南': [50, 86], '西南': [25, 76], '西': [13, 50], '西北': [25, 24], '中': [50, 50],
+};
+const MAP_DIR_RING = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
+
+function normalizeDirection(value) {
+    const s = String(value || '').trim();
+    if (!s) return '';
+    if (s === '中央') return '中';
+    if (/^(东北|西北|东南|西南|北|南|东|西|中)$/.test(s)) return s;
+    if (/东北/.test(s)) return '东北';
+    if (/西北/.test(s)) return '西北';
+    if (/东南/.test(s)) return '东南';
+    if (/西南/.test(s)) return '西南';
+    if (/北/.test(s)) return '北';
+    if (/南/.test(s)) return '南';
+    if (/东/.test(s)) return '东';
+    if (/西/.test(s)) return '西';
+    if (/中/.test(s)) return '中';
+    return '';
+}
+
+function mapHash(text) {
+    let h = 0;
+    for (const ch of String(text || '')) h = (h * 31 + ch.codePointAt(0)) | 0;
+    return Math.abs(h);
+}
+
+function mapNodePosition(place, name, index) {
+    let dir = normalizeDirection(place && place.direction);
+    if (!dir) dir = MAP_DIR_RING[index % MAP_DIR_RING.length];
+    const base = MAP_DIR_POS[dir] || [50, 50];
+    const h = mapHash(name);
+    const jx = ((h % 9) - 4) * 1.1;
+    const jy = (((h >> 4) % 9) - 4) * 1.1;
+    return {
+        dir,
+        x: Math.max(7, Math.min(93, base[0] + jx)),
+        y: Math.max(13, Math.min(87, base[1] + jy)),
+    };
+}
+
+const MAP_BASE_SVG = `<svg class="nt-map-base-svg" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
+<defs>
+<radialGradient id="ntParch" cx="48%" cy="42%" r="75%">
+<stop offset="0%" stop-color="#e7d3a8"/>
+<stop offset="62%" stop-color="#d8bf8f"/>
+<stop offset="100%" stop-color="#b79561"/>
+</radialGradient>
+<pattern id="ntGrain" width="7" height="7" patternUnits="userSpaceOnUse">
+<circle cx="1" cy="1" r="0.7" fill="#7a5a34" opacity="0.18"/>
+<circle cx="5" cy="4" r="0.5" fill="#fff6e2" opacity="0.25"/>
+</pattern>
+</defs>
+<rect width="1000" height="620" fill="url(#ntParch)"/>
+<rect width="1000" height="620" fill="url(#ntGrain)"/>
+<path d="M80,150 C150,70 300,55 420,95 C520,130 565,80 660,110 C780,150 850,95 915,180 C960,245 930,330 875,390 C810,465 705,505 600,485 C520,470 455,520 360,500 C275,480 205,520 145,455 C75,380 60,285 80,225 Z"
+ fill="#c8ab77" opacity="0.62" stroke="#7a5a34" stroke-width="3.2" stroke-dasharray="10 6"/>
+<path d="M95,180 C135,135 205,140 235,175 C270,215 240,270 195,280 C150,290 100,250 95,215 Z"
+ fill="#bfa069" opacity="0.5" stroke="#7a5a34" stroke-width="2" stroke-dasharray="7 5"/>
+<path d="M650,95 C690,60 755,65 780,100 C805,140 775,175 730,180 C685,185 640,140 650,95 Z"
+ fill="#bfa069" opacity="0.45" stroke="#7a5a34" stroke-width="2" stroke-dasharray="7 5"/>
+<path d="M230,250 C330,200 430,215 520,250 C610,285 700,255 780,300 C840,335 820,405 760,430 C690,460 610,440 540,455 C460,472 380,455 320,420 C250,380 195,315 230,250 Z"
+ fill="none" stroke="#7d6a4a" opacity="0.35" stroke-width="1.6" stroke-dasharray="5 5"/>
+<path d="M360,130 C390,175 380,225 410,265 C435,300 425,340 455,380" fill="none" stroke="#7d8f88" opacity="0.45" stroke-width="4" stroke-linecap="round"/>
+<path d="M700,210 C680,255 700,300 675,345 C655,380 665,420 690,455" fill="none" stroke="#7d8f88" opacity="0.38" stroke-width="3" stroke-linecap="round"/>
+<g stroke="#6b4a2a" fill="none" opacity="0.35" stroke-width="2">
+<path d="M205,440 l15 -22 l15 22"/><path d="M235,445 l13 -19 l13 19"/>
+<path d="M300,175 l16 -24 l16 24"/><path d="M335,180 l14 -20 l14 20"/>
+<path d="M735,360 l16 -24 l16 24"/><path d="M770,365 l13 -20 l13 20"/>
+</g>
+<g fill="#6b4a2a" opacity="0.4" font-family="serif" font-size="15" letter-spacing="4">
+<text x="88" y="545">西 海</text>
+<text x="455" y="70">北 境</text>
+<text x="872" y="505">东 海</text>
+</g>
+<g stroke="#6b4a2a" fill="none" opacity="0.45">
+<circle cx="86" cy="86" r="30"/><circle cx="86" cy="86" r="20"/>
+<path d="M86,50 L86,122 M50,86 L122,86 M62,62 L110,110 M110,62 L62,110"/>
+<path d="M86,58 l7,20 l20,7 l-20,7 l-7,20 l-7,-20 l-20,-7 l20,-7 Z" fill="#6b4a2a" fill-opacity="0.18"/>
+</g>
+<rect x="9" y="9" width="982" height="602" fill="none" stroke="#6b4a2a" opacity="0.55" stroke-width="4"/>
+<rect x="18" y="18" width="964" height="584" fill="none" stroke="#6b4a2a" opacity="0.28" stroke-width="1.5"/>
+</svg>`;
+
 function currentMapPath(data) {
     const parts = String(data.current || '').split('｜').map(s => s.trim());
     const site = (data.sites && data.sites[parts[2]]) ? parts[2]
@@ -972,7 +1058,7 @@ async function showMapModal(opts = {}) {
     const cur = currentMapPath(data);
 
     const body = document.createElement('div');
-    body.className = 'nt-quick-map';
+    body.className = 'nt-quick-map parchment';
     const hud = document.createElement('div');
     hud.className = 'nt-quick-map-hud';
     const crumbs = document.createElement('div');
@@ -984,11 +1070,10 @@ async function showMapModal(opts = {}) {
     hud.appendChild(crumbs);
     hud.appendChild(actions);
     hud.appendChild(info);
-
-    const board = document.createElement('div');
-    board.className = 'nt-quick-map-board';
+    const content = document.createElement('div');
+    content.className = 'nt-quick-map-content';
     body.appendChild(hud);
-    body.appendChild(board);
+    body.appendChild(content);
 
     let mode = 'map';
     const state = { level: 'world', region: '', city: '', site: '' };
@@ -1020,7 +1105,7 @@ async function showMapModal(opts = {}) {
         render();
     };
 
-    openModal({ title: '地图', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+    openModal({ title: '世界地图', body, wide: true, footer: [{ label: '关闭', primary: true }] });
 
     const isCurrent = (level, name) => {
         if (level === 'region') return cur.region === name;
@@ -1055,7 +1140,7 @@ async function showMapModal(opts = {}) {
             });
             crumbs.appendChild(b);
         };
-        addCrumb('大地图', 'world');
+        addCrumb('世界', 'world');
         if (state.region) addCrumb(state.region, 'region');
         if (state.city) addCrumb(state.city, 'city');
         if (state.site) addCrumb(state.site, 'site');
@@ -1076,29 +1161,28 @@ async function showMapModal(opts = {}) {
         info.textContent = `🧭 第 ${currentLayerNo()} 层 · ${place}${time ? ' · ' + time : ''}`;
     };
 
-    const makeTile = ({ icon, name, meta, tone, current, onClick, badge }) => {
+    const makeNode = (name, place, x, y, level, onClick) => {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = `nt-map-tile tone-${tone || 'place'}${current ? ' current' : ''}`;
-        const ic = document.createElement('span');
-        ic.className = 'nt-map-tile-icon';
-        ic.textContent = icon || '📍';
-        const bodyEl = document.createElement('span');
-        bodyEl.className = 'nt-map-tile-body';
-        const nm = document.createElement('span');
-        nm.className = 'nt-map-tile-name';
-        nm.textContent = name;
-        const mt = document.createElement('span');
-        mt.className = 'nt-map-tile-meta';
-        mt.textContent = meta || '';
-        bodyEl.appendChild(nm);
-        bodyEl.appendChild(mt);
-        b.appendChild(ic);
-        b.appendChild(bodyEl);
-        if (current || badge) {
+        b.className = `nt-map-node nt-map-node-${level} tone-${mapTone(place.type, name)}`;
+        b.style.left = `${x}%`;
+        b.style.top = `${y}%`;
+        const icon = document.createElement('span');
+        icon.className = 'nt-map-node-icon';
+        icon.textContent = mapIcon(place.type, name);
+        const label = document.createElement('span');
+        label.className = 'nt-map-node-label';
+        label.textContent = name;
+        const sub = document.createElement('span');
+        sub.className = 'nt-map-node-sub';
+        sub.textContent = [place.direction ? `方位·${place.direction}` : '', place.type].filter(Boolean).join(' / ');
+        b.appendChild(icon);
+        b.appendChild(label);
+        b.appendChild(sub);
+        if (isCurrent(level, name)) {
             const tag = document.createElement('span');
-            tag.className = 'nt-map-tile-tag';
-            tag.textContent = current ? '当前' : badge;
+            tag.className = 'nt-map-node-current';
+            tag.textContent = '当前';
             b.appendChild(tag);
         }
         b.addEventListener('click', onClick);
@@ -1107,177 +1191,16 @@ async function showMapModal(opts = {}) {
 
     const section = (text) => {
         const el = document.createElement('div');
-        el.className = 'nt-quick-map-section';
+        el.className = 'nt-map-section';
         el.textContent = text;
         return el;
     };
 
     const note = (text) => {
         const el = document.createElement('div');
-        el.className = 'nt-quick-note';
+        el.className = 'nt-map-note';
         el.textContent = text;
         return el;
-    };
-
-    const renderMap = () => {
-        board.textContent = '';
-        const regions = Object.keys(data.regions || {});
-        if (!regions.length) {
-            board.appendChild(note('还没有地图。发一轮消息，AI 会生成大地图 / 中地图 / 小地点。'));
-            return;
-        }
-
-        if (state.level === 'world') {
-            board.appendChild(section('大地图 · 区域 / 国家'));
-            const grid = document.createElement('div');
-            grid.className = 'nt-map-grid';
-            for (const [name, region] of Object.entries(data.regions || {})) {
-                grid.appendChild(makeTile({
-                    icon: mapIcon(region.type, name),
-                    name,
-                    meta: [region.type, region.desc].filter(Boolean).join(' · '),
-                    tone: mapTone(region.type, name),
-                    current: isCurrent('region', name),
-                    onClick: () => { state.level = 'region'; state.region = name; state.city = ''; state.site = ''; render(); },
-                }));
-            }
-            board.appendChild(grid);
-            return;
-        }
-
-        const region = data.regions[state.region];
-        if (!region) { state.level = 'world'; render(); return; }
-
-        if (state.level === 'region') {
-            board.appendChild(section(`${state.region} · 中地图`));
-            const cities = Object.entries(data.cities || {}).filter(([, c]) => c.region === state.region);
-            if (!cities.length) { board.appendChild(note('这个区域还没有城市节点。')); return; }
-            const grid = document.createElement('div');
-            grid.className = 'nt-map-grid';
-            for (const [name, city] of cities) {
-                grid.appendChild(makeTile({
-                    icon: mapIcon(city.type, name),
-                    name,
-                    meta: [city.type, city.desc].filter(Boolean).join(' · '),
-                    tone: mapTone(city.type, name),
-                    current: isCurrent('city', name),
-                    onClick: () => { state.level = 'city'; state.city = name; state.site = ''; render(); },
-                }));
-            }
-            board.appendChild(grid);
-            return;
-        }
-
-        const city = data.cities[state.city];
-        if (!city) { state.level = 'region'; render(); return; }
-
-        if (state.level === 'city') {
-            board.appendChild(section(`${state.city} · 小地点`));
-            const sites = Object.entries(data.sites || {}).filter(([, s]) => s.city === state.city);
-            if (!sites.length) { board.appendChild(note('这个城市还没有小地点节点。')); return; }
-            const grid = document.createElement('div');
-            grid.className = 'nt-map-grid';
-            for (const [name, site] of sites) {
-                grid.appendChild(makeTile({
-                    icon: mapIcon(site.type, name),
-                    name,
-                    meta: [site.type, site.regulars ? `常驻：${site.regulars}` : ''].filter(Boolean).join(' · '),
-                    tone: mapTone(site.type, name),
-                    current: isCurrent('site', name),
-                    onClick: () => { state.level = 'site'; state.site = name; render(); },
-                }));
-            }
-            board.appendChild(grid);
-            return;
-        }
-
-        const site = data.sites[state.site];
-        if (!site) { state.level = 'city'; render(); return; }
-
-        const card = document.createElement('div');
-        card.className = `nt-map-site-card tone-${mapTone(site.type, state.site)}`;
-        const head = document.createElement('div');
-        head.className = 'nt-map-site-head';
-        const icon = document.createElement('span');
-        icon.className = 'nt-map-site-icon';
-        icon.textContent = mapIcon(site.type, state.site);
-        const titleWrap = document.createElement('div');
-        const title = document.createElement('div');
-        title.className = 'nt-map-site-title';
-        title.textContent = state.site;
-        const sub = document.createElement('div');
-        sub.className = 'nt-map-site-sub';
-        sub.textContent = [state.region, state.city, site.type].filter(Boolean).join(' / ');
-        titleWrap.appendChild(title);
-        titleWrap.appendChild(sub);
-        head.appendChild(icon);
-        head.appendChild(titleWrap);
-        if (isCurrent('site', state.site)) {
-            const tag = document.createElement('span');
-            tag.className = 'nt-map-site-current';
-            tag.textContent = '当前';
-            head.appendChild(tag);
-        }
-        card.appendChild(head);
-
-        const facts = document.createElement('div');
-        facts.className = 'nt-map-site-facts';
-        const addFact = (label, value) => {
-            if (!value) return;
-            const row = document.createElement('div');
-            row.className = 'nt-map-fact';
-            const l = document.createElement('span');
-            l.className = 'nt-map-fact-label';
-            l.textContent = label;
-            const v = document.createElement('span');
-            v.className = 'nt-map-fact-value';
-            v.textContent = value;
-            row.appendChild(l);
-            row.appendChild(v);
-            facts.appendChild(row);
-        };
-        addFact('可交互', site.interact);
-        addFact('常驻', site.regulars);
-        card.appendChild(facts);
-
-        card.appendChild(section('出口 / 周边'));
-        const exits = document.createElement('div');
-        exits.className = 'nt-map-exits';
-        if (!site.exits || !site.exits.length) {
-            exits.appendChild(note('没有记录出口。'));
-        } else {
-            for (const exit of site.exits) {
-                const target = data.sites[exit];
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'nt-map-exit' + (target ? '' : ' disabled');
-                const ic = document.createElement('span');
-                ic.textContent = target ? '➜' : '·';
-                const tx = document.createElement('span');
-                tx.textContent = exit;
-                b.appendChild(ic);
-                b.appendChild(tx);
-                if (target) b.addEventListener('click', () => jumpTo(exit));
-                else b.disabled = true;
-                exits.appendChild(b);
-            }
-        }
-        card.appendChild(exits);
-
-        const present = roster.filter(c => c.location === state.site);
-        card.appendChild(section(`在场角色 · ${present.length}`));
-        if (!present.length) {
-            card.appendChild(note('暂无记录到角色在这里。'));
-        } else {
-            const people = document.createElement('div');
-            people.className = 'nt-map-people-row';
-            for (const c of present) {
-                people.appendChild(personChip(c, state.site));
-            }
-            card.appendChild(people);
-        }
-
-        board.appendChild(card);
     };
 
     const personChip = (c, loc) => {
@@ -1303,8 +1226,230 @@ async function showMapModal(opts = {}) {
         return b;
     };
 
+    const renderDetail = () => {
+        const detail = document.createElement('div');
+        detail.className = 'nt-map-detail';
+
+        if (state.level === 'site' && data.sites[state.site]) {
+            const site = data.sites[state.site];
+            const head = document.createElement('div');
+            head.className = 'nt-map-detail-head';
+            const icon = document.createElement('span');
+            icon.className = 'nt-map-detail-icon';
+            icon.textContent = mapIcon(site.type, state.site);
+            const tw = document.createElement('div');
+            const title = document.createElement('div');
+            title.className = 'nt-map-detail-title';
+            title.textContent = state.site;
+            const sub = document.createElement('div');
+            sub.className = 'nt-map-detail-sub';
+            sub.textContent = [state.region, state.city, site.type].filter(Boolean).join(' / ');
+            tw.appendChild(title);
+            tw.appendChild(sub);
+            head.appendChild(icon);
+            head.appendChild(tw);
+            if (isCurrent('site', state.site)) {
+                const tag = document.createElement('span');
+                tag.className = 'nt-map-detail-current';
+                tag.textContent = '当前';
+                head.appendChild(tag);
+            }
+            detail.appendChild(head);
+
+            const facts = document.createElement('div');
+            facts.className = 'nt-map-detail-facts';
+            const addFact = (label, value) => {
+                if (!value) return;
+                const row = document.createElement('div');
+                row.className = 'nt-map-fact';
+                const l = document.createElement('span');
+                l.className = 'nt-map-fact-label';
+                l.textContent = label;
+                const v = document.createElement('span');
+                v.className = 'nt-map-fact-value';
+                v.textContent = value;
+                row.appendChild(l);
+                row.appendChild(v);
+                facts.appendChild(row);
+            };
+            addFact('可交互', site.interact);
+            addFact('常驻', site.regulars);
+            addFact('方位', site.direction);
+            detail.appendChild(facts);
+
+            detail.appendChild(section('出口 / 周边'));
+            const exits = document.createElement('div');
+            exits.className = 'nt-map-exits';
+            for (const exit of site.exits || []) {
+                const target = data.sites[exit];
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'nt-map-exit';
+                b.textContent = `➜ ${exit}`;
+                if (target) b.addEventListener('click', () => jumpTo(exit));
+                else { b.disabled = true; b.className += ' disabled'; }
+                exits.appendChild(b);
+            }
+            if (!(site.exits || []).length) exits.appendChild(note('没有记录出口。'));
+            detail.appendChild(exits);
+
+            const present = roster.filter(c => c.location === state.site);
+            detail.appendChild(section(`在场角色 · ${present.length}`));
+            if (!present.length) detail.appendChild(note('暂无记录到角色在这里。'));
+            else {
+                const people = document.createElement('div');
+                people.className = 'nt-map-people-row';
+                for (const c of present) people.appendChild(personChip(c, state.site));
+                detail.appendChild(people);
+            }
+            return detail;
+        }
+
+        if (state.level === 'city' && data.cities[state.city]) {
+            const city = data.cities[state.city];
+            const title = document.createElement('div');
+            title.className = 'nt-map-detail-title';
+            title.textContent = state.city;
+            const sub = document.createElement('div');
+            sub.className = 'nt-map-detail-sub';
+            sub.textContent = [state.region, city.type, city.direction ? `方位·${city.direction}` : ''].filter(Boolean).join(' / ');
+            detail.appendChild(title);
+            detail.appendChild(sub);
+            const desc = document.createElement('div');
+            desc.className = 'nt-map-detail-desc';
+            desc.textContent = city.desc || '点击地图上的小地点查看详情。';
+            detail.appendChild(desc);
+            return detail;
+        }
+
+        if (data.regions[state.region]) {
+            const region = data.regions[state.region];
+            const title = document.createElement('div');
+            title.className = 'nt-map-detail-title';
+            title.textContent = state.region;
+            const sub = document.createElement('div');
+            sub.className = 'nt-map-detail-sub';
+            sub.textContent = [region.type, region.direction ? `方位·${region.direction}` : ''].filter(Boolean).join(' / ');
+            detail.appendChild(title);
+            detail.appendChild(sub);
+            const desc = document.createElement('div');
+            desc.className = 'nt-map-detail-desc';
+            desc.textContent = region.desc || '点击地图上的城市进入中地图。';
+            detail.appendChild(desc);
+            return detail;
+        }
+
+        const title = document.createElement('div');
+        title.className = 'nt-map-detail-title';
+        title.textContent = '世界地图';
+        const sub = document.createElement('div');
+        sub.className = 'nt-map-detail-sub';
+        sub.textContent = `${Object.keys(data.regions || {}).length} 个区域 · 点击区域查看中地图`;
+        detail.appendChild(title);
+        detail.appendChild(sub);
+        return detail;
+    };
+
+    const renderMap = () => {
+        content.textContent = '';
+        const regions = Object.keys(data.regions || {});
+        if (!regions.length) {
+            content.appendChild(note('还没有地图。发一轮消息，AI 会生成大地图 / 中地图 / 小地点。'));
+            return;
+        }
+
+        let level = state.level;
+        let items = [];
+        let mapTitle = '';
+        if (level === 'world') {
+            mapTitle = '大地图';
+            items = Object.entries(data.regions || {}).map(([name, p]) => ({ name, p, level: 'region' }));
+        } else if (level === 'region') {
+            const region = data.regions[state.region];
+            if (!region) { state.level = 'world'; render(); return; }
+            mapTitle = state.region;
+            items = Object.entries(data.cities || {})
+                .filter(([, c]) => c.region === state.region)
+                .map(([name, p]) => ({ name, p, level: 'city' }));
+        } else {
+            const city = data.cities[state.city];
+            if (!city) { state.level = state.region ? 'region' : 'world'; render(); return; }
+            mapTitle = state.city;
+            items = Object.entries(data.sites || {})
+                .filter(([, s]) => s.city === state.city)
+                .map(([name, p]) => ({ name, p, level: 'site' }));
+        }
+        if (!items.length) {
+            content.appendChild(note(level === 'world' ? '还没有区域。' : '这一层还没有节点。'));
+            return;
+        }
+
+        const canvas = document.createElement('div');
+        canvas.className = 'nt-map-canvas';
+        const base = document.createElement('div');
+        base.className = 'nt-map-base';
+        base.innerHTML = MAP_BASE_SVG;
+        canvas.appendChild(base);
+
+        const links = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        links.setAttribute('class', 'nt-map-links');
+        links.setAttribute('viewBox', '0 0 100 100');
+        links.setAttribute('preserveAspectRatio', 'none');
+        canvas.appendChild(links);
+
+        const nodes = document.createElement('div');
+        nodes.className = 'nt-map-nodes';
+        canvas.appendChild(nodes);
+
+        const positions = new Map();
+        items.forEach((item, index) => {
+            const pos = mapNodePosition(item.p, item.name, index);
+            positions.set(item.name, pos);
+            const onClick = () => {
+                if (item.level === 'region') {
+                    state.level = 'region'; state.region = item.name; state.city = ''; state.site = '';
+                } else if (item.level === 'city') {
+                    state.level = 'city'; state.city = item.name; state.site = '';
+                } else {
+                    state.level = 'site'; state.site = item.name;
+                }
+                render();
+            };
+            nodes.appendChild(makeNode(item.name, item.p, pos.x, pos.y, item.level, onClick));
+        });
+
+        if (level === 'city' || level === 'site') {
+            const seen = new Set();
+            for (const [name, site] of Object.entries(data.sites || {})) {
+                if (site.city !== state.city) continue;
+                const from = positions.get(name);
+                if (!from) continue;
+                for (const exit of site.exits || []) {
+                    const to = positions.get(exit);
+                    if (!to) continue;
+                    const key = [name, exit].sort().join('|');
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', from.x);
+                    line.setAttribute('y1', from.y);
+                    line.setAttribute('x2', to.x);
+                    line.setAttribute('y2', to.y);
+                    links.appendChild(line);
+                }
+            }
+        }
+
+        content.appendChild(canvas);
+        const detail = renderDetail();
+        content.appendChild(detail);
+    };
+
     const renderPeople = () => {
-        board.textContent = '';
+        content.textContent = '';
+        const board = document.createElement('div');
+        board.className = 'nt-map-people-board';
+        content.appendChild(board);
         if (!roster.length) {
             board.appendChild(note('角色索引里还没有角色。'));
             return;
@@ -1332,17 +1477,17 @@ async function showMapModal(opts = {}) {
 
         const addGroup = (title, place, chars) => {
             board.appendChild(section(title));
+            if (place) {
+                const link = document.createElement('button');
+                link.type = 'button';
+                link.className = 'nt-map-place-link';
+                link.textContent = `定位：${place}`;
+                link.addEventListener('click', () => jumpTo(place));
+                board.appendChild(link);
+            }
             if (!chars.length) {
                 board.appendChild(note('暂无。'));
                 return;
-            }
-            if (place) {
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'nt-map-place-link';
-                b.textContent = `定位：${place}`;
-                b.addEventListener('click', () => jumpTo(place));
-                board.appendChild(b);
             }
             const wrap = document.createElement('div');
             wrap.className = 'nt-map-people-grid';
