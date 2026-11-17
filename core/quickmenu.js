@@ -1056,6 +1056,7 @@ async function showMapModal(opts = {}) {
     body.appendChild(content);
 
     let mode = 'map';
+    let peopleQuery = '';
     const state = { level: 'world', region: '', city: '', site: '' };
 
     const setStateFromPath = (p) => {
@@ -1134,12 +1135,12 @@ async function showMapModal(opts = {}) {
         if (state.site) addCrumb(state.site, 'site');
 
         actions.textContent = '';
-        actions.appendChild(makeBtn('当前场景', () => {
+        actions.appendChild(makeBtn('📍 我在哪', () => {
             setStateFromPath(cur);
             mode = 'map';
             render();
         }, mode === 'map' && state.site && state.site === cur.site));
-        actions.appendChild(makeBtn('角色行踪', () => {
+        actions.appendChild(makeBtn('🔍 找角色', () => {
             mode = 'people';
             render();
         }, mode === 'people'));
@@ -1446,56 +1447,96 @@ async function showMapModal(opts = {}) {
         content.textContent = '';
         const board = document.createElement('div');
         board.className = 'nt-map-people-board';
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.className = 'nt-map-search';
+        search.placeholder = '搜索角色名或地点…';
+        search.value = peopleQuery;
+        const hint = document.createElement('div');
+        hint.className = 'nt-map-note';
+        hint.textContent = '点角色跳到他的位置；「我在哪」回到你的当前位置。';
+        const list = document.createElement('div');
+        list.className = 'nt-map-people-list';
+        board.appendChild(search);
+        board.appendChild(hint);
+        board.appendChild(list);
         content.appendChild(board);
-        if (!roster.length) {
-            board.appendChild(note('角色索引里还没有角色。'));
-            return;
-        }
 
-        const byLoc = new Map();
-        for (const c of roster) {
-            const loc = String(c.location || '').trim();
-            if (!byLoc.has(loc)) byLoc.set(loc, []);
-            byLoc.get(loc).push(c);
-        }
-
-        const exits = (data.sites[cur.site] && data.sites[cur.site].exits) || [];
-        const currentChars = byLoc.get(cur.site) || [];
-        const nearby = [];
-        const others = [];
-        const unknown = byLoc.get('') || [];
-        for (const [loc, chars] of byLoc.entries()) {
-            if (!loc) continue;
-            if (loc === cur.site) continue;
-            if (exits.includes(loc)) nearby.push({ loc, chars });
-            else others.push({ loc, chars });
-        }
-        others.sort((a, b) => a.loc.localeCompare(b.loc, 'zh'));
-
-        const addGroup = (title, place, chars) => {
-            board.appendChild(section(title));
-            if (place) {
-                const link = document.createElement('button');
-                link.type = 'button';
-                link.className = 'nt-map-place-link';
-                link.textContent = `定位：${place}`;
-                link.addEventListener('click', () => jumpTo(place));
-                board.appendChild(link);
-            }
-            if (!chars.length) {
-                board.appendChild(note('暂无。'));
+        const draw = () => {
+            list.textContent = '';
+            if (!roster.length) {
+                list.appendChild(note('角色索引里还没有角色。'));
                 return;
             }
-            const wrap = document.createElement('div');
-            wrap.className = 'nt-map-people-grid';
-            for (const c of chars) wrap.appendChild(personChip(c, place || c.location || ''));
-            board.appendChild(wrap);
+
+            const q = peopleQuery.trim().toLowerCase();
+            if (q) {
+                const hits = roster.filter(c =>
+                    String(c.name || '').toLowerCase().includes(q)
+                    || String(c.location || '').toLowerCase().includes(q)
+                );
+                list.appendChild(section(`搜索结果（${hits.length}）`));
+                if (!hits.length) {
+                    list.appendChild(note('没有找到。试试角色名或地点名。'));
+                    return;
+                }
+                const wrap = document.createElement('div');
+                wrap.className = 'nt-map-people-grid';
+                for (const c of hits) wrap.appendChild(personChip(c, c.location || ''));
+                list.appendChild(wrap);
+                return;
+            }
+
+            const byLoc = new Map();
+            for (const c of roster) {
+                const loc = String(c.location || '').trim();
+                if (!byLoc.has(loc)) byLoc.set(loc, []);
+                byLoc.get(loc).push(c);
+            }
+
+            const exits = (data.sites[cur.site] && data.sites[cur.site].exits) || [];
+            const currentChars = byLoc.get(cur.site) || [];
+            const nearby = [];
+            const others = [];
+            const unknown = byLoc.get('') || [];
+            for (const [loc, chars] of byLoc.entries()) {
+                if (!loc) continue;
+                if (loc === cur.site) continue;
+                if (exits.includes(loc)) nearby.push({ loc, chars });
+                else others.push({ loc, chars });
+            }
+            others.sort((a, b) => a.loc.localeCompare(b.loc, 'zh'));
+
+            const addGroup = (title, place, chars) => {
+                list.appendChild(section(title));
+                if (place) {
+                    const link = document.createElement('button');
+                    link.type = 'button';
+                    link.className = 'nt-map-place-link';
+                    link.textContent = `定位：${place}`;
+                    link.addEventListener('click', () => jumpTo(place));
+                    list.appendChild(link);
+                }
+                if (!chars.length) {
+                    list.appendChild(note('暂无。'));
+                    return;
+                }
+                const wrap = document.createElement('div');
+                wrap.className = 'nt-map-people-grid';
+                for (const c of chars) wrap.appendChild(personChip(c, place || c.location || ''));
+                list.appendChild(wrap);
+            };
+
+            addGroup(`我的位置 · ${cur.site || '未知地点'}（${currentChars.length}）`, cur.site, currentChars);
+            for (const group of nearby) addGroup(`周边 · ${group.loc}（${group.chars.length}）`, group.loc, group.chars);
+            for (const group of others) addGroup(`后台 · ${group.loc}（${group.chars.length}）`, group.loc, group.chars);
+            if (unknown.length) addGroup(`位置未知（${unknown.length}）`, '', unknown);
         };
 
-        addGroup(`当前场景 · ${cur.site || '未知地点'}（${currentChars.length}）`, cur.site, currentChars);
-        for (const group of nearby) addGroup(`周边 · ${group.loc}（${group.chars.length}）`, group.loc, group.chars);
-        for (const group of others) addGroup(`后台 · ${group.loc}（${group.chars.length}）`, group.loc, group.chars);
-        if (unknown.length) addGroup(`位置未知（${unknown.length}）`, '', unknown);
+        search.addEventListener('input', () => {
+            peopleQuery = search.value;
+            draw();
+        });        draw();
     };
 
     const render = () => {
@@ -1547,7 +1588,6 @@ function buildPop() {
         { key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
         { key: 'refresh', label: '请求更新', hint: '角色 / 世界 / 地图', enabled: false },
         { key: 'map', label: '地图', hint: '大地图 / 中地图 / 小地点', enabled: true },
-        { key: 'scene', label: '当前场景', hint: '在场角色与周边', enabled: true },
         { key: 'edit', label: '手动修改', hint: '主线 / 白名单 / 黑名单', enabled: false },
     ];
 
@@ -1574,7 +1614,6 @@ function buildPop() {
             else if (item.key === 'roster') showRosterModal();
             else if (item.key === 'action') showActionModal();
             else if (item.key === 'map') showMapModal();
-            else if (item.key === 'scene') showMapModal({ focusCurrent: true });
             else if (item.key === 'slots') showSlotsModal();
             else showSoon(item.label);
         });

@@ -2388,6 +2388,28 @@ body {
     max-height: 62vh;
     overflow: auto;
 }
+#nt-quick-modal .nt-map-search {
+    position: sticky;
+    top: -14px;
+    z-index: 2;
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid #8a6a42;
+    border-radius: 4px;
+    background: #f6e8c8;
+    color: #3b2a18;
+    font-family: "Noto Serif SC", "Songti SC", "SimSun", serif;
+    font-size: 12px;
+    outline: none;
+}
+#nt-quick-modal .nt-map-search::placeholder {
+    color: #9a7a50;
+}
+#nt-quick-modal .nt-map-people-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
 #nt-quick-modal .nt-map-people-board .nt-map-section {
     color: #7a5a34;
 }
