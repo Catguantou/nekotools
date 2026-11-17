@@ -287,18 +287,40 @@ export const stBridge = {
 
             if (!res.ok) throw new Error(`API 失败: ${res.status}`);
 
-            loreCache.set(name, initData);
+            loreCache.delete(name);
             const wInfo = ctx.world_info || ctx.worldInfo;
             if (wInfo) wInfo[name] = initData;
 
             // 关键：让 ST 重新拉一次列表。否则新书不在 #world_info 的选项里，
             // 激活时会报 No world found named，表现就是「书建出来了但挂不上」。
             await refreshWorldList();
+
+            // 复核：文件真的落盘了吗？曾出现过「接口返回 ok 但文件不存在」的情况
+            const check = await this.loadWorldInfoAsync(name, true);
+            if (!check) {
+                console.error('[nekotools] 世界书写入后读不回来，判定创建失败:', name);
+                return false;
+            }
             return true;
         } catch (e) {
             console.error('[nekotools] 创建世界书失败', e);
             return false;
         }
+    },
+
+    /** 清掉「激活列表里有、磁盘上却没有」的幽灵追踪书（否则 ST 每次生成都报 does not exist） */
+    async cleanupGhostActiveBooks() {
+        await refreshWorldList();
+        const existing = new Set(this.getWorldNames());
+        let removed = 0;
+        for (const name of this.getGloballyActivatedWorlds()) {
+            if (!this.isTrackerBook(name)) continue;
+            if (existing.has(name)) continue;
+            console.warn('[nekotools] 追踪书文件不存在，取消全局激活:', name);
+            await this.mountGlobalWorldbook(name, false);
+            removed++;
+        }
+        return removed;
     },
 
     /** 确保某本书记存在且已全局激活；不存在就创建。返回可用的书数据。 */
@@ -331,6 +353,7 @@ export const stBridge = {
 
     async deleteWorldbook(name, { syncUnbindChar = true, deleteLinkedChar = false } = {}) {
         const ctx = this.getContext();
+        console.log('[nekotools] 删除世界书:', name, deleteLinkedChar ? '(连带绑定角色卡)' : '');
         try {
             if (deleteLinkedChar && !this.isTrackerBook(name)) {
                 // 删书 → 连带删除绑定了它的角色卡（追踪书永远不走这条路）

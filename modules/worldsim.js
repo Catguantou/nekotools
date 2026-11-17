@@ -229,6 +229,8 @@ registry.register({
                 return;
             }
             try {
+                // 先清掉「激活列表有、文件没有」的幽灵书，避免 ST 每轮报错
+                await stBridge.cleanupGhostActiveBooks();
                 const book = await stBridge.ensureWorldbook(name);
                 console.log(`[worldsim] 追踪书检查 #${attempt}:`, name, book ? 'OK' : 'FAILED');
                 if (book) {
