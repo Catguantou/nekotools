@@ -3194,4 +3194,62 @@ body {
     white-space: nowrap;
 }
 
+/* 字体与灰度：标签小一点、灰一点 */
+#nt-ws-panel .nt-data-label,
+#nt-ws-panel .nt-data-row > label,
+#nt-ws-panel .nt-grid-item,
+#nt-ws-panel .nt-btn-text,
+#nt-ws-panel .nt-btn-action,
+#nt-ws-panel .nt-data-input,
+#nt-ws-panel .nt-data-select,
+#nt-ws-panel .nt-hint {
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+#nt-ws-panel .nt-data-row > label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: #8e949e;
+}
+#nt-ws-panel .nt-data-row > label input[type="checkbox"] {
+    width: 12px;
+    height: 12px;
+}
+#nt-ws-panel .nt-data-label {
+    font-size: 11px;
+    color: #9aa0a9;
+}
+#nt-ws-panel .nt-data-label .nt-hint {
+    color: #5f6570;
+    font-size: 9px;
+}
+#nt-ws-panel .nt-grid-item {
+    color: #a4a9b3;
+    font-size: 11px;
+}
+#nt-ws-panel .nt-grid-item .nt-text {
+    color: #a4a9b3;
+}
+#nt-ws-panel .nt-grid-item:has(.nt-hidden-cb:checked) .nt-text {
+    color: #d8dce5;
+}
+#nt-ws-panel .nt-code {
+    color: #5c616b;
+    font-size: 7px;
+}
+#nt-ws-panel .nt-data-input,
+#nt-ws-panel .nt-data-select {
+    color: #cfd3db !important;
+    font-size: 11.5px !important;
+}
+#nt-ws-panel .nt-btn-text,
+#nt-ws-panel .nt-btn-action {
+    font-size: 10px !important;
+    color: #9aa0a9 !important;
+}
+
+
 

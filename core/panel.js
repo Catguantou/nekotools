@@ -1124,6 +1124,14 @@ export function mountPanel() {
         }
     };
 
+    wrap.querySelector('#nt-ws-quickmenu')?.addEventListener('change', (e) => {
+        const enabled = Boolean(e.target.checked);
+        try { settings.set('worldsim', { enableQuickMenu: enabled }); } catch (_) {}
+        try {
+            window.dispatchEvent(new CustomEvent('nekotool:quickmenu-toggle', { detail: { enabled } }));
+        } catch (_) {}
+    });
+
     wrap.querySelector('#nt-ws-save').onclick = () => {
         wrap.querySelectorAll('.nt-mod-cb').forEach(cb => {
             const id = cb.dataset.modId;
