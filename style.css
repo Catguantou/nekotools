@@ -1208,3 +1208,59 @@ body {
     .ws-status-bar .plate-mark { display: none; }
     .ws-status-bar::after { display: none; }
 }
+
+/* ============================================================
+   按钮统一：描边式，不再大面积填色
+   ============================================================ */
+#nt-ws-panel .nt-btn-text,
+#nt-ws-panel .nt-btn-action {
+    position: relative;
+    height: 30px !important;
+    padding: 0 14px 0 24px !important;
+    background: transparent !important;
+    border: 1px solid var(--ntk-line2) !important;
+    color: var(--ntk-dim) !important;
+    font-size: 10.5px !important;
+    letter-spacing: .14em !important;
+    font-weight: 500;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
+}
+#nt-ws-panel .nt-btn-text::before,
+#nt-ws-panel .nt-btn-action::before {
+    content: "";
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    margin-top: -2.5px;
+    background: var(--ntk-faint);
+}
+#nt-ws-panel .nt-btn-text:hover,
+#nt-ws-panel .nt-btn-action:hover {
+    border-color: var(--ntk-blue) !important;
+    color: var(--ntk-blue2) !important;
+}
+#nt-ws-panel .nt-btn-action.primary {
+    border-color: var(--ntk-blue) !important;
+    color: var(--ntk-blue2) !important;
+}
+#nt-ws-panel .nt-btn-action.primary::before { background: var(--ntk-blue); }
+#nt-ws-panel .nt-btn-action.primary:hover {
+    background: var(--ntk-blue-soft) !important;
+    color: #fff !important;
+}
+#nt-ws-panel .nt-btn-action.danger {
+    border-color: var(--ntk-line2) !important;
+    color: var(--ntk-dim) !important;
+}
+#nt-ws-panel .nt-btn-action.danger:hover {
+    border-color: #b46a6a !important;
+    color: #d99a9a !important;
+}
+/* 底部应用按钮保持最克制 */
+#nt-ws-panel .nt-footer .nt-btn-action.primary {
+    height: 26px !important;
+    padding: 0 12px 0 22px !important;
+    background: transparent !important;
+}
