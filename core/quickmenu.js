@@ -528,6 +528,10 @@ async function showRosterModal() {
             }
             await refreshChar(book, name, { tier: 'T1', layer: currentLayerNo() });
             list = await readRoster(book);
+        } else if (list.some(x => x.name === name)) {
+            // 取消钉住：自动降到 T2，不再是每轮必更新的 T1
+            await refreshChar(book, name, { tier: 'T2' });
+            list = await readRoster(book);
         }
         renderList();
         await renderDetail();
@@ -2149,10 +2153,6 @@ function buildPop() {
         row.className = 'nt-quick-item' + (item.enabled ? '' : ' disabled');
         row.dataset.key = item.key;
 
-        const icon = document.createElement('span');
-        icon.className = 'nt-quick-item-icon';
-        icon.textContent = item.icon || '·';
-
         const label = document.createElement('span');
         label.className = 'nt-quick-item-label';
         label.textContent = item.label;
@@ -2161,7 +2161,6 @@ function buildPop() {
         hint.className = 'nt-quick-item-hint';
         hint.textContent = item.enabled ? item.hint : '后续版本';
 
-        row.appendChild(icon);
         row.appendChild(label);
         row.appendChild(hint);
 
