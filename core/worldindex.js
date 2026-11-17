@@ -18,8 +18,7 @@ function briefLine(name, text, max = 70) {
     const n = String(name || '').trim();
     const t = String(text || '').trim().replace(/\s+/g, ' ');
     if (!n || !t) return '';
-    const shown = n.length > 14 ? `${n.slice(0, 14)}…` : n;
-    return `- ${shown}｜${t.slice(0, max)}`;
+    return `- ${n}｜${t.slice(0, max)}`;
 }
 
 /** 从条目内容提取「- 名称｜内容」 */
@@ -60,15 +59,25 @@ export function buildBriefs(book) {
     if (items.length) briefs['道具'] = items.map(p => briefLine(p.name, p.value, 60)).filter(Boolean);
 
     const worldSections = [
-        ['世界·国家', '国家'],
-        ['世界·势力', '势力'],
+        ['世界·国家', '国家', 0, 6],
+        ['世界·势力', '势力', 0, 4],
     ];
-    for (const [title, key] of worldSections) {
+    for (const [title, key, first, last] of worldSections) {
         const lines = entryLines(find(title)?.content);
-        if (lines.length) briefs[key] = lines.map(p => briefLine(p.name, p.value, 64)).filter(Boolean);
+        if (!lines.length) continue;
+        briefs[key] = lines.map(p => {
+            const parts = p.value.split(/[｜|]/).map(s => s.trim()).filter(Boolean);
+            const short = [parts[first], parts[last]].filter(Boolean).join('｜');
+            return briefLine(p.name, short || p.value, 52);
+        }).filter(Boolean);
     }
     const news = entryLines(find('社会新闻')?.content);
-    if (news.length) briefs['新闻'] = news.map(p => briefLine(p.name, p.value, 64)).filter(Boolean);
+    if (news.length) {
+        briefs['新闻'] = news.map(p => {
+            const event = p.value.split(/[｜|]/)[0] || p.value;
+            return briefLine(p.name, event, 48);
+        }).filter(Boolean);
+    }
 
     const mapContent = String(find('地图')?.content || '');
     const cur = mapContent.match(/【当前】\s*([^\n]+)/);
@@ -129,10 +138,10 @@ export function renderIndex(sections) {
     for (const key of BRIEF_ORDER) {
         const rows = Array.isArray(briefs[key]) ? briefs[key].filter(Boolean) : [];
         const legacy = key === '道具' ? s.items : key === '伏笔' ? s.foreshadows : [];
+        if (!rows.length && !legacy.length) continue;
         lines.push(`【${key}】`);
         if (rows.length) lines.push(...rows);
-        else if (legacy.length) lines.push(legacy.join('、'));
-        else lines.push('（暂无）');
+        else lines.push(legacy.join('、'));
     }
     return lines.join('\n');
 }

@@ -4,7 +4,7 @@ import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock, appendSlotLog } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, refreshBriefs, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
-import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, findPath, MAP_TITLE } from '../core/worldmap.js';
+import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
 import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent } from '../core/worldquest.js';
 import { deriveGreenKeys, deriveNewsKeys } from '../core/worldkeys.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
@@ -20,7 +20,6 @@ const defaultSettings = {
     enableMap: true,
     enableQuests: true,
     enableCognition: true,
-    enablePresence: true,
     enableForeshadow: true,
     enableSummary: true,
     enableBigSummary: true,
@@ -38,7 +37,7 @@ const defaultSettings = {
     enableAntiLazy: true,
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '', presence: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '',
     }
 };
 
@@ -51,12 +50,8 @@ const mapReady = new Map();
 const mapTries = new Map();
 const questReady = new Map();
 const questTries = new Map();
-// 每轮只读快照（不写回、不持久化）：用于「在场候选」和 T1 名单
-const presenceCache = new Map();
+// 每轮只读快照（不写回、不持久化）：索引角色，用于 T1/T2/T3 调度
 const rosterCache = new Map();
-const mapCache = new Map();
-// 连续在场轮数：用于“5 轮内一直在场”的角色自动按 T2 调度；不改索引，AI 仍可改写等级
-const presenceStreak = new Map();
 
 /** 开局世界生成：第一次运行时补全整个世界，而不是只提取当前文本 */
 function buildGenesisPrompt() {
@@ -84,39 +79,22 @@ function tierOf(c) {
     return m ? `T${m[1]}` : 'T4';
 }
 
-function placeMatches(a, b) {
-    const norm = (s) => String(s || '').replace(/\s+/g, '');
-    const x = norm(a);
-    const y = norm(b);
-    if (!x || !y) return false;
-    return x.includes(y) || y.includes(x);
-}
-
 /** 插件硬调度：按 T1/T2/T3 规则算出本轮该结算谁，不靠模型自己挑 */
 function computeTickTargets(bookName, currentLayer) {
     const chars = rosterCache.get(bookName) || [];
-    const clock = getSlotClock(bookName) || {};
-    const place = String(clock.place || '').trim();
     const t2Every = Math.max(1, Number(settings.charTickEvery) || 2);
     const t3Every = Math.max(5, Number(settings.staleAfter) || 5);
     const max = Math.max(1, Number(settings.tickMaxChars) || 2);
     const picked = [];
-    const streaks = presenceStreak.get(bookName) || new Map();
 
     for (const c of chars) {
-        let tier = tierOf(c);
+        const tier = tierOf(c);
         const layer = Number(c.layer) || 0;
         const age = Math.max(0, currentLayer - layer);
-        const present = place && (placeMatches(c.location, place) || placeMatches(c.action, place));
-        const streak = streaks.get(c.name) || 0;
-        const autoT2 = present && streak >= 5 && (tier === 'T3' || tier === 'T4');
-        if (autoT2) tier = 'T2';
         if (tier === 'T1') {
             picked.push({ name: c.name, tier, age, priority: 0, reason: 'T1' });
-        } else if (tier === 'T2' && present) {
-            picked.push({ name: c.name, tier, age, priority: 1, reason: autoT2 ? 'T2 常驻5轮' : 'T2 在场' });
         } else if (tier === 'T2' && age >= t2Every) {
-            picked.push({ name: c.name, tier, age, priority: 2, reason: `T2 离场 ${age} 层` });
+            picked.push({ name: c.name, tier, age, priority: 2, reason: `T2 ${age} 层` });
         } else if (tier === 'T3' && age >= t3Every) {
             picked.push({ name: c.name, tier, age, priority: 3, reason: `T3 ${age} 层` });
         }
@@ -128,23 +106,20 @@ function computeTickTargets(bookName, currentLayer) {
     return t1.concat(rest.slice(0, Math.max(0, max - t1.length)));
 }
 
-/** 长期未出场降级：除 T1 外，超过 20 层且不在场就降一级 */
+/** 长期未更新降级：除 T1 外，超过 20 层没更新就降一级 */
 async function applyTierDowngrades(bookName, currentLayer) {
     if (!settings.enableAntiLazy) return;
     const chars = rosterCache.get(bookName) || [];
-    const clock = getSlotClock(bookName) || {};
-    const place = String(clock.place || '').trim();
     for (const c of chars) {
         const tier = tierOf(c);
         if (tier === 'T1') continue;
         const age = Math.max(0, currentLayer - (Number(c.layer) || 0));
         if (age <= 20) continue;
-        if (place && (placeMatches(c.location, place) || placeMatches(c.action, place))) continue;
         const next = tier === 'T2' ? 'T3' : tier === 'T3' ? 'T4' : '';
         if (!next) continue;
         await refreshChar(bookName, c.name, { tier: next });
         c.tier = next;
-        console.log(`[worldsim] 角色降级：${c.name} ${tier} → ${next}（${age} 层未出场）`);
+        console.log(`[worldsim] 角色降级：${c.name} ${tier} → ${next}（${age} 层未更新）`);
     }
 }
 
@@ -170,43 +145,11 @@ function buildTickPrompt({ needWorldTick, targets = [] }) {
     return p;
 }
 
-/** 每轮只读快照：角色位置/行动 + 索引等级，不写回 */
+/** 每轮只读快照：索引角色等级，不写回 */
 function refreshSnapshots(bookName, book) {
     if (!bookName || !book || !book.entries) return;
-    const chars = [];
-    for (const entry of Object.values(book.entries)) {
-        if (!entry || !entry.comment || !entry.comment.startsWith('角色·')) continue;
-        const parsed = parseCharacterYaml(entry.content);
-        chars.push({
-            name: entry.comment.slice(3),
-            location: parsed['位置'] || '',
-            action: parsed['当前行动'] || '',
-        });
-    }
-    presenceCache.set(bookName, chars);
-
     const idx = Object.values(book.entries).find(e => e && e.comment === INDEX_TITLE);
     rosterCache.set(bookName, idx ? parseIndex(idx.content).chars : []);
-    const mapEntry = Object.values(book.entries).find(e => e && e.comment === MAP_TITLE);
-    mapCache.set(bookName, mapEntry ? parseMap(mapEntry.content) : null);
-}
-
-/** 连续在场轮数：5 轮内一直在当前地点的角色，调度时按 T2 处理（不写索引，AI 仍有等级决定权） */
-function updatePresenceStreaks(bookName) {
-    if (!bookName) return;
-    const chars = rosterCache.get(bookName) || [];
-    const clock = getSlotClock(bookName) || {};
-    const place = String(clock.place || '').trim();
-    const old = presenceStreak.get(bookName) || new Map();
-    const next = new Map();
-    if (place) {
-        for (const c of chars) {
-            const present = placeMatches(c.location, place) || placeMatches(c.action, place);
-            const n = present ? (old.get(c.name) || 0) + 1 : 0;
-            if (n > 0) next.set(c.name, n);
-        }
-    }
-    presenceStreak.set(bookName, next);
 }
 
 /** 开局地图生成：从世界书地点出发，补全周边可探索地点 */
@@ -428,43 +371,6 @@ function buildCognitionPrompt() {
     return p;
 }
 
-/** 在场：角色不能凭空出现在当前场景 */
-function buildPresencePrompt(bookName) {
-    const clock = bookName ? getSlotClock(bookName) : null;
-    const placeText = clock && clock.place ? String(clock.place) : '';
-    const place = placeText ? `当前地点：${placeText}。` : '';
-    let candidates = '';
-    let travel = '';
-    if (placeText) {
-        const chars = presenceCache.get(bookName) || [];
-        const here = chars
-            .filter(c => [c.location, c.action].join(' ').includes(placeText))
-            .map(c => c.name)
-            .slice(0, 10);
-        if (here.length) {
-            candidates = `按当前档案，此刻在「${placeText}」的候选：${here.join('、')}。只能让这些人在场；其他角色要出场必须写明怎么赶来。`;
-        }
-        const map = mapCache.get(bookName);
-        const path = map ? findPath(map, placeText) : null;
-        const site = path && path.site && map.sites ? map.sites[path.site] : null;
-        if (site && site.travel) {
-            travel = `当前地点到各地点的路程：${site.travel}。角色从别处赶来时必须写清路上花了多久，不能瞬移。`;
-        } else if (site) {
-            travel = '当前地点还没有记录路程；角色从别处赶来时必须自己写清路上时间，不能瞬移。';
-        }
-    }
-    let p = `<nekotools:presence>
-【在场】${place}${candidates}${travel}
-- 角色出场必须满足：索引里的位置就是当前地点，或按他的当前行动确实在此地。
-- 不在场的角色不能凭空出现；若要出场，必须先写清他如何赶到（路程、时间、理由）。
-- 每次让角色出场前先检查：他真的会在这里吗？不确定就让他不在。
-- T4 路人只在需要时出现，不要为了热闹塞人。
-</nekotools:presence>`;
-    const custom = (settings.customPrompts.presence || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
-}
-
 function buildStatusPrompt() {
     const tagOpen = '<ws_' + 'status>';
     const tagClose = '</ws_' + 'status>';
@@ -634,7 +540,6 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
     if (needQuestGenesis) list.push({ role: 'system', content: buildQuestGenesisPrompt() });
     list.push({ role: 'system', content: DIRECTOR_PROMPT });
     if (settings.enableCognition) list.push({ role: 'system', content: buildCognitionPrompt() });
-    if (settings.enablePresence && includeTracking) list.push({ role: 'system', content: buildPresencePrompt(bookName) });
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
     if (settings.enablePreview) list.push({ role: 'system', content: buildPreviewPrompt() });
@@ -1287,7 +1192,6 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     if (data.map) {
         const map = await applyMapOps(bookName, data.map);
         summary.map = map ? Object.keys(map.sites || {}).length : 0;
-        if (map) appliedMap = map;
     }
     if (data.main) {
         const main = await applyMain(bookName, data.main);
@@ -1298,7 +1202,6 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         }
     }
     let questPrune = null;
-    let appliedMap = null;
     if (data.quests && settings.enableQuests) {
         const quests = await applyQuests(bookName, data.quests, { today: (getSlotClock(bookName) || {}).time || '' });
         summary.quests = quests ? Object.keys(quests).length : 0;
@@ -1323,7 +1226,6 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         summary.plot = map ? Object.keys(map).length : 0;
     }
     refreshSnapshots(bookName, book);
-    if (appliedMap) mapCache.set(bookName, appliedMap);
     await refreshBriefs(bookName);
     recordWorldChange(bookName, data, layer, questPrune);
     return summary;
@@ -1389,7 +1291,6 @@ registry.register({
         if (ctx.eventSource && ctx.eventTypes?.CHAT_CHANGED) {
             ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, () => {
                 lastAppliedUpdate = null;
-                presenceStreak.clear();
                 setTimeout(async () => {
                     try {
                         if (!settings.enabled) return;
@@ -1682,7 +1583,6 @@ registry.register({
                 }
                 await applyTierDowngrades(currentLorebook, replyLayer);
                 refreshSnapshots(currentLorebook, charsBook);
-                updatePresenceStreaks(currentLorebook);
                 if (data.items && settings.enableItems) {
                     const itemMap = await applyAggregateOps(currentLorebook, '道具', data.items, 900, { keyword: true });
                     if (itemMap) await syncNames(currentLorebook, 'items', Object.keys(itemMap));
@@ -1702,7 +1602,6 @@ registry.register({
                     const mapData = await applyMapOps(currentLorebook, data.map);
                     if (mapData) {
                         mapReady.set(currentLorebook, mapHasStructure(mapData));
-                        mapCache.set(currentLorebook, mapData);
                     }
                 }
                 if (data.main && settings.enableQuests) {
