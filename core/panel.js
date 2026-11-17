@@ -68,10 +68,10 @@ export function mountPanel() {
                 ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, async () => {
                     const cfg = stBridge.getLoreManagerConfig();
                     if (cfg.syncCharLifecycle) {
-                        const syncedBook = await stBridge.syncFromCharacterCard(null, true);
-                        if (syncedBook && cfg.autoActivateCharBook) {
-                            await stBridge.mountGlobalWorldbook(syncedBook, true);
-                        }
+                        // 只做「提取内嵌书并绑定到角色」，不再额外全局激活：
+                        // 角色卡绑定的书 ST 会当作 character lore 自动注入，
+                        // 再全局激活一次就是同一本书注入两遍。
+                        await stBridge.syncFromCharacterCard(null, true);
                     }
                     await stBridge.preloadActivatedLorebooks();
                     const listEl = document.getElementById('nt-lore-list');

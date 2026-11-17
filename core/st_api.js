@@ -77,14 +77,21 @@ export function readWorldNames() {
     return [];
 }
 
-/** 当前全局激活的世界书名（活引用优先，其次持久化副本） */
+/** 当前全局激活的世界书名（活引用优先，其次 DOM，最后持久化副本） */
 export function readActiveWorlds() {
     if (wiModule && Array.isArray(wiModule.selected_world_info)) {
         return [...wiModule.selected_world_info];
     }
+    // 模块还没加载时，DOM 上的 selected 状态就是官方 change 处理器读取的依据
+    const sel = document.getElementById('world_info');
+    if (sel && sel.options && sel.options.length) {
+        const picked = Array.from(sel.options)
+            .filter(o => o.selected)
+            .map(o => (o.text || '').trim())
+            .filter(Boolean);
+        if (picked.length) return picked;
+    }
     const es = getExtensionSettings();
-    // 实测：1.16 的真实持久化位置是 settings.world_info_settings.world_info.globalSelect；
-    // extension_settings.world_info.globalSelect 是旧版/插件自写的死数据。
     const list = es?.world_info_settings?.world_info?.globalSelect
         ?? es?.world_info?.globalSelect;
     return Array.isArray(list) ? [...list] : [];
@@ -137,7 +144,8 @@ export async function setWorldActive(name, active) {
         try {
             m.onWorldInfoChange({ state: active ? 'on' : 'off', silent: true }, name);
             refreshGlobalSelectUi();
-            return true;
+            // 官方函数在「书不存在」时只 toast 不抛错，必须复核结果
+            return readActiveWorlds().includes(name) === Boolean(active);
         } catch (e) {
             console.warn('[nekotools] onWorldInfoChange 失败，改用 DOM 回退', e);
         }
@@ -191,6 +199,20 @@ export async function writeCharWorld(charIndex, worldName) {
     if (!char.data) char.data = {};
     if (!char.data.extensions) char.data.extensions = {};
     char.data.extensions.world = worldName || '';
+    return false;
+}
+
+/** 删除世界书：必须走 ST 自己的 deleteWorldInfo，才会清 worldInfoCache（裸 API 不会） */
+export async function deleteWorldInfo(name) {
+    const m = await loadWorldInfoModule();
+    if (m && typeof m.deleteWorldInfo === 'function') {
+        try {
+            await m.deleteWorldInfo(name);
+            return true;
+        } catch (e) {
+            console.warn('[nekotools] deleteWorldInfo 失败，回退裸 API', e);
+        }
+    }
     return false;
 }
 

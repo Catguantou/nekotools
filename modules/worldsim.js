@@ -38,9 +38,10 @@ function saveSettings() {
 }
 
 function getLorebookName() {
-    if (settings.lorebookName) return settings.lorebookName;
+    if (settings.lorebookName) return stBridge.sanitizeWorldName(settings.lorebookName);
     const charName = stBridge.getCharacterName();
-    return charName ? `【NEKOTOOL世界加载器·${charName}】` : '【NEKOTOOL世界加载器·默认】';
+    if (!charName) return '';
+    return stBridge.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`);
 }
 
 function fetchConstantLore(recentText = '') {
@@ -245,9 +246,11 @@ registry.register({
         // 首次运行：自动建库 + 挂到全局，而不是等用户手动去面板里建
         setTimeout(async () => {
             try {
-                if (!stBridge.getCharacterName()) return;
+                if (!settings.enabled || !stBridge.getCharacterName()) return;
                 const name = getLorebookName();
                 await stBridge.ensureWorldbook(name);
+                // 切角色后把上个角色自动挂上的追踪库关掉，别让旧角色的总结污染新角色
+                await stBridge.deactivateStaleAutoBooks(name);
                 await stBridge.preloadActivatedLorebooks();
             } catch (e) {
                 console.warn('[worldsim] 初始化世界书失败', e);
@@ -260,8 +263,10 @@ registry.register({
             ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, () => {
                 setTimeout(async () => {
                     try {
-                        if (!stBridge.getCharacterName()) return;
-                        await stBridge.ensureWorldbook(getLorebookName());
+                        if (!settings.enabled || !stBridge.getCharacterName()) return;
+                        const name = getLorebookName();
+                        await stBridge.ensureWorldbook(name);
+                        await stBridge.deactivateStaleAutoBooks(name);
                     } catch (e) {
                         console.warn('[worldsim] 切换会话同步世界书失败', e);
                     }
@@ -298,6 +303,14 @@ registry.register({
     async onResponse({ captured }) {
         loadSettings();
         if (!settings.enabled) return;
+
+        // 快速重 roll 时两次结算会并发：各自读整本、各自整本覆盖，后写会吞掉前写
+        if (this._settling) {
+            console.warn('[worldsim] 上一次结算尚未写完，跳过本次');
+            return;
+        }
+        this._settling = true;
+        try {
 
         const currentLorebook = getLorebookName();
         if (!currentLorebook) return;
@@ -398,5 +411,8 @@ registry.register({
         }
 
         setTimeout(() => { stBridge.hideOldMessages(settings.hideKeepCount); }, 1000);
+        } finally {
+            this._settling = false;
+        }
     }
 });

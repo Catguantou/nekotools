@@ -7,7 +7,7 @@ import {
     setWorldActive,
     refreshGlobalSelectUi,
     writeCharWorld,
-    reloadChatUi,
+    deleteWorldInfo,
 } from './st_api.js';
 
 function extractStringName(item) {
@@ -49,6 +49,44 @@ export const stBridge = {
 
     saveLoreManagerConfig(patch) {
         settings.set('loremanager', patch);
+    },
+
+    /** 世界书的文件名由 ST 决定，非法字符会被后端改名；本地先统一处理，避免「建完找不到」 */
+    sanitizeWorldName(name) {
+        return String(name ?? '')
+            .replace(/[\\/:*?"<>|]/g, '_')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 120);
+    },
+
+    getAutoActiveBooks() {
+        const cfg = settings.get('loremanager');
+        return Array.isArray(cfg.autoActiveBooks) ? cfg.autoActiveBooks : [];
+    },
+
+    rememberAutoActive(name) {
+        if (!name) return;
+        const list = this.getAutoActiveBooks();
+        if (list.includes(name)) return;
+        settings.set('loremanager', { autoActiveBooks: [...list, name] });
+    },
+
+    forgetAutoActive(name) {
+        settings.set('loremanager', {
+            autoActiveBooks: this.getAutoActiveBooks().filter(n => n !== name),
+        });
+    },
+
+    /** 切角色时关掉上个角色自动挂上的追踪库，否则旧角色的总结会被注入新角色 */
+    async deactivateStaleAutoBooks(keepName) {
+        for (const name of this.getAutoActiveBooks()) {
+            if (name === keepName) continue;
+            if (this.isGloballyActivated(name)) {
+                try { await this.mountGlobalWorldbook(name, false); } catch (_) {}
+            }
+            this.forgetAutoActive(name);
+        }
     },
 
     getCharacterName() {
@@ -188,8 +226,13 @@ export const stBridge = {
         const matched = [];
         const lowerText = String(recentText).toLowerCase();
 
-        for (const [name, book] of loreCache.entries()) {
+        // 只处理用户在「独立注入」里显式登记、但 ST 没激活的书；
+        // 遍历整个 loreCache 会把只是打开看过一眼的书也塞进提示词。
+        const cfg = settings.get('loremanager');
+        const fallbackBooks = Array.isArray(cfg.activeBooks) ? cfg.activeBooks : [];
+        for (const name of fallbackBooks) {
             if (active.has(name)) continue;
+            const book = loreCache.get(name) || this.getLorebook(name);
             if (!book || !book.entries) continue;
             for (const entry of Object.values(book.entries)) {
                 if (entry.disable) continue;
@@ -276,7 +319,8 @@ export const stBridge = {
         }
 
         if (!this.isGloballyActivated(name)) {
-            await this.mountGlobalWorldbook(name, true);
+            const activated = await this.mountGlobalWorldbook(name, true);
+            if (activated) this.rememberAutoActive(name);
         }
         return book;
     },
@@ -295,22 +339,29 @@ export const stBridge = {
                 await new Promise(r => setTimeout(r, 300));
             }
 
-            const res = await fetch('/api/worldinfo/delete', {
-                method: 'POST',
-                headers: {
-                    ...(typeof ctx.getRequestHeaders === 'function' ? ctx.getRequestHeaders() : {}),
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ name })
-            });
-            
-            if (res.ok) {
+            // 先解绑全局激活，避免删完文件还留着幽灵选项
+            await this.mountGlobalWorldbook(name, false);
+
+            // 必须走 ST 的 deleteWorldInfo，它才会清 worldInfoCache；
+            // 裸调 API 删书后，ST 仍可能从旧缓存里注入已删除的条目。
+            let ok = await deleteWorldInfo(name);
+            if (!ok) {
+                const res = await fetch('/api/worldinfo/delete', {
+                    method: 'POST',
+                    headers: {
+                        ...(typeof ctx.getRequestHeaders === 'function' ? ctx.getRequestHeaders() : {}),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name })
+                });
+                ok = res.ok;
+            }
+
+            if (ok) {
                 loreCache.delete(name);
                 const wInfo = ctx.world_info || ctx.worldInfo;
                 if (wInfo && wInfo[name]) delete wInfo[name];
-
-                // 先解绑全局激活，再让 ST 刷新列表，避免留下幽灵选项
-                await this.mountGlobalWorldbook(name, false);
+                this.forgetAutoActive(name);
                 await refreshWorldList();
                 return true;
             }
@@ -401,7 +452,7 @@ export const stBridge = {
         
         if (!book || !book.entries || !book.entries.length) return false;
         
-        const targetName = `【角色卡内嵌】${charName}`;
+        const targetName = this.sanitizeWorldName(`【角色卡内嵌】${charName}`);
         const exists = this.getWorldNames().includes(targetName);
         if (exists && silent) return targetName;
         
@@ -465,8 +516,8 @@ export const stBridge = {
         
         const booksToDelete = [];
         if (char.data?.extensions?.world) booksToDelete.push(char.data.extensions.world);
-        booksToDelete.push(`【角色卡内嵌】${charName}`);
-        booksToDelete.push(`【NEKOTOOL世界加载器·${charName}】`);
+        booksToDelete.push(this.sanitizeWorldName(`【角色卡内嵌】${charName}`));
+        booksToDelete.push(this.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`));
         
         for (const book of booksToDelete) {
             const worldNames = this.getWorldNames();
@@ -562,11 +613,9 @@ export const stBridge = {
                 msg.extra = { ...(msg.extra || {}), hidden: true };
             }
             if (typeof ctx.saveChat === 'function') {
-                ctx.saveChat().then(() => {
-                    // 'chat_changed' 不是合法事件名，真名是 'chat_id_changed'；
-                    // 走 st_api 的 reloadChatUi 让 ST 重新渲染，隐藏才会立刻生效
-                    reloadChatUi();
-                });
+                // ST 1.16 不消费 extra.hidden 做渲染，重载聊天只会跳回底部并打断可能的生成，
+                // 这里只落盘；「隐藏」体现在导出（exportSkipHidden）和下次重新加载。
+                ctx.saveChat();
             }
         }
     }
