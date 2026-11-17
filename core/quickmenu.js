@@ -1681,6 +1681,50 @@ async function showQuestsModal() {
 }
 
 
+const mainCompleteShown = new Set();
+
+async function showMainCompleteModal(bookName) {
+    if (!bookName || mainCompleteShown.has(bookName)) return;
+    mainCompleteShown.add(bookName);
+    const main = await readMain(bookName);
+
+    const body = document.createElement('div');
+    body.className = 'nt-quests';
+    const card = document.createElement('div');
+    card.className = 'nt-quest-main';
+    const title = document.createElement('div');
+    title.className = 'nt-quest-title';
+    title.textContent = `主线完成：${main['标题'] || '未命名主线'}`;
+    card.appendChild(title);
+    const note = document.createElement('div');
+    note.className = 'nt-quest-empty';
+    note.textContent = '主线进度到 100%。你想怎么收尾？';
+    card.appendChild(note);
+    body.appendChild(card);
+
+    const choose = (patch, msg) => async () => {
+        await saveMain(bookName, { ...main, ...patch });
+        toast(msg, 'success');
+        return true;
+    };
+
+    openModal({
+        title: '主线完成',
+        body,
+        footer: [
+            { label: '进入结局', primary: true, onClick: choose({ 阶段: '结局', 进度: 100, 下一步: '故事结束' }, '已进入结局') },
+            { label: '后日谈', onClick: choose({ 阶段: '后日谈', 进度: 0, 下一步: '日常收尾' }, '已转为后日谈') },
+            { label: '新主线', onClick: async () => {
+                mainCompleteShown.delete(bookName);
+                await saveMain(bookName, { 标题: '新主线（待编辑）', 目标: '待定', 阶段: '新主线', 进度: 0, 失败代价: '', 下一步: '在可办事项里编辑' });
+                toast('已重置为新主线，可在可办事项里改', 'success');
+                return true;
+            } },
+            { label: '自己决定' },
+        ],
+    });
+}
+
 async function showRefreshModal() {
     const book = stBridge.currentTrackerName();
     if (!book) {
@@ -2055,6 +2099,10 @@ export function mountQuickMenu() {
     // 酒馆偶尔会重建输入栏；定期补挂，一次 getElementById 很便宜
     if (!mounted) {
         mounted = true;
+        window.addEventListener('nekotool:main-complete', (e) => {
+            const book = e && e.detail ? e.detail.bookName : '';
+            showMainCompleteModal(book).catch(err => console.warn('[nekotools] 主线完成弹窗失败', err));
+        });
         setInterval(() => {
             if (!ensureButton()) return;
             if (!$(POP_ID)) buildPop();

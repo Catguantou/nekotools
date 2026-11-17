@@ -81,6 +81,9 @@ export async function saveMain(bookName, main) {
         extra: { position: 0, depth: 0, order: 810, key: [] },
     });
     await stBridge.persistLorebook(bookName, book);
+    if (typeof window !== 'undefined' && merged['进度'] >= 100) {
+        window.dispatchEvent(new CustomEvent('nekotool:main-complete', { detail: { bookName } }));
+    }
     return merged;
 }
 
