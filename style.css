@@ -1324,6 +1324,7 @@ body {
 }
 
 #leftSendForm > #nt-quick-btn {
+    position: relative;
     width: 26px !important;
     height: 26px !important;
     margin: 0 4px !important;
@@ -1335,9 +1336,9 @@ body {
     background: rgba(0, 0, 0, 0.28);
     color: #cfd3dd;
     font-family: 'Courier New', monospace;
-    font-size: 10px;
+    font-size: 8px;
     font-weight: 700;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
     cursor: pointer;
     user-select: none;
     transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
@@ -1346,6 +1347,19 @@ body {
     border-color: var(--ntq-blue);
     color: #fff;
     box-shadow: 0 0 8px rgba(93, 111, 174, 0.55);
+}
+#leftSendForm > #nt-quick-btn.has-alert {
+    border-color: #b46a6a;
+}
+#leftSendForm > #nt-quick-btn.has-alert::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    background: #d96a6a;
+    box-shadow: 0 0 6px rgba(217, 106, 106, 0.9);
 }
 
 #nt-quick-pop {
@@ -1393,6 +1407,39 @@ body {
     display: flex;
     flex-direction: column;
     gap: 2px;
+}
+
+#nt-quick-pop .nt-quick-jump {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 6px;
+    padding: 6px 8px;
+    border: 1px solid rgba(180, 106, 106, 0.45);
+    background: rgba(180, 106, 106, 0.1);
+    color: #e0c0c0;
+    font-size: 10px;
+    line-height: 1.4;
+}
+#nt-quick-pop .nt-quick-jump[hidden] {
+    display: none !important;
+}
+#nt-quick-pop .nt-quick-jump-text {
+    flex: 1;
+    min-width: 0;
+}
+#nt-quick-pop .nt-quick-jump-x {
+    flex: 0 0 auto;
+    padding: 0 4px;
+    background: transparent;
+    border: 0;
+    color: #c9a0a0;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+}
+#nt-quick-pop .nt-quick-jump-x:hover {
+    color: #fff;
 }
 
 #nt-quick-pop .nt-quick-item {

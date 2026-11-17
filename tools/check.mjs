@@ -157,6 +157,23 @@ try {
         wf.parseSaveFile({ __nekotool_save: true, version: 1, card: 'A', book: { entries: [] } });
     } catch { arrEntries = true; }
     assert(arrEntries, 'entries 是数组应当报错');
+
+    // 状态栏 → 世界时钟
+    const fields = wf.parseStatusFields('时间: 2026年11月17日 | 地点: 酒馆 | 天气: 雨 | 温度: 18℃');
+    assert(fields && fields.time === '2026年11月17日' && fields.place === '酒馆', '状态栏解析失败');
+    assert(wf.parseStatusFields('时间：2026年1月2日｜地点：王都').place === '王都', '全角冒号/分隔符解析失败');
+    assert(wf.parseStatusFields('什么都没有') === null, '无时间地点的状态栏不应解析');
+
+    const d1 = wf.parseGameDate('2026年11月17日');
+    const d2 = wf.parseGameDate('2027年2月1日');
+    assert(d1 && d2 && wf.daysBetween(d1, d2) === 76, '剧情日期差值不对');
+    assert(wf.parseGameDate('不是日期') === null, '非法日期应返回 null');
+    assert(
+        wf.buildClockContent({ time: '2026年11月17日', place: '酒馆', weather: '雨', temperature: '18℃' }, 42).includes('第 42 层'),
+        '时钟条目缺少层号'
+    );
+    assert(wf.tierForScore(6) === 'T1' && wf.tierForScore(4) === 'T2', '角色等级映射不对');
+    assert(wf.tierForScore(2) === 'T3' && wf.tierForScore(1) === 'T4', '角色等级映射不对（低分）');
 } catch (e) {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }

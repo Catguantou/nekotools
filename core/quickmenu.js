@@ -10,6 +10,8 @@ import {
     importCurrent,
 } from './slots.js';
 import { slotLabel } from './worldfmt.js';
+import { settings } from './settings.js';
+import { stBridge } from './st_bridge.js';
 
 const BTN_ID = 'nt-quick-btn';
 const POP_ID = 'nt-quick-pop';
@@ -37,6 +39,35 @@ function formatTime(iso) {
     if (Number.isNaN(d.getTime())) return '';
     const p = n => String(n).padStart(2, '0');
     return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// ========== 时间跳跃提示 ==========
+
+function currentJump() {
+    const cfg = settings.get('worldsim');
+    const jump = cfg && cfg.clockJump;
+    if (!jump || typeof jump !== 'object') return null;
+    const cur = stBridge.currentTrackerName();
+    if (jump.book && cur && jump.book !== cur) return null;
+    return jump;
+}
+
+function updateJumpUi() {
+    const jump = currentJump();
+    const btn = $(BTN_ID);
+    if (btn) btn.classList.toggle('has-alert', Boolean(jump));
+    const banner = $('nt-quick-jump');
+    if (!banner) return;
+    banner.hidden = !jump;
+    if (jump) {
+        const text = banner.querySelector('.nt-quick-jump-text');
+        if (text) text.textContent = `剧情时间跳了 ${jump.days} 天，世界还没补算（第 5 期接入）`;
+    }
+}
+
+function dismissJump() {
+    settings.set('worldsim', { clockJump: null });
+    updateJumpUi();
 }
 
 // ========== 弹窗基建 ==========
@@ -305,6 +336,7 @@ function placePop() {
 function openPop() {
     const pop = $(POP_ID);
     if (!pop) return;
+    updateJumpUi();
     pop.hidden = false;
     placePop();
 }
@@ -331,6 +363,24 @@ function buildPop() {
     const head = document.createElement('div');
     head.className = 'nt-quick-pop-head';
     head.innerHTML = '<span class="nt-quick-dot"></span><span class="nt-quick-pop-title">NEKOTOOL</span><span class="nt-quick-pop-tag">QUICK</span>';
+
+    const banner = document.createElement('div');
+    banner.id = 'nt-quick-jump';
+    banner.className = 'nt-quick-jump';
+    banner.hidden = true;
+    const bannerText = document.createElement('span');
+    bannerText.className = 'nt-quick-jump-text';
+    const bannerX = document.createElement('button');
+    bannerX.type = 'button';
+    bannerX.className = 'nt-quick-jump-x';
+    bannerX.textContent = '×';
+    bannerX.title = '知道了，先不提示';
+    bannerX.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismissJump();
+    });
+    banner.appendChild(bannerText);
+    banner.appendChild(bannerX);
 
     const list = document.createElement('div');
     list.className = 'nt-quick-pop-list';
@@ -368,6 +418,7 @@ function buildPop() {
     }
 
     pop.appendChild(head);
+    pop.appendChild(banner);
     pop.appendChild(list);
     document.body.appendChild(pop);
 
@@ -388,6 +439,7 @@ function buildPop() {
         const popEl = $(POP_ID);
         if (popEl && !popEl.hidden) placePop();
     });
+    window.addEventListener('nekotool:clock-jump', () => updateJumpUi());
 }
 
 // ========== 挂载 ==========
@@ -401,12 +453,13 @@ function ensureButton() {
     btn.id = BTN_ID;
     btn.className = 'nt-quick-btn';
     btn.title = 'NEKOTOOL 快捷菜单';
-    btn.textContent = 'NT';
+    btn.textContent = 'TOOL';
     btn.addEventListener('click', (e) => {
         e.stopPropagation();
         togglePop();
     });
     host.appendChild(btn);
+    updateJumpUi();
     return true;
 }
 
@@ -428,6 +481,7 @@ export function mountQuickMenu() {
         setInterval(() => {
             if (!ensureButton()) return;
             if (!$(POP_ID)) buildPop();
+            updateJumpUi();
         }, 3000);
     }
 }

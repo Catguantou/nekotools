@@ -135,6 +135,80 @@ export const stBridge = {
         return typeof name === 'string' && name.startsWith('【NEKOTOOL世界加载器·');
     },
 
+    /** 像不像一个人名（扫世界书时用来过滤设定/规则类条目） */
+    looksLikeCharacterName(name) {
+        const s = String(name ?? '').trim();
+        if (s.length < 2 || s.length > 12) return false;
+        if (/[：:｜|【】\[\]（）()、，,。.!！?？\d]/.test(s)) return false;
+        if (/^(设定|世界|规则|背景|简介|概要|说明|备注|系统|提示|注意|序章|终章|第一章)$/.test(s)) return false;
+        return true;
+    },
+
+    /**
+     * 本地扫全部世界书，汇总「像角色」的条目名并打分。
+     * 只读，不写盘；返回 [{ name, score }]，按分数降序、最多 40 个。
+     */
+    async scanCharacterCandidates() {
+        const reserved = new Set([
+            '角色索引', '世界时钟', '主线', '周边地图', '世界局势', '世界新闻',
+            '小总结', '大总结', '剧情推演', '道具', '计划', '伏笔', '世界配置',
+            '白名单', '黑名单',
+            // 常见设定类标题，别当成人名
+            '地理', '历史', '政治', '经济', '文化', '势力', '国家', '地点',
+            '地图', '技能', '魔法', '种族', '宗教', '组织', '人物', '角色',
+            '关系', '时间线', '世界观', '背景', '设定', '规则', '序章', '终章',
+        ]);
+
+        const names = await this.fetchWorldNamesFromApi();
+        const list = Array.isArray(names) && names.length ? names : this.getWorldNames();
+        const charName = this.getCharacterName();
+        const scores = new Map();
+        const bump = (name, n) => {
+            const k = String(name ?? '').trim();
+            if (!k) return;
+            scores.set(k, (scores.get(k) || 0) + n);
+        };
+
+        for (const bookName of list) {
+            // 别的角色卡的追踪书不参与扫描，避免把别人家的 NPC 混进来
+            if (this.isTrackerBook(bookName) && !isSlotOf(bookName, charName)) continue;
+            let book = null;
+            try {
+                book = await this.loadWorldInfoAsync(bookName);
+            } catch (_) {
+                continue;
+            }
+            if (!book || !book.entries) continue;
+            for (const entry of Object.values(book.entries)) {
+                if (!entry) continue;
+                const comment = String(entry.comment || '').trim();
+                if (comment.startsWith('角色·')) {
+                    bump(comment.slice(3), 4);
+                    continue;
+                }
+                if (reserved.has(comment)) continue;
+                if (!this.looksLikeCharacterName(comment)) continue;
+                bump(comment, 2);
+            }
+        }
+
+        if (charName) bump(charName, 2);
+
+        // 聊天里被提到得越多，等级越高（本地数数，零 token）
+        const ctx = this.getContext();
+        const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
+        const chatText = chat.map(m => (m && m.mes) || '').join('\n');
+        for (const [name, score] of [...scores.entries()]) {
+            const hits = chatText.split(name).length - 1;
+            if (hits > 0) scores.set(name, score + Math.min(3, hits));
+        }
+
+        return [...scores.entries()]
+            .map(([name, score]) => ({ name, score }))
+            .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'zh'))
+            .slice(0, 40);
+    },
+
     getAutoActiveBooks() {
         const cfg = settings.get('loremanager');
         return Array.isArray(cfg.autoActiveBooks) ? cfg.autoActiveBooks : [];

@@ -125,6 +125,72 @@ export function slotLabel(n) {
     return `第 ${num} 档`;
 }
 
+// ========== 状态栏 / 世界时钟 ==========
+
+/**
+ * 解析状态栏文本（模型输出的 `<ws_status>` 内容）。
+ * 例：时间: 2026年11月17日 | 地点: 酒馆 | 天气: 雨 | 温度: 18℃
+ * 返回 { time, place, weather, temperature }；没有时间也没有地点时返回 null。
+ */
+export function parseStatusFields(raw) {
+    const text = String(raw ?? '').trim();
+    if (!text) return null;
+
+    const map = {};
+    for (const part of text.split(/[|｜\n]/)) {
+        const m = part.match(/^\s*([^:：]+)[:：]([\s\S]*)$/);
+        if (m) map[m[1].trim()] = m[2].trim();
+    }
+    if (!map['时间'] && !map['地点']) return null;
+    return {
+        time: map['时间'] || '',
+        place: map['地点'] || '',
+        weather: map['天气'] || '',
+        temperature: map['温度'] || '',
+    };
+}
+
+/** 从文本里抠出剧情日期 { y, m, d }；没有或日期非法返回 null */
+export function parseGameDate(text) {
+    const m = String(text ?? '').match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    return { y, m: mo, d };
+}
+
+function gameDayNumber(date) {
+    return Math.floor(Date.UTC(date.y, date.m - 1, date.d) / 86400000);
+}
+
+/** 两个剧情日期相差几天（b - a）；任一无效返回 0 */
+export function daysBetween(a, b) {
+    if (!a || !b) return 0;
+    return gameDayNumber(b) - gameDayNumber(a);
+}
+
+/** 写进「世界时钟」条目的固定格式 */
+export function buildClockContent(fields, layer = 0) {
+    const bits = [];
+    if (fields.time) bits.push(`时间：${fields.time}`);
+    if (fields.place) bits.push(`地点：${fields.place}`);
+    if (fields.weather) bits.push(`天气：${fields.weather}`);
+    if (fields.temperature) bits.push(`温度：${fields.temperature}`);
+    if (layer > 0) bits.push(`更新于：第 ${layer} 层`);
+    return bits.join('｜');
+}
+
+/** 角色重要度评分 → 等级（T1 最高） */
+export function tierForScore(score) {
+    const s = Number(score) || 0;
+    if (s >= 6) return 'T1';
+    if (s >= 4) return 'T2';
+    if (s >= 2) return 'T3';
+    return 'T4';
+}
+
 /**
  * 生成存档文件对象。
  * book 传 ST 原样的世界书对象（{ entries: {...} }），内部深拷贝，避免调用方后续改动污染。
