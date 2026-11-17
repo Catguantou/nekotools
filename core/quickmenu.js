@@ -484,19 +484,16 @@ function placePop() {
     if (!btn || !pop) return;
     const mobile = window.matchMedia('(max-width: 640px)').matches;
     if (mobile) {
-        // 手机：做成靠边的小面板，不铺满屏幕
+        // 手机：接近红圈大小，但左右不铺满
         const state = floatState();
-        const width = Math.min(286, window.innerWidth - 24);
-        const maxHeight = Math.min(440, window.innerHeight - 120);
-        const left = state.side === 'left'
-            ? 42
-            : Math.max(12, window.innerWidth - width - 42);
-        const top = Math.max(60, Math.min(state.top - 50, window.innerHeight - maxHeight - 80));
+        const width = Math.min(310, window.innerWidth - 16);
+        const maxHeight = Math.min(620, window.innerHeight - 24);
+        const left = state.side === 'left' ? 8 : window.innerWidth - width - 8;
         pop.style.left = `${left}px`;
         pop.style.right = 'auto';
         pop.style.width = `${width}px`;
         pop.style.maxWidth = 'none';
-        pop.style.top = `${top}px`;
+        pop.style.top = '12px';
         pop.style.bottom = 'auto';
         pop.style.maxHeight = `${maxHeight}px`;
         pop.style.overflowY = 'auto';
