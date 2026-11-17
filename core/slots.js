@@ -136,7 +136,7 @@ export function listSlots() {
             current: true,
             lastPlayed: '',
             lastLayer: 0,
-            progress: meta[name]?.progress ?? null,
+            progress: meta[name]?.mainProgress ?? meta[name]?.progress ?? null,
         }];
     }
 
@@ -149,7 +149,7 @@ export function listSlots() {
         current: b.name === current,
         lastPlayed: meta[b.name]?.lastPlayed || '',
         lastLayer: Number(meta[b.name]?.lastLayer) || 0,
-        progress: meta[b.name]?.progress ?? null,
+        progress: meta[b.name]?.mainProgress ?? meta[b.name]?.progress ?? null,
     }));
 }
 

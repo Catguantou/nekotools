@@ -184,6 +184,21 @@ function markQuestReady(bookName, book) {
     if (ready) questTries.delete(bookName);
 }
 
+/** 把主线进度记到 slotMeta，存档列表能显示「主线 37%」 */
+function rememberMainProgress(bookName, main) {
+    if (!bookName || !main) return;
+    try {
+        const all = coreSettings.get('worldsim') || {};
+        const slotMeta = { ...(all.slotMeta || {}) };
+        slotMeta[bookName] = {
+            ...(slotMeta[bookName] || {}),
+            mainProgress: Number(main['进度']) || 0,
+            mainTitle: main['标题'] || '',
+        };
+        coreSettings.set('worldsim', { slotMeta });
+    } catch (_) {}
+}
+
 function markWorldReady(bookName, book) {
     if (!bookName) return;
     const entry = book && book.entries
@@ -989,6 +1004,10 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     if (data.main) {
         const main = await applyMain(bookName, data.main);
         summary.main = main ? 1 : 0;
+        if (main) {
+            rememberMainProgress(bookName, main);
+            questReady.set(bookName, mainHasContent(main));
+        }
     }
     if (data.quests) {
         const quests = await applyQuests(bookName, data.quests);
@@ -1387,6 +1406,7 @@ registry.register({
                     if (mainData) {
                         const ready = mainHasContent(mainData);
                         questReady.set(currentLorebook, ready);
+                        rememberMainProgress(currentLorebook, mainData);
                         if (ready) questTries.delete(currentLorebook);
                     }
                 }

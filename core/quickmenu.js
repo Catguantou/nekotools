@@ -1649,6 +1649,12 @@ async function showQuestsModal() {
         const nextMain = {};
         for (const [key, input] of Object.entries(fields)) nextMain[key] = input.value.trim();
         await saveMain(book, nextMain);
+        try {
+            const all = settings.get('worldsim') || {};
+            const slotMeta = { ...(all.slotMeta || {}) };
+            slotMeta[book] = { ...(slotMeta[book] || {}), mainProgress: clampProgress(nextMain['进度']) };
+            settings.set('worldsim', { slotMeta });
+        } catch (_) {}
 
         const nextQuests = {};
         rows.querySelectorAll('.nt-quest-edit-side').forEach(row => {
