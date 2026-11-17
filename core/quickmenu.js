@@ -422,7 +422,7 @@ function initFloatDrag(btn) {
             startLeft: parseFloat(btn.style.left) || 0,
             startTop: parseFloat(btn.style.top) || st.top,
             moved: false,
-            wasHidden: st.hidden,
+            wasHidden: btn.classList.contains('nt-float-hidden') || st.hidden,
         };
         btn.classList.add('nt-dragging');
     });
