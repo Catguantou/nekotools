@@ -1738,6 +1738,17 @@ async function showMainCompleteModal(bookName) {
     });
 }
 
+async function backupBeforeWrite() {
+    try {
+        await exportCurrent();
+        toast('已自动备份当前档', 'success');
+        return true;
+    } catch (e) {
+        toast(e && e.message ? `自动备份失败，已停止写入：${e.message}` : '自动备份失败，已停止写入', 'error');
+        return false;
+    }
+}
+
 async function showRefreshModal() {
     const book = stBridge.currentTrackerName();
     if (!book) {
@@ -1751,7 +1762,20 @@ async function showRefreshModal() {
     intro.className = 'nt-refresh-note';
     intro.textContent = '会额外发一次静默请求（不进聊天记录），只更新勾选的类别/角色。内容由模型生成，保存前请自己看一眼。';
     body.appendChild(intro);
+    const lastRefresh = settings.get('worldsim').lastRefresh;
+    if (lastRefresh && lastRefresh.bits) {
+        const lastNote = document.createElement('div');
+        lastNote.className = 'nt-refresh-note';
+        const d = lastRefresh.at ? new Date(lastRefresh.at) : null;
+        lastNote.textContent = `上次更新：${d ? d.toLocaleString('zh-CN') : ''} · ${lastRefresh.bits}`;
+        body.appendChild(lastNote);
+    }
     const roster = await readRoster(book);
+    const userCharName = stBridge.getUserName() || '';
+    const charList = [...roster];
+    if (settings.recordUserCharacter === true && userCharName && !charList.some(c => c.name === userCharName)) {
+        charList.push({ name: userCharName, tier: '用户', location: '当前' });
+    }
 
     const cats = [
         ['chars', '角色状态'],
@@ -1785,13 +1809,13 @@ async function showRefreshModal() {
     charHead.textContent = '角色（可单独勾选要更新的）';
     charWrap.appendChild(charHead);
     const charChecks = {};
-    if (!roster.length) {
+    if (!charList.length) {
         const empty = document.createElement('div');
         empty.className = 'nt-refresh-note';
         empty.textContent = '角色索引为空，暂时没有可单独勾选的角色。';
         charWrap.appendChild(empty);
     } else {
-        for (const c of roster) {
+        for (const c of charList) {
             const row = document.createElement('label');
             row.className = 'nt-refresh-char';
             const cb = document.createElement('input');
@@ -1858,7 +1882,7 @@ async function showRefreshModal() {
         }
         const selectedChars = Object.keys(charChecks).filter(name => charChecks[name].checked);
         if (selected.includes('chars')) {
-            if (!roster.length) {
+            if (!charList.length) {
                 toast('角色索引为空，不能单独更新角色', 'warning');
                 return false;
             }
@@ -1867,6 +1891,7 @@ async function showRefreshModal() {
                 return false;
             }
         }
+        if (!(await backupBeforeWrite())) return false;
         const bookData = await stBridge.loadWorldInfoAsync(book);
         const get = (title) => {
             const entry = bookData && bookData.entries
@@ -1888,9 +1913,8 @@ async function showRefreshModal() {
 
         const schema = [];
         const userName = stBridge.getUserName() || '用户';
-        const recordUser = settings.recordUserRelation !== false;
-        const relSchema = recordUser ? `{"${userName}":"好感 X｜信任 Y｜标签：..."}` : '{}';
-        if (selected.includes('chars')) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":${relSchema},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`);
+        const recordUserChar = settings.recordUserCharacter === true;
+        if (selected.includes('chars')) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`);
         if (selected.includes('world')) schema.push('"world": {"国家":{"名称":"方位｜类型｜描述"},"势力":{"名称":"目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}');
         if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜可交互：...｜常驻：..."}}}');
         if (selected.includes('quests')) {
@@ -1904,9 +1928,9 @@ async function showRefreshModal() {
         const charLine = selected.includes('chars')
             ? `本轮只更新这些角色：${selectedChars.join('、')}；不要输出其他人。`
             : '';
-        const userLine = recordUser
-            ? `用户角色叫「${userName}」，人际关系里用真实名字。`
-            : `人际关系不要记录用户角色「${userName}」。`;
+        const userLine = recordUserChar
+            ? `用户角色「${userName}」也可以作为一条角色档案更新。`
+            : `不要更新用户角色「${userName}」的角色档案。`;
         const prompt = `你是 NEKOTOOL 的后台世界更新器。只输出一个 JSON 对象，不要正文、不要 markdown 代码块、不要解释。
 方式：${mode.value === 'advance' ? '推进到下一阶段（让时间/事件往前走，可新增支线与人物变化）' : '补全当前状态（把缺的细节补全，不主动推进时间）'}。
 ${charLine}
@@ -1931,13 +1955,6 @@ ${schema.join('\n')}
                 for (const name of selectedChars) {
                     if (data.chars[name]) filtered[name] = data.chars[name];
                 }
-                if (!recordUser) {
-                    for (const info of Object.values(filtered)) {
-                        if (info && info['人际关系'] && typeof info['人际关系'] === 'object') {
-                            delete info['人际关系'][userName];
-                        }
-                    }
-                }
                 data.chars = filtered;
             }
             const summary = await applyRefreshData(book, data, currentLayerNo());
@@ -1951,7 +1968,9 @@ ${schema.join('\n')}
                 summary.foreshadow ? `伏笔 ${summary.foreshadow}` : '',
                 summary.plot ? `计划 ${summary.plot}` : '',
             ].filter(Boolean);
-            toast(bits.length ? `更新完成：${bits.join(' / ')}` : '更新完成（没有变化）', 'success');
+            const bitsText = bits.length ? bits.join(' / ') : '没有变化';
+            settings.set('worldsim', { lastRefresh: { at: Date.now(), bits: bitsText } });
+            toast(bits.length ? `更新完成：${bitsText}` : '更新完成（没有变化）', 'success');
             return true;
         } catch (e) {
             console.warn('[nekotools] 请求更新失败', e);
@@ -2022,6 +2041,24 @@ async function showEditModal() {
 
     const save = async () => {
         const title = select.value;
+        const text = area.value;
+        let problem = '';
+        if (title === '主线' && !/标题[：:]/.test(text) && !/目标[：:]/.test(text)) {
+            problem = '主线至少要有「标题：」或「目标：」';
+        } else if (title === '支线' && !/【以下为支线】/.test(text) && !/^-\s*\S+/m.test(text)) {
+            problem = '支线需要「【以下为支线】」或至少一行「- 名称｜…」';
+        } else if (title === '世界局势' && !/【国家】|【势力】|【社会新闻】/.test(text)) {
+            problem = '世界局势需要【国家】/【势力】/【社会新闻】段';
+        } else if (title === '地图' && !/【大地图】/.test(text)) {
+            problem = '地图需要【大地图】段';
+        } else if (title === '索引' && !/【角色】/.test(text)) {
+            problem = '索引需要【角色】段';
+        }
+        if (problem) {
+            toast(`${problem}，已停止保存`, 'error');
+            return false;
+        }
+        if (!(await backupBeforeWrite())) return false;
         const entry = find(title);
         const fallback = defaults[title] || { order: 999, pos: 0, constant: true };
         const extra = {

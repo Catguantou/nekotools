@@ -27,7 +27,7 @@ const defaultSettings = {
     hideKeepCount: 2,
     visualHideKeep: 0,
     focusChars: '',
-    recordUserRelation: true,
+    recordUserCharacter: false,
     enableTicks: true,
     worldTickEvery: 3,
     charTickEvery: 2,
@@ -170,7 +170,7 @@ function buildQuestPrompt() {
 【主线】JSON 字段 "main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}
 只写本轮变化的字段；主线要自动推进，不要让玩家选择。这里只维护长期目标/阶段/进度，不写本轮三种走向或概率。
 【支线】JSON 字段 "quests": {"add": {"支线名":"类型｜目标｜状态｜钩子"}, "del": ["支线名"]}
-只写新增/完成/失败/删除的支线；这里只维护支线状态，不写本轮短期走向；可以自然生成新的支线钩子，但不要围着玩家转。
+只写新增/完成/失败/删除的支线；这里只维护支线状态，不写本轮短期走向；支线是**可执行的目标/钩子**，已经发生的公开事件写进世界局势的社会新闻，不要重复。可以自然生成新的支线钩子，但不要围着玩家转。
 </nekotools:track.quest>`;
 }
 
@@ -349,11 +349,10 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
 
     if (settings.enableChars) {
         const userName = stBridge.getUserName() || '用户';
-        const recordUser = settings.recordUserRelation !== false;
-        const relSchema = recordUser ? `{"${userName}":"好感 50｜信任 50｜中性：..."}` : '{}';
+        const recordUserChar = settings.recordUserCharacter === true;
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","人际关系":${relSchema},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
-要求：记录活跃 NPC（不要记录用户角色${userName}本身）。六个字段全部必填，每个字段写完整的句子，不要合并成一句话：
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
+要求：记录活跃角色${recordUserChar ? `（包括用户角色${userName}）` : `（不包括用户角色${userName}）`}。六个字段全部必填，每个字段写完整的句子，不要合并成一句话：
 - 位置：优先使用「地图」里的小地点名；没有就写当前地点
 - 日程：早晨/白天/夜晚 各写「地点｜做什么」，地点同样用地图小地点名
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
@@ -364,7 +363,8 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
 可选：身份。
 必填基础：性别 / 外貌（简单一句）/ 人际关系。
-${recordUser ? `人际关系是对象，键写对方真实名字。用户角色就叫「${userName}」；第一次正式遇见之后才写，没遇见就不要写。` : `人际关系是对象，键写 NPC 的真实名字；不要记录用户角色「${userName}」。`}
+${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输出档案。` : `不要输出用户角色「${userName}」的档案。`}
+人际关系是对象，键写对方真实名字。用户角色就叫「${userName}」；第一次正式遇见之后才写，没遇见就不要写。
 值的格式："好感 X｜信任 Y｜标签：一句原因"。
 好感/信任都是 0-100：好感 0-20 敌意 / 21-40 冷淡 / 41-60 中性 / 61-80 亲近 / 81-100 信赖或爱慕；
 信任 0-20 提防 / 21-40 保留 / 41-60 一般 / 61-80 信任 / 81-100 生死托付。
@@ -415,6 +415,7 @@ ${recordUser ? `人际关系是对象，键写对方真实名字。用户角色�
         let c = `<nekotools:track.world>
 【世界局势】JSON 字段 "world": {"国家": {"名称":"政体｜领袖｜经济｜军事｜外交｜文化｜当前动向"}, "势力": {"名称":"目标｜资源｜与主角关系｜当前动作"}, "社会新闻": {"标题":"事件｜影响｜来源"}, "del": {"国家":["名称"], "势力":["名称"], "社会新闻":["标题"]}}
 要求：只写本轮**变化**；国家、势力、社会新闻分开维护，不要把所有东西都塞进社会新闻。没有变化就写 "world": {}。
+社会新闻只写**已经发生的公开事实**；可执行的目标/承诺/待办钩子放「支线」，不要写进社会新闻。
 世界要自己运转：国家之间会建交/断交/战争/贸易/文化渗透，势力有自己的目标和动作，不要围着主角转。
 `;
         const custom = (settings.customPrompts.world || '').trim();
@@ -510,10 +511,6 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
         ...normalizeRelationships(old['人际关系']),
         ...normalizeRelationships(info && info['人际关系']),
     };
-    if (settings.recordUserRelation === false) {
-        const userName = stBridge.getUserName();
-        if (userName) delete mergedRel[userName];
-    }
     const mergedSchedule = {
         ...normalizeRelationships(old['日程']),
         ...normalizeRelationships(info && info['日程']),
@@ -999,6 +996,7 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     const book = await stBridge.loadWorldInfoAsync(bookName);
     if (!book || !book.entries) return summary;
     const touched = [];
+    const userCharName = stBridge.getUserName();
 
     const chars = data.chars && typeof data.chars === 'object' && !Array.isArray(data.chars) ? data.chars : null;
     const ticks = data.tick && typeof data.tick === 'object' && !Array.isArray(data.tick) ? data.tick : null;
@@ -1007,6 +1005,7 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         for (const [name, info] of Object.entries(source)) {
             const n = String(name || '').trim();
             if (!n || !info || typeof info !== 'object') continue;
+            if (!settings.recordUserCharacter && userCharName && n === userCharName) continue;
             await updateCharacterEntry(bookName, n, info, book, layer);
             touched.push({ name: n, info });
         }
@@ -1358,6 +1357,7 @@ registry.register({
 
                 const charsBook = await stBridge.loadWorldInfoAsync(currentLorebook);
                 const touchedChars = [];
+                const userCharName = stBridge.getUserName();
 
                 if (data.chars && settings.enableChars) {
                     const focusArr = (settings.focusChars || '').split(/[,，\s]+/).map(n => n.trim()).filter(Boolean);
@@ -1365,6 +1365,7 @@ registry.register({
                     for (const [name, info] of Object.entries(data.chars)) {
                         const n = String(name).trim();
                         if (!n || blockedNow.has(n)) continue;
+                        if (!settings.recordUserCharacter && userCharName && n === userCharName) continue;
                         if (allow && !allow.has(n)) continue;
                         await updateCharacterEntry(currentLorebook, n, info, charsBook, replyLayer);
                         touchedChars.push({ name: n, info });
@@ -1376,6 +1377,7 @@ registry.register({
                     for (const [name, info] of Object.entries(data.tick)) {
                         const n = String(name).trim();
                         if (!n || blockedNow.has(n) || !info || typeof info !== 'object') continue;
+                        if (!settings.recordUserCharacter && userCharName && n === userCharName) continue;
                         await updateCharacterEntry(currentLorebook, n, info, charsBook, replyLayer);
                         touchedChars.push({ name: n, info });
                     }
@@ -1398,6 +1400,7 @@ registry.register({
                     for (const [name, value] of Object.entries(source.add || {})) {
                         const n = String(name || '').trim();
                         if (!n || blockedNow.has(n)) continue;
+                        if (!settings.recordUserCharacter && userCharName && n === userCharName) continue;
                         const base = fixRosterValue(stripRosterLayer(String(value ?? ''))) || 'T3';
                         add[n] = `${base}｜第 ${replyLayer} 层`;
                     }
