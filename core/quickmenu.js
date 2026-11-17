@@ -18,6 +18,7 @@ import {
 } from './slots.js';
 import { slotLabel, parseStatusFields, parseCharacterYaml } from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
+import { readMap, findPath } from './worldmap.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 
@@ -923,6 +924,277 @@ async function showActionModal() {
     });
 }
 
+function currentMapPath(data) {
+    const parts = String(data.current || '').split('｜').map(s => s.trim());
+    const site = (data.sites && data.sites[parts[2]]) ? parts[2]
+        : ((data.sites && data.sites[parts[0]]) ? parts[0] : '');
+    const bySite = findPath(data, site);
+    if (bySite.site || bySite.city || bySite.region) return bySite;
+    return { region: parts[0] || '', city: parts[1] || '', site: parts[2] || '' };
+}
+
+async function showMapModal() {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+
+    const data = await readMap(book);
+    const roster = await readRoster(book);
+    const cur = currentMapPath(data);
+
+    const body = document.createElement('div');
+    body.className = 'nt-quick-map';
+    const head = document.createElement('div');
+    head.className = 'nt-quick-map-head';
+    const crumbs = document.createElement('div');
+    crumbs.className = 'nt-quick-map-crumbs';
+    const currentBtn = document.createElement('button');
+    currentBtn.type = 'button';
+    currentBtn.className = 'nt-quick-btn-text';
+    currentBtn.textContent = '回到当前';
+    head.appendChild(crumbs);
+    head.appendChild(currentBtn);
+    const content = document.createElement('div');
+    content.className = 'nt-quick-map-body';
+    body.appendChild(head);
+    body.appendChild(content);
+
+    const state = { level: 'world', region: '', city: '', site: '' };
+    if (cur.site && data.sites[cur.site]) {
+        state.level = 'site';
+        state.region = cur.region;
+        state.city = cur.city;
+        state.site = cur.site;
+    } else if (cur.city && data.cities[cur.city]) {
+        state.level = 'city';
+        state.region = cur.region;
+        state.city = cur.city;
+    } else if (cur.region && data.regions[cur.region]) {
+        state.level = 'region';
+        state.region = cur.region;
+    }
+
+    openModal({ title: '地图', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+
+    const isCurrent = (level, name) => {
+        if (level === 'region') return cur.region === name;
+        if (level === 'city') return cur.city === name;
+        if (level === 'site') return cur.site === name;
+        return false;
+    };
+
+    const makeRow = (name, meta, level, onClick) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'nt-quick-map-row' + (isCurrent(level, name) ? ' current' : '');
+        const n = document.createElement('span');
+        n.className = 'nt-quick-map-name';
+        n.textContent = name + (isCurrent(level, name) ? '（当前）' : '');
+        const m = document.createElement('span');
+        m.className = 'nt-quick-map-meta';
+        m.textContent = meta;
+        row.appendChild(n);
+        row.appendChild(m);
+        row.addEventListener('click', onClick);
+        return row;
+    };
+
+    const addSection = (title) => {
+        const el = document.createElement('div');
+        el.className = 'nt-quick-map-section';
+        el.textContent = title;
+        content.appendChild(el);
+    };
+
+    const renderCrumbs = () => {
+        crumbs.textContent = '';
+        const add = (label, level) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'nt-quick-map-crumb';
+            b.textContent = label;
+            b.addEventListener('click', () => {
+                state.level = level;
+                if (level === 'world') { state.region = ''; state.city = ''; state.site = ''; }
+                if (level === 'region') { state.city = ''; state.site = ''; }
+                if (level === 'city') { state.site = ''; }
+                render();
+            });
+            crumbs.appendChild(b);
+            crumbs.appendChild(document.createTextNode(' / '));
+        };
+        add('大地图', 'world');
+        if (state.region) add(state.region, 'region');
+        if (state.city) add(state.city, 'city');
+        if (state.site) add(state.site, 'site');
+        if (crumbs.lastChild && crumbs.lastChild.nodeType === 3) crumbs.removeChild(crumbs.lastChild);
+    };
+
+    const render = () => {
+        renderCrumbs();
+        content.textContent = '';
+
+        if (!Object.keys(data.regions || {}).length) {
+            const note = document.createElement('div');
+            note.className = 'nt-quick-note';
+            note.textContent = '还没有地图。发一轮消息，AI 会生成大地图 / 中地图 / 小地点。';
+            content.appendChild(note);
+            return;
+        }
+
+        if (state.level === 'world') {
+            addSection('大地图 · 区域 / 国家');
+            for (const [name, region] of Object.entries(data.regions || {})) {
+                content.appendChild(makeRow(
+                    name,
+                    [region.type, region.desc].filter(Boolean).join(' · '),
+                    'region',
+                    () => { state.level = 'region'; state.region = name; state.city = ''; state.site = ''; render(); }
+                ));
+            }
+            return;
+        }
+
+        const region = data.regions[state.region];
+        if (!region) { state.level = 'world'; render(); return; }
+
+        if (state.level === 'region') {
+            addSection(`${state.region} · 中地图`);
+            const cities = Object.entries(data.cities || {}).filter(([, c]) => c.region === state.region);
+            if (!cities.length) {
+                const note = document.createElement('div');
+                note.className = 'nt-quick-note';
+                note.textContent = '这个区域还没有城市节点。';
+                content.appendChild(note);
+                return;
+            }
+            for (const [name, city] of cities) {
+                content.appendChild(makeRow(
+                    name,
+                    [city.type, city.desc].filter(Boolean).join(' · '),
+                    'city',
+                    () => { state.level = 'city'; state.city = name; state.site = ''; render(); }
+                ));
+            }
+            return;
+        }
+
+        const city = data.cities[state.city];
+        if (!city) { state.level = 'region'; render(); return; }
+
+        if (state.level === 'city') {
+            addSection(`${state.city} · 小地点`);
+            const sites = Object.entries(data.sites || {}).filter(([, s]) => s.city === state.city);
+            if (!sites.length) {
+                const note = document.createElement('div');
+                note.className = 'nt-quick-note';
+                note.textContent = '这个城市还没有小地点节点。';
+                content.appendChild(note);
+                return;
+            }
+            for (const [name, site] of sites) {
+                const meta = [site.type, site.regulars ? `常驻：${site.regulars}` : ''].filter(Boolean).join(' · ');
+                content.appendChild(makeRow(name, meta, 'site', () => {
+                    state.level = 'site';
+                    state.site = name;
+                    render();
+                }));
+            }
+            return;
+        }
+
+        const site = data.sites[state.site];
+        if (!site) { state.level = 'city'; render(); return; }
+
+        const title = document.createElement('div');
+        title.className = 'nt-quick-map-title';
+        title.textContent = `${state.site} · ${site.type || '地点'}`;
+        content.appendChild(title);
+
+        const meta = document.createElement('div');
+        meta.className = 'nt-quick-map-meta';
+        meta.style.whiteSpace = 'pre-line';
+        meta.textContent = [
+            state.region ? `位于：${state.region} / ${state.city}` : '',
+            site.regulars ? `常驻：${site.regulars}` : '',
+            site.interact ? `可交互：${site.interact}` : '',
+        ].filter(Boolean).join('\n');
+        content.appendChild(meta);
+
+        addSection('出口 / 周边');
+        if (!site.exits || !site.exits.length) {
+            const note = document.createElement('div');
+            note.className = 'nt-quick-note';
+            note.textContent = '没有记录出口。';
+            content.appendChild(note);
+        } else {
+            const wrap = document.createElement('div');
+            wrap.className = 'nt-quick-map-exits';
+            for (const exit of site.exits) {
+                const target = data.sites[exit];
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'nt-quick-btn-text';
+                b.textContent = exit;
+                if (target) {
+                    b.addEventListener('click', () => {
+                        const p = findPath(data, exit);
+                        state.level = 'site';
+                        state.region = p.region;
+                        state.city = p.city;
+                        state.site = p.site;
+                        render();
+                    });
+                } else {
+                    b.disabled = true;
+                    b.title = '地图里还没有这个地点';
+                }
+                wrap.appendChild(b);
+            }
+            content.appendChild(wrap);
+        }
+
+        const present = roster.filter(c => c.location === state.site);
+        addSection(`在场角色（${present.length}）`);
+        if (!present.length) {
+            const note = document.createElement('div');
+            note.className = 'nt-quick-note';
+            note.textContent = '暂无记录到角色在这里。';
+            content.appendChild(note);
+        } else {
+            for (const c of present) {
+                const row = document.createElement('div');
+                row.className = 'nt-quick-map-present';
+                const n = document.createElement('span');
+                n.className = 'nt-quick-map-name';
+                n.textContent = c.name;
+                const m = document.createElement('span');
+                m.className = 'nt-quick-map-meta';
+                m.textContent = [c.tier, c.action].filter(Boolean).join(' · ');
+                row.appendChild(n);
+                row.appendChild(m);
+                content.appendChild(row);
+            }
+        }
+    };
+
+    currentBtn.addEventListener('click', () => {
+        const p = currentMapPath(data);
+        state.region = p.region;
+        state.city = p.city;
+        state.site = p.site;
+        if (p.site && data.sites[p.site]) state.level = 'site';
+        else if (p.city && data.cities[p.city]) state.level = 'city';
+        else if (p.region && data.regions[p.region]) state.level = 'region';
+        else state.level = 'world';
+        render();
+    });
+
+    render();
+}
+
 function buildPop() {
     if ($(POP_ID)) return;
 
@@ -962,7 +1234,7 @@ function buildPop() {
         { key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪 / 跳时间', enabled: true },
         { key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
         { key: 'refresh', label: '请求更新', hint: '角色 / 世界 / 地图', enabled: false },
-        { key: 'map', label: '地图', hint: '周边可交互节点', enabled: false },
+        { key: 'map', label: '地图', hint: '大地图 / 中地图 / 小地点', enabled: true },
         { key: 'edit', label: '手动修改', hint: '主线 / 白名单 / 黑名单', enabled: false },
     ];
 
@@ -988,6 +1260,7 @@ function buildPop() {
             if (item.key === 'clock') showClockModal();
             else if (item.key === 'roster') showRosterModal();
             else if (item.key === 'action') showActionModal();
+            else if (item.key === 'map') showMapModal();
             else if (item.key === 'slots') showSlotsModal();
             else showSoon(item.label);
         });

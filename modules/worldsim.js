@@ -4,7 +4,7 @@ import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, INDEX_TITLE } from '../core/worldindex.js';
-import { applyMapOps, setCurrent, mapHasStructure, parseMap, MAP_TITLE } from '../core/worldmap.js';
+import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -74,7 +74,7 @@ function buildTickPrompt({ needCharTick, needWorldTick }) {
     lines.push('- 所有内容都写在本轮 ws_update 的 JSON 里，tick / world 只是其中的字段。');
     if (needCharTick) {
         lines.push(`- 从「索引」里挑最多 ${maxChars} 个最久没更新的角色（优先钉住/T1，其次 T2），在 "tick" 里写他们这轮在后台做了什么：`);
-        lines.push('  "tick": {"角色名": {"位置":"...","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
+        lines.push('  "tick": {"角色名": {"位置":"地图小地点名","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
         lines.push('- 只写这些人；玩家不在场也要推进他们自己的计划，不要等玩家。');
     }
     if (needWorldTick) {
@@ -99,10 +99,15 @@ function buildMapGenesisPrompt(bookName = '') {
     const clock = bookName ? getSlotClock(bookName) : null;
     const here = clock && clock.place ? `当前地点：${clock.place}。` : '';
     let p = `${tagOpen}
-【开局地图生成】${here}从世界书已有地点出发，总结当前已知地点，并合理推演周边地点，输出 "map": {"add": {"地点名": "类型｜出口：A、B｜可交互：...｜常驻：..."}}。
-- 8–12 个地点，必须包含主角当前地点；地点之间用出口互相连接。
+【开局地图生成】${here}从世界书已有地点出发，总结当前已知地点，并合理推演周边地点，输出 "map"：
+{
+  "regions": {"区域/国家名": "类型｜一句话描述"},
+  "cities": {"区域名": {"城市名": "类型｜一句话描述"}},
+  "sites": {"城市名": {"地点名": "类型｜出口：A、B｜可交互：...｜常驻：..."}}
+}
+- 2–3 个大地图区域（国家/地区），每个区域 1–2 个中地图城市，每个城市 3–5 个小地点。
+- 必须包含主角当前地点，且它在某个城市下；地点之间用出口互相连接。
 - 先复用世界书里出现过的地名，不要造与设定冲突的地方。
-- 每个地点写清类型（城区/建筑/野外）、可交互物、常驻人物（没有就留空）。
 ${tagClose}`;
     const custom = (settings.customPrompts.map || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
@@ -112,20 +117,16 @@ ${tagClose}`;
 /** 每轮的地图增量契约 */
 function buildMapPrompt() {
     let p = `<nekotools:track.map>
-【地图】JSON 字段 "map": {"add": {"地点名": "类型｜出口：A、B｜可交互：...｜常驻：..."}, "del": ["地点名"]}
-只写新出现/变化的地点；当前地点由插件自动写。地点名要能在正文里出现。
+【地图】JSON 字段 "map":
+{
+  "regions": {"区域/国家名": "类型｜一句话"},
+  "cities": {"区域名": {"城市名": "类型｜一句话"}},
+  "sites": {"城市名": {"地点名": "类型｜出口：A、B｜可交互：...｜常驻：..."}},
+  "del": {"regions": ["..."], "cities": ["..."], "sites": ["..."]}
+}
+只写本轮新出现/变化的地点；当前地点由插件自动写。地点名要能在正文里出现，且位置必须使用这里的小地点名。
 </nekotools:track.map>`;
     return p;
-}
-
-function buildMapCurrent(clock, layer) {
-    if (!clock) return '';
-    const bits = [];
-    if (clock.place) bits.push(clock.place);
-    if (clock.time) bits.push(clock.time);
-    if (clock.weather) bits.push(clock.weather);
-    if (layer > 0) bits.push(`第 ${layer} 层`);
-    return bits.join('｜');
 }
 
 /** 扫一遍书，判断地图是否已有足够地点 */
@@ -290,6 +291,8 @@ chars / tick / items / plot / world / map / foreshadow / roster 都只写**本�
         let c = `<nekotools:track.chars>
 【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"<user>":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
 要求：记录活跃 NPC（严禁记录 user）。六个字段全部必填，每个字段写完整的句子，不要合并成一句话：
+- 位置：优先使用「地图」里的小地点名；没有就写当前地点
+- 日程：早晨/白天/夜晚 各写「地点｜做什么」，地点同样用地图小地点名
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
 - 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
 - 长期目标：最重要的长期追求
@@ -927,6 +930,7 @@ registry.register({
                     await loadConfig(name);
                     await migrateWorld(name);
                     await migrateIndex(name);
+                    await migrateMap(name);
                     await normalizeEntryLayout(name);
                     await stBridge.deactivateStaleAutoBooks(name);
                     await stBridge.preloadActivatedLorebooks();
@@ -970,6 +974,7 @@ registry.register({
                         await cleanupLegacyEntries(name);
                         await migrateWorld(name);
                         await migrateIndex(name);
+                        await migrateMap(name);
                         await normalizeEntryLayout(name);
                     } catch (e) {
                         console.warn('[worldsim] 切换会话同步世界书失败', e);
@@ -1129,7 +1134,7 @@ registry.register({
         const clockNow = (await applyClock(currentLorebook, captured, replyLayer)) || getSlotClock(currentLorebook);
         // 地图「当前」行每轮同步
         if (settings.enableMap && clockNow && (clockNow.place || clockNow.time)) {
-            await setCurrent(currentLorebook, buildMapCurrent(clockNow, replyLayer));
+            await setCurrent(currentLorebook, clockNow, replyLayer);
         }
 
         if (captured.ws_big_summary && settings.enableBigSummary) {

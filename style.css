@@ -1626,6 +1626,93 @@ body {
     padding-bottom: 6px;
     border-bottom: 1px solid var(--ntq-line);
 }
+#nt-quick-modal .nt-quick-map {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 320px;
+}
+#nt-quick-modal .nt-quick-map-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--ntq-line);
+}
+#nt-quick-modal .nt-quick-map-crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 10px;
+}
+#nt-quick-modal .nt-quick-map-crumb {
+    padding: 2px 4px;
+    background: none;
+    border: 0;
+    color: var(--ntq-dim);
+    font-size: 10px;
+    cursor: pointer;
+}
+#nt-quick-modal .nt-quick-map-crumb:hover {
+    color: #fff;
+}
+#nt-quick-modal .nt-quick-map-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 58vh;
+    overflow: auto;
+}
+#nt-quick-modal .nt-quick-map-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--ntq-line);
+    color: var(--ntq-text);
+    text-align: left;
+    cursor: pointer;
+}
+#nt-quick-modal .nt-quick-map-row:hover {
+    border-color: var(--ntq-blue);
+}
+#nt-quick-modal .nt-quick-map-row.current {
+    border-color: rgba(93, 111, 174, 0.8);
+    background: rgba(93, 111, 174, 0.1);
+}
+#nt-quick-modal .nt-quick-map-name {
+    color: #fff;
+    font-size: 12px;
+}
+#nt-quick-modal .nt-quick-map-meta {
+    color: var(--ntq-dim);
+    font-size: 10px;
+}
+#nt-quick-modal .nt-quick-map-section {
+    margin-top: 6px;
+    color: var(--ntq-dim);
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+#nt-quick-modal .nt-quick-map-title {
+    color: #fff;
+    font-size: 15px;
+}
+#nt-quick-modal .nt-quick-map-exits {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+#nt-quick-modal .nt-quick-map-present {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 8px;
+    border: 1px solid var(--ntq-line);
+}
+
 #nt-quick-modal .nt-quick-chars {
     display: flex;
     gap: 12px;
