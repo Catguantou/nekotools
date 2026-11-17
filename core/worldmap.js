@@ -55,6 +55,15 @@ const safeMapName = (name) => {
     return n && !BAD_MAP_NAMES.has(n) ? n : '';
 };
 
+function mapEntryKeys(data) {
+    const names = [
+        ...Object.keys((data && data.regions) || {}),
+        ...Object.keys((data && data.cities) || {}),
+        ...Object.keys((data && data.sites) || {}),
+    ].filter(Boolean);
+    return [...new Set(names)].slice(0, 30);
+}
+
 /** 解析「A=1天、B=10分钟」这类路程字段 */
 export function travelEntries(text) {
     return String(text || '')
@@ -258,8 +267,9 @@ export async function setCurrent(bookName, clock, layer = 0) {
     if (data.current === next && entry) return false;
     data.current = next;
     stBridge.upsertEntryInBook(book, MAP_TITLE, renderMap(data), {
-        isConstant: true,
-        extra: { position: 0, depth: 0, order: 830, key: [] },
+        isConstant: false,
+        keywords: mapEntryKeys(data),
+        extra: { position: 0, depth: 0, order: 830 },
     });
     await stBridge.persistLorebook(bookName, book);
     return true;
@@ -354,8 +364,9 @@ export async function applyMapOps(bookName, raw) {
     for (const name of Array.isArray(raw.del) ? raw.del : []) delete data.sites[name];
 
     stBridge.upsertEntryInBook(book, MAP_TITLE, renderMap(data), {
-        isConstant: true,
-        extra: { position: 0, depth: 0, order: 830, key: [] },
+        isConstant: false,
+        keywords: mapEntryKeys(data),
+        extra: { position: 0, depth: 0, order: 830 },
     });
     await stBridge.persistLorebook(bookName, book);
     return data;
@@ -381,8 +392,9 @@ export async function migrateMap(bookName) {
             data.sites[siteName] = { ...site, city: cityName };
         }
         stBridge.upsertEntryInBook(book, MAP_TITLE, renderMap(data), {
-            isConstant: true,
-            extra: { position: 0, depth: 0, order: 830, key: [] },
+            isConstant: false,
+            keywords: mapEntryKeys(data),
+            extra: { position: 0, depth: 0, order: 830 },
         });
         await stBridge.persistLorebook(bookName, book);
         console.log('[worldsim] 旧地图已迁移为 大地图/中地图/小地点');

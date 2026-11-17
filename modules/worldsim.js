@@ -3,7 +3,7 @@ import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock, appendSlotLog } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
-import { migrateIndex, syncChars, syncNames, refreshChar, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
+import { migrateIndex, syncChars, syncNames, refreshChar, refreshBriefs, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, findPath, MAP_TITLE } from '../core/worldmap.js';
 import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent } from '../core/worldquest.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
@@ -20,7 +20,6 @@ const defaultSettings = {
     enableQuests: true,
     enableCognition: true,
     enablePresence: true,
-    enableProactiveChars: true,
     enableForeshadow: true,
     enableSummary: true,
     enableBigSummary: true,
@@ -38,7 +37,7 @@ const defaultSettings = {
     enableAntiLazy: true,
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '', presence: '', proactive: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '', presence: '',
     }
 };
 
@@ -183,7 +182,6 @@ function refreshSnapshots(bookName, book) {
             location: parsed['位置'] || '',
             action: parsed['当前行动'] || '',
             schedule: parsed['日程'] || {},
-            yaml: parsed,
         });
     }
     presenceCache.set(bookName, chars);
@@ -289,7 +287,7 @@ function buildQuestPrompt() {
 【主线】JSON 字段 "main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}
 只写本轮变化的字段；主线要自动推进，不要让玩家选择。这里只维护长期目标/阶段/进度，不写本轮三种走向或概率。
 【支线】JSON 字段 "quests": {"add": {"支线名":"类型｜目标｜状态｜期限｜失败条件｜钩子"}, "del": ["支线名"]}
-只写新增/完成/失败/删除的支线；这里只维护支线状态，不写本轮短期走向；支线是**可执行的目标/钩子**，已经发生的公开事件写进世界局势的社会新闻，不要重复。可以自然生成新的支线钩子，但不要围着玩家转。
+只写新增/完成/失败/删除的支线；这里只维护支线状态，不写本轮短期走向；支线是**可执行的目标/钩子**，已经发生的公开事件写进「社会新闻」条目，不要重复。可以自然生成新的支线钩子，但不要围着玩家转。
 「期限」写绝对日期（如 2009年11月05日），没有期限写“无”；「失败条件」一句话写清怎样算失败。期限已过且状态未完成、或状态写失败的支线，插件会自动删除。
 支线期限要和地图路程一致：如果从当前地点赶过去需要的时间已经超过期限，就不能写成“来得及”。
 </nekotools:track.quest>`;
@@ -323,10 +321,7 @@ function rememberMainProgress(bookName, main) {
 
 function markWorldReady(bookName, book) {
     if (!bookName) return;
-    const entry = book && book.entries
-        ? Object.values(book.entries).find(e => e && e.comment === '世界局势')
-        : null;
-    const data = entry ? parseWorldContent(entry.content) : null;
+    const data = book && book.entries ? readWorldData(book) : null;
     const hasWorld = worldHasStructure(data);
     worldReady.set(bookName, hasWorld);
     if (hasWorld) genesisTries.delete(bookName);
@@ -467,53 +462,6 @@ function buildPresencePrompt(bookName) {
 - T4 路人只在需要时出现，不要为了热闹塞人。
 </nekotools:presence>`;
     const custom = (settings.customPrompts.presence || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
-}
-
-/** 主动角色档案：关键词绿灯有滞后，按位置/日程/T1 提前补 1–2 个角色档案 */
-function buildProactiveCharPrompt(bookName) {
-    if (!settings.enableProactiveChars || !bookName) return '';
-    const chars = presenceCache.get(bookName) || [];
-    if (!chars.length) return '';
-    const clock = getSlotClock(bookName) || {};
-    const place = String(clock.place || '').trim();
-    const roster = rosterCache.get(bookName) || [];
-    const t1Names = new Set(roster.filter(c => tierOf(c) === 'T1').map(c => c.name));
-    const chat = stBridge.getContext().chat || [];
-    const recent = chat.slice(-8).map(m => String(m && m.mes || '')).join('\n');
-    const picked = [];
-    for (const c of chars) {
-        if (picked.length >= 2) break;
-        if (recent.includes(c.name)) continue;
-        const present = place && [c.location, c.action, ...Object.values(c.schedule || {})]
-            .join(' ').includes(place);
-        if (!present && !t1Names.has(c.name)) continue;
-        picked.push(c);
-    }
-    if (!picked.length) return '';
-    const lines = ['<nekotools:charctx>', '【主动角色档案】以下角色按位置/日程/T1 可能在本轮出现，但可能还没被关键词触发；请严格按档案行动，不要凭空补设定：'];
-    for (const c of picked) {
-        const y = c.yaml || {};
-        const parts = [];
-        const add = (key) => {
-            const v = y[key];
-            if (v === undefined || v === null || !String(v).trim()) return;
-            if (key === '关键记忆') parts.push(`${key}：${normalizeMemories(v).slice(-2).join('；')}`);
-            else if (key === '日程' && v && typeof v === 'object') {
-                const sch = Object.entries(v).map(([k, val]) => `${k}=${val}`).join('；');
-                if (sch) parts.push(`日程：${sch}`);
-            } else if (key === '人际关系' && v && typeof v === 'object') {
-                const rel = Object.entries(v).slice(0, 6).map(([k, val]) => `${k}（${val}）`).join('；');
-                if (rel) parts.push(`人际关系：${rel}`);
-            } else parts.push(`${key}：${String(v).slice(0, 180)}`);
-        };
-        for (const key of ['性别', '外貌', '身份', '位置', '心情', '日程', '当前行动', '下一步', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '人际关系']) add(key);
-        lines.push(`- ${c.name}：${parts.join('｜').slice(0, 900)}`);
-    }
-    lines.push('</nekotools:charctx>');
-    let p = lines.join('\n');
-    const custom = (settings.customPrompts.proactive || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
     return p;
 }
@@ -689,10 +637,6 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
     list.push({ role: 'system', content: DIRECTOR_PROMPT });
     if (settings.enableCognition) list.push({ role: 'system', content: buildCognitionPrompt() });
     if (settings.enablePresence && includeTracking) list.push({ role: 'system', content: buildPresencePrompt(bookName) });
-    if (settings.enableProactiveChars && includeTracking) {
-        const proactive = buildProactiveCharPrompt(bookName);
-        if (proactive) list.push({ role: 'system', content: proactive });
-    }
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
     if (settings.enablePreview) list.push({ role: 'system', content: buildPreviewPrompt() });
@@ -868,8 +812,7 @@ function normalizeWorldRaw(raw) {
 async function applyWorldUpdate(bookName, raw) {
     const book = await stBridge.loadWorldInfoAsync(bookName);
     if (!book || !book.entries) return null;
-    const entry = Object.values(book.entries).find(e => e && e.comment === '世界局势');
-    const data = parseWorldContent(entry?.content);
+    const data = readWorldData(book);
     const ops = normalizeWorldRaw(raw);
 
     for (const section of WORLD_SECTIONS) {
@@ -880,30 +823,68 @@ async function applyWorldUpdate(bookName, raw) {
         }
     }
 
-    stBridge.upsertEntryInBook(book, '世界局势', renderWorldContent(data), {
-        isConstant: true,
-        extra: { position: 0, depth: 0, order: 800, key: [] },
-    });
+    writeWorldEntries(book, data);
+    removeEntryByComment(book, '世界局势');
     await stBridge.persistLorebook(bookName, book);
     return data;
 }
 
-/** 旧平铺世界局势迁移成「国家/势力/社会新闻」三段 */
+const WORLD_TITLES = { 国家: '世界·国家', 势力: '世界·势力', 社会新闻: '社会新闻' };
+const WORLD_ORDERS = { 国家: 800, 势力: 802, 社会新闻: 804 };
+
+function parseWorldSection(entry) {
+    const out = {};
+    for (const line of String(entry && entry.content || '').split('\n')) {
+        const m = line.trim().match(/^-\s*([^｜|]+)[｜|]([\s\S]*)$/);
+        if (m) out[m[1].trim()] = m[2].trim();
+    }
+    return out;
+}
+
+function readWorldData(book) {
+    const data = { 国家: {}, 势力: {}, 社会新闻: {} };
+    const old = Object.values(book.entries || {}).find(e => e && e.comment === '世界局势');
+    if (old) Object.assign(data, parseWorldContent(old.content));
+    for (const section of WORLD_SECTIONS) {
+        const entry = Object.values(book.entries || {}).find(e => e && e.comment === WORLD_TITLES[section]);
+        if (entry) data[section] = { ...(data[section] || {}), ...parseWorldSection(entry) };
+    }
+    return data;
+}
+
+function writeWorldEntries(book, data) {
+    for (const section of WORLD_SECTIONS) {
+        const title = WORLD_TITLES[section];
+        const map = data[section] || {};
+        const names = Object.keys(map);
+        stBridge.upsertEntryInBook(book, title, `【以下为${title}】\n${formatAggregate(map)}`, {
+            isConstant: false,
+            keywords: names,
+            extra: { position: 0, depth: 0, order: WORLD_ORDERS[section] },
+        });
+    }
+}
+
+function removeEntryByComment(book, title) {
+    if (!book || !book.entries) return;
+    for (const [uid, entry] of Object.entries(book.entries)) {
+        if (entry && entry.comment === title) delete book.entries[uid];
+    }
+}
+
+/** 旧平铺世界局势迁移成「世界·国家 / 世界·势力 / 社会新闻」三个绿灯条目 */
 async function migrateWorld(bookName) {
     try {
         const book = await stBridge.loadWorldInfoAsync(bookName, true);
         if (!book || !book.entries) return;
-        const entry = Object.values(book.entries).find(e => e && e.comment === '世界局势');
-        if (!entry) return;
-        const content = String(entry.content || '');
-        if (WORLD_SECTIONS.some(s => content.includes(`【${s}】`))) return;
-        const data = parseWorldContent(content);
-        stBridge.upsertEntryInBook(book, '世界局势', renderWorldContent(data), {
-            isConstant: true,
-            extra: { position: 0, depth: 0, order: 800, key: [] },
-        });
+        const old = Object.values(book.entries).find(e => e && e.comment === '世界局势');
+        const hasNew = WORLD_SECTIONS.some(s => Object.values(book.entries).some(e => e && e.comment === WORLD_TITLES[s]));
+        if (!old && !hasNew) return;
+        const data = readWorldData(book);
+        writeWorldEntries(book, data);
+        if (old) removeEntryByComment(book, '世界局势');
         await stBridge.persistLorebook(bookName, book);
-        console.log('[worldsim] 世界局势已迁移为 国家/势力/社会新闻 三段');
+        console.log('[worldsim] 世界局势已拆成 世界·国家 / 世界·势力 / 社会新闻 三个绿灯条目');
     } catch (e) {
         console.warn('[worldsim] 世界局势迁移失败', e);
     }
@@ -1112,16 +1093,29 @@ async function cleanupLegacyEntries(bookName) {
 
 /** 固定条目布局：位置一律「角色定义之前」，order 决定先后 */
 const ENTRY_LAYOUT = {
-    '世界局势': { order: 800, constant: true, keyword: false },
+    '世界·国家': { order: 800, constant: false, keyword: true },
+    '世界·势力': { order: 802, constant: false, keyword: true },
+    '社会新闻': { order: 804, constant: false, keyword: true },
     '主线': { order: 810, constant: true, keyword: false },
-    '支线': { order: 812, constant: true, keyword: false },
-    '地图': { order: 830, constant: true, keyword: false },
+    '支线': { order: 812, constant: false, keyword: true },
+    '地图': { order: 830, constant: false, keyword: true },
     '索引': { order: 850, constant: true, keyword: false },
     '道具': { order: 900, constant: false, keyword: true },
-    '计划': { order: 910, constant: true, keyword: false },
+    '计划': { order: 910, constant: false, keyword: true },
     '伏笔': { order: 920, constant: false, keyword: true },
     '剧情推演': { order: 999, constant: true, keyword: false },
 };
+
+/** 地图绿灯关键字：区域/城市/小地点名，限制数量避免关键词爆炸 */
+function mapEntryKeys(content) {
+    const data = parseMap(content);
+    const names = [
+        ...Object.keys(data.regions || {}),
+        ...Object.keys(data.cities || {}),
+        ...Object.keys(data.sites || {}),
+    ].filter(Boolean);
+    return [...new Set(names)].slice(0, 30);
+}
 
 /** 旧档迁移：把条目挪到「角色定义之前」，道具/伏笔转绿灯，补区块标题 */
 async function normalizeEntryLayout(bookName) {
@@ -1155,7 +1149,7 @@ async function normalizeEntryLayout(bookName) {
             }
 
             const keys = layout.keyword
-                ? (isChar ? [c.slice(3)] : deriveKeys(readAggregate(entry.content), c))
+                ? (isChar ? [c.slice(3)] : (c === '地图' ? mapEntryKeys(entry.content) : deriveKeys(readAggregate(entry.content), c)))
                 : [];
             if (JSON.stringify(entry.key || []) !== JSON.stringify(keys)) {
                 entry.key = keys;
@@ -1344,11 +1338,12 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         }
     }
     if (data.plot) {
-        const map = await applyAggregateOps(bookName, '计划', data.plot, 910);
+        const map = await applyAggregateOps(bookName, '计划', data.plot, 910, { keyword: true });
         summary.plot = map ? Object.keys(map).length : 0;
     }
     refreshSnapshots(bookName, book);
     if (appliedMap) mapCache.set(bookName, appliedMap);
+    await refreshBriefs(bookName);
     recordWorldChange(bookName, data, layer, questPrune);
     return summary;
 }
@@ -1712,7 +1707,7 @@ registry.register({
                     if (itemMap) await syncNames(currentLorebook, 'items', Object.keys(itemMap));
                 }
                 if (data.plot && settings.enablePlot) {
-                    await applyAggregateOps(currentLorebook, '计划', data.plot, 910);
+                    await applyAggregateOps(currentLorebook, '计划', data.plot, 910, { keyword: true });
                 }
                 if (data.world && settings.enableWorld) {
                     const worldData = await applyWorldUpdate(currentLorebook, data.world);
@@ -1748,6 +1743,7 @@ registry.register({
                     if (foreMap) await syncNames(currentLorebook, 'foreshadows', Object.keys(foreMap));
                 }
                 recordWorldChange(currentLorebook, data, replyLayer, questPrune);
+                await refreshBriefs(currentLorebook);
             } catch (e) {
                 console.warn('[worldsim] JSON 解析失败', e, captured.ws_update);
             }

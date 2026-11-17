@@ -4000,6 +4000,40 @@ body {
     white-space: nowrap;
 }
 
+/* 社会新闻 */
+#nt-quick-modal .nt-news {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+#nt-quick-modal .nt-news-head {
+    padding-bottom: 7px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: #8d96a8;
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+}
+#nt-quick-modal .nt-news-card {
+    padding: 9px 11px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-left: 2px solid #2f5bd7;
+    background: rgba(255, 255, 255, 0.018);
+}
+#nt-quick-modal .nt-news-title {
+    margin-bottom: 4px;
+    color: #eef1f7;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+#nt-quick-modal .nt-news-meta {
+    color: #8d96a8;
+    font-size: 10px;
+    line-height: 1.65;
+}
+
+
 
 
 /* TOOL 菜单状态条：TRACKING / ACTIVE BOOK / 收起 */

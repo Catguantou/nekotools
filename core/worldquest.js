@@ -231,8 +231,9 @@ export async function pruneQuests(bookName, todayText = '') {
     const result = pruneQuestData(data, todayText);
     if (!result.removed.length && !result.marked.length) return result;
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
-        isConstant: true,
-        extra: { position: 0, depth: 0, order: 812, key: [] },
+        isConstant: false,
+        keywords: Object.keys(data),
+        extra: { position: 0, depth: 0, order: 812 },
     });
     await stBridge.persistLorebook(bookName, book);
     if (result.archived.length) await appendQuestHistory(bookName, result.archived, todayText);
@@ -279,8 +280,9 @@ export async function applyQuests(bookName, raw, { today = '' } = {}) {
     }
 
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
-        isConstant: true,
-        extra: { position: 0, depth: 0, order: 812, key: [] },
+        isConstant: false,
+        keywords: Object.keys(data),
+        extra: { position: 0, depth: 0, order: 812 },
     });
     await stBridge.persistLorebook(bookName, book);
     return data;
@@ -298,8 +300,9 @@ export async function saveQuests(bookName, quests) {
         if (n && text) data[n] = text;
     }
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
-        isConstant: true,
-        extra: { position: 0, depth: 0, order: 812, key: [] },
+        isConstant: false,
+        keywords: Object.keys(data),
+        extra: { position: 0, depth: 0, order: 812 },
     });
     await stBridge.persistLorebook(bookName, book);
     return data;

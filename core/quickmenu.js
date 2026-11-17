@@ -443,6 +443,82 @@ function updateClockUi() {
         : '还没有时钟';
 }
 
+// ========== 社会新闻 ==========
+
+function parseNewsLines(content) {
+    const rows = [];
+    let section = '';
+    for (const raw of String(content || '').split('\n')) {
+        const line = raw.trim();
+        if (line === '【社会新闻】') { section = 'news'; continue; }
+        if (line.startsWith('【') && line !== '【社会新闻】') { section = ''; continue; }
+        if (line.startsWith('【以下为')) { section = ''; continue; }
+        if (section !== 'news') continue;
+        const m = line.match(/^-\s*([^｜|]+)[｜|]([\s\S]*)$/);
+        if (m) rows.push({ title: m[1].trim(), value: m[2].trim() });
+    }
+    return rows;
+}
+
+async function readNews(book) {
+    const data = await stBridge.loadWorldInfoAsync(book);
+    if (!data || !data.entries) return [];
+    const entries = Object.values(data.entries);
+    const direct = entries.find(e => e && e.comment === '社会新闻');
+    if (direct) {
+        const rows = [];
+        for (const line of String(direct.content || '').split('\n')) {
+            const m = line.trim().match(/^-\s*([^｜|]+)[｜|]([\s\S]*)$/);
+            if (m) rows.push({ title: m[1].trim(), value: m[2].trim() });
+        }
+        return rows;
+    }
+    const old = entries.find(e => e && e.comment === '世界局势');
+    return old ? parseNewsLines(old.content) : [];
+}
+
+function showNewsModal() {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+    const clock = readClock();
+    readNews(book).then(rows => {
+        const body = document.createElement('div');
+        body.className = 'nt-news';
+        const head = document.createElement('div');
+        head.className = 'nt-news-head';
+        head.textContent = clock && clock.time ? `${clock.time} · 社会新闻` : '社会新闻';
+        body.appendChild(head);
+        if (!rows.length) {
+            const note = document.createElement('div');
+            note.className = 'nt-quick-note';
+            note.textContent = '还没有社会新闻。世界 tick 或开局世界生成后会写进「社会新闻」条目。';
+            body.appendChild(note);
+            openModal({ title: '社会新闻', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+            return;
+        }
+        for (const row of rows.slice(-20).reverse()) {
+            const card = document.createElement('div');
+            card.className = 'nt-news-card';
+            const title = document.createElement('div');
+            title.className = 'nt-news-title';
+            title.textContent = row.title;
+            const meta = document.createElement('div');
+            meta.className = 'nt-news-meta';
+            meta.textContent = row.value;
+            card.appendChild(title);
+            card.appendChild(meta);
+            body.appendChild(card);
+        }
+        openModal({ title: '社会新闻', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+    }).catch(e => {
+        console.warn('[nekotools] 社会新闻读取失败', e);
+        toast('社会新闻读取失败', 'error');
+    });
+}
+
 // ========== 世界日志 ==========
 
 function showWorldLogModal() {
@@ -2409,6 +2485,7 @@ function buildPop() {
     const items = [
         { group: '世界', icon: '🕰', key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气', enabled: true },
         { group: '世界', icon: '🗺', key: 'map', label: '地图', hint: '区域 / 城市 / 小地点', enabled: true },
+        { group: '世界', icon: '📰', key: 'news', label: '社会新闻', hint: '最近发生了什么', enabled: true },
         { group: '世界', icon: '📜', key: 'log', label: '世界日志', hint: '最近的角色 / 世界 / 支线变化', enabled: true },
         { group: '角色', icon: '👥', key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
         { group: '角色', icon: '📋', key: 'quests', label: '可办事项', hint: '主线 / 支线，可编辑', enabled: true },
@@ -2448,6 +2525,7 @@ function buildPop() {
         row.addEventListener('click', () => {
             closePop();
             if (item.key === 'clock') showClockModal();
+            else if (item.key === 'news') showNewsModal();
             else if (item.key === 'log') showWorldLogModal();
             else if (item.key === 'roster') showRosterModal();
             else if (item.key === 'action') showActionModal();
