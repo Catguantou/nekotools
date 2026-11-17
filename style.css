@@ -3890,10 +3890,12 @@ body {
     right: 0;
     top: 0;
     bottom: 0;
-    width: 90px;
-    background-image: radial-gradient(circle, #2f5bd7 1px, transparent 1.2px);
-    background-size: 7px 7px;
-    opacity: 0.2;
+    width: 100px;
+    background-image:
+        radial-gradient(circle, rgba(255, 255, 255, 0.35) 1px, transparent 1.2px),
+        radial-gradient(circle, rgba(115, 145, 225, 0.4) 1.1px, transparent 1.35px);
+    background-size: 6px 6px, 13px 13px;
+    opacity: 0.42;
     -webkit-mask-image: linear-gradient(90deg, transparent, #000 70%);
     mask-image: linear-gradient(90deg, transparent, #000 70%);
     pointer-events: none;
@@ -3961,13 +3963,16 @@ body {
     right: 0;
     left: auto;
     bottom: auto;
-    width: 42%;
+    width: 46%;
     height: 100%;
-    background-image: radial-gradient(circle, #2f5bd7 1px, transparent 1.2px);
-    background-size: 8px 8px;
-    opacity: 0.16;
-    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 72%);
-    mask-image: linear-gradient(90deg, transparent 0%, #000 72%);
+    background-image:
+        radial-gradient(circle, rgba(255, 255, 255, 0.55) 1px, transparent 1.25px),
+        radial-gradient(circle, rgba(130, 150, 195, 0.38) 1.2px, transparent 1.45px);
+    background-size: 6px 6px, 17px 17px;
+    background-position: 0 0, 3px 3px;
+    opacity: 0.5;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 58%);
+    mask-image: linear-gradient(90deg, transparent 0%, #000 58%);
     pointer-events: none;
     z-index: 0;
 }
@@ -3976,6 +3981,19 @@ body {
     position: relative;
     z-index: 1;
 }
+
+/* 面板不再用透明底 */
+#nt-ws-panel .nt-header {
+    background: #080a0e !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+#nt-ws-panel .nt-content {
+    background: #0b0d12 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
 
 
 
