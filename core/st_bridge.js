@@ -717,7 +717,7 @@ export const stBridge = {
             entry.content = content;
             entry.constant = isConstant;
             entry.selective = !isConstant;
-            if (!isConstant && keywords.length) entry.key = keywords;
+            if (!isConstant) entry.key = keywords.length ? keywords : [];
             Object.assign(entry, extra);
         }
         return entry;
@@ -758,7 +758,7 @@ export const stBridge = {
             entry.content = content;
             entry.constant = isConstant;
             entry.selective = !isConstant;
-            if (!isConstant && keywords.length) entry.key = keywords;
+            if (!isConstant) entry.key = keywords.length ? keywords : [];
             Object.assign(entry, extra);
         }
 

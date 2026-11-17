@@ -190,6 +190,7 @@ try {
     assert(rl4 && rl4.tier === '' && rl4.action === '只是备注', '两段旧格式解析失败');
     assert(!wf.formatRosterLine({ name: 'A｜B', tier: 'T1' }).includes('A｜B'), '名字里的竖线未转义');
     assert(wf.stripRosterLayer('T2|北境|第 3 层') === 'T2|北境', 'ASCII 竖线去层号失败');
+    assert(wf.parseRosterLine('【以下为角色索引】') === null, '区块标题不应被当成角色');
 } catch (e) {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }

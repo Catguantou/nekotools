@@ -130,6 +130,7 @@ export function parseRosterLine(line) {
     const raw = String(line ?? '').trim();
     if (!raw) return null;
     const body = raw.replace(/^[-·]\s*/, '');
+    if (!body || /^【.*】$/.test(body)) return null;
     const parts = body.split(/[|｜]/).map(s => s.trim());
     if (!parts[0]) return null;
 

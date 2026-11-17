@@ -195,6 +195,7 @@ chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：c
         let c = `<nekotools:track.items>
 【道具追踪】JSON 字段 "items": {"add": {"道具名": "[持有者 | 作用 | 来源] 描述"}, "del": ["道具名"]}
 要求：只写本轮**变化**的道具，不要重复未变的条目。add 新增或覆盖同名项；del 删除已失去/已用掉的道具。没有变化就写 "items": {}。
+道具名要短（2-8 字），必须能在正文里原样出现——这条按名字做绿灯激活。
 重点保留未来剧情可能召回的道具。
 `;
         const custom = (settings.customPrompts.items || '').trim();
@@ -231,6 +232,7 @@ chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：c
         let c = `<nekotools:track.foreshadow>
 【草蛇伏笔】JSON 字段 "foreshadow": {"add": {"伏笔名": "[线索 | 指向/可能的作用] 描述"}, "del": ["伏笔名"]}
 要求：只写本轮**新增或修改**的伏笔，不要重复未变的条目。已触发/废弃的伏笔用 del。没有变化就写 "foreshadow": {}。与计划追踪严格分开。
+伏笔名要短（2-8 字），用正文里可能出现的词——这条按名字做绿灯激活。
 `;
         const custom = (settings.customPrompts.foreshadow || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
@@ -308,6 +310,11 @@ function formatAggregate(map) {
     return lines.length ? lines.join('\n') : '（暂无）';
 }
 
+/** 条目开头加一段固定标题，方便模型按区块检索 */
+function renderAggregate(title, map) {
+    return `【以下为${title}】\n${formatAggregate(map)}`;
+}
+
 /** 从聚合条目内容还原成 {名称: 描述} */
 function readAggregate(content) {
     const map = {};
@@ -316,6 +323,23 @@ function readAggregate(content) {
         if (m) map[m[1].trim()] = m[2].trim();
     }
     return map;
+}
+
+/** 绿灯激活词：用条目名 + 分类词；长名字额外拆出短词 */
+function deriveKeys(map, title) {
+    const keys = [];
+    for (const name of Object.keys(map || {})) {
+        const n = String(name || '').trim();
+        if (!n) continue;
+        keys.push(n);
+        if (n.length > 6) {
+            for (const part of n.split(/[·｜|、\s]+/)) {
+                if (part.length >= 2 && part.length <= 6) keys.push(part);
+            }
+        }
+    }
+    keys.push(title);
+    return [...new Set(keys)].slice(0, 40);
 }
 
 /** 解析增量指令：{ add: {名:描述}, del: [名] }；兼容旧的整表格式 */
@@ -331,8 +355,11 @@ function parseOps(raw) {
     return { add: raw, del: [] };
 }
 
-/** 按增量指令修改单条目：只动变化的行，不重写未变内容 */
-async function applyAggregateOps(bookName, title, raw, order = 900) {
+/**
+ * 按增量指令修改单条目：只动变化的行，不重写未变内容。
+ * keyword=true 时条目改成绿灯（按条目名激活），否则常驻。
+ */
+async function applyAggregateOps(bookName, title, raw, order = 900, { keyword = false } = {}) {
     const ops = parseOps(raw);
     if (!ops) return false;
     if (!Object.keys(ops.add).length && !ops.del.length) return false;
@@ -350,9 +377,10 @@ async function applyAggregateOps(bookName, title, raw, order = 900) {
     }
 
     // 就地改这一条，再整本存一次；避免 updateEntry 再读一遍盘
-    stBridge.upsertEntryInBook(book, title, formatAggregate(map), {
-        isConstant: true,
-        extra: { position: 4, depth: 999, order },
+    stBridge.upsertEntryInBook(book, title, renderAggregate(title, map), {
+        isConstant: !keyword,
+        keywords: keyword ? deriveKeys(map, title) : [],
+        extra: { position: 0, depth: 0, order },
     });
     await stBridge.persistLorebook(bookName, book);
     return true;
@@ -446,12 +474,83 @@ async function cleanupLegacyEntries(bookName) {
             console.log('[worldsim] 已移除旧版「世界时钟」条目');
         }
         const roster = entries.find(e => e && e.comment === '角色索引');
-        if (roster && /^【(世界角色名册|当前已追踪角色名册)】/.test(String(roster.content || ''))) {
+        if (roster && /^【(世界角色名册|当前已追踪角色名册)】/.test(String(roster.content || '').trim())) {
             await stBridge.removeEntryByComment(bookName, '角色索引');
             console.log('[worldsim] 已清空旧版自动扫描的「角色索引」');
         }
     } catch (e) {
         console.warn('[worldsim] 清理旧条目失败', e);
+    }
+}
+
+/** 固定条目布局：位置一律「角色定义之前」，order 决定先后 */
+const ENTRY_LAYOUT = {
+    '世界局势': { order: 800, constant: true, keyword: false },
+    '角色索引': { order: 850, constant: true, keyword: false },
+    '道具': { order: 900, constant: false, keyword: true },
+    '计划': { order: 910, constant: true, keyword: false },
+    '伏笔': { order: 920, constant: false, keyword: true },
+    '剧情推演': { order: 999, constant: true, keyword: false },
+};
+
+/** 旧档迁移：把条目挪到「角色定义之前」，道具/伏笔转绿灯，补区块标题 */
+async function normalizeEntryLayout(bookName) {
+    try {
+        const book = await stBridge.loadWorldInfoAsync(bookName, true);
+        if (!book || !book.entries) return;
+        let changed = false;
+
+        for (const entry of Object.values(book.entries)) {
+            if (!entry || !entry.comment) continue;
+            const c = entry.comment;
+            let layout = ENTRY_LAYOUT[c];
+            let isChar = false;
+            if (!layout && c.startsWith('角色·')) {
+                layout = { order: 860, constant: false, keyword: true };
+                isChar = true;
+            }
+            if (!layout) continue;
+
+            if (entry.position !== 0) { entry.position = 0; changed = true; }
+            if (entry.depth !== 0) { entry.depth = 0; changed = true; }
+            if (entry.order !== layout.order) { entry.order = layout.order; changed = true; }
+            if (entry.constant !== layout.constant) {
+                entry.constant = layout.constant;
+                entry.selective = !layout.constant;
+                changed = true;
+            }
+            if (entry.selective !== !layout.constant) {
+                entry.selective = !layout.constant;
+                changed = true;
+            }
+
+            const keys = layout.keyword
+                ? (isChar ? [c.slice(3)] : deriveKeys(readAggregate(entry.content), c))
+                : [];
+            if (JSON.stringify(entry.key || []) !== JSON.stringify(keys)) {
+                entry.key = keys;
+                changed = true;
+            }
+            if (layout.constant && Array.isArray(entry.key) && entry.key.length) {
+                entry.key = [];
+                changed = true;
+            }
+
+            if (!isChar && entry.comment !== '世界配置') {
+                const content = String(entry.content || '');
+                if (!content.startsWith('【以下为')) {
+                    entry.content = `【以下为${c}】\n${content}`;
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed) {
+            await stBridge.persistLorebook(bookName, book);
+            console.log('[worldsim] 条目布局已归位/转绿灯:', bookName);
+        }
+    } catch (e) {
+        console.warn('[worldsim] 条目布局迁移失败', e);
     }
 }
 
@@ -508,9 +607,10 @@ registry.register({
                 const book = await stBridge.ensureWorldbook(name);
                 console.log(`[worldsim] 追踪书检查 #${attempt}:`, name, book ? 'OK' : 'FAILED');
                 if (book) {
-                    // 清掉旧版本留在书里的「世界时钟」和自动扫描名册
-                    cleanupLegacyEntries(name).catch(e => console.warn('[worldsim] 清理旧条目失败', e));
+                    // 清掉旧版本留在书里的「世界时钟」和自动扫描名册；条目布局归位
+                    await cleanupLegacyEntries(name);
                     await loadConfig(name);
+                    await normalizeEntryLayout(name);
                     await stBridge.deactivateStaleAutoBooks(name);
                     await stBridge.preloadActivatedLorebooks();
                 } else if (attempt < 10) {
@@ -548,7 +648,8 @@ registry.register({
                         lastChatId = chatId;
                         await stBridge.deactivateStaleAutoBooks(name);
                         await loadConfig(name);
-                        cleanupLegacyEntries(name).catch(e => console.warn('[worldsim] 清理旧条目失败', e));
+                        await cleanupLegacyEntries(name);
+                        await normalizeEntryLayout(name);
                     } catch (e) {
                         console.warn('[worldsim] 切换会话同步世界书失败', e);
                     }
@@ -700,7 +801,7 @@ registry.register({
             // 剧情推演写进追踪书（常驻条目），由酒馆在下一轮自动注入；
             // 不落本地缓存，避免旧推演污染新对话/别的角色。
             await stBridge.updateEntry(currentLorebook, '剧情推演', text, true, [], {
-                position: 4, depth: 1, order: 999
+                position: 0, depth: 0, order: 999
             });
         }
 
@@ -723,7 +824,9 @@ registry.register({
                         const n = String(name).trim();
                         if (!n || blockedNow.has(n)) continue;
                         if (allow && !allow.has(n)) continue;
-                        await stBridge.updateEntry(currentLorebook, `角色·${n}`, formatCharEntry(info), false, [n]);
+                        await stBridge.updateEntry(currentLorebook, `角色·${n}`, formatCharEntry(info), false, [n], {
+                            position: 0, depth: 0, order: 860,
+                        });
                     }
                 }
                 if (data.roster) {
@@ -744,24 +847,24 @@ registry.register({
                         ? source.del.map(String).filter(n => !pinnedNow.has(n))
                         : [];
                     if (Object.keys(add).length || del.length) {
-                        await applyAggregateOps(currentLorebook, '角色索引', { add, del }, 998);
+                        await applyAggregateOps(currentLorebook, '角色索引', { add, del }, 850);
                     }
                 }
                 if (data.items && settings.enableItems) {
-                    await applyAggregateOps(currentLorebook, '道具', data.items);
+                    await applyAggregateOps(currentLorebook, '道具', data.items, 900, { keyword: true });
                 }
                 if (data.plot && settings.enablePlot) {
-                    await applyAggregateOps(currentLorebook, '计划', data.plot);
+                    await applyAggregateOps(currentLorebook, '计划', data.plot, 910);
                 }
                 if (data.world && settings.enableWorld) {
                     const worldRaw = data.world;
                     const ops = (worldRaw && (Array.isArray(worldRaw.del) || worldRaw.add))
                         ? worldRaw
                         : { add: worldRaw };
-                    await applyAggregateOps(currentLorebook, '世界局势', ops);
+                    await applyAggregateOps(currentLorebook, '世界局势', ops, 800);
                 }
                 if (data.foreshadow && settings.enableForeshadow) {
-                    await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow);
+                    await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow, 920, { keyword: true });
                 }
             } catch (e) {
                 console.warn('[worldsim] JSON 解析失败', e, captured.ws_update);
