@@ -191,6 +191,17 @@ try {
     assert(!wf.formatRosterLine({ name: 'A｜B', tier: 'T1' }).includes('A｜B'), '名字里的竖线未转义');
     assert(wf.stripRosterLayer('T2|北境|第 3 层') === 'T2|北境', 'ASCII 竖线去层号失败');
     assert(wf.parseRosterLine('【以下为角色索引】') === null, '区块标题不应被当成角色');
+
+    // 角色档案 YAML
+    const yaml = wf.formatCharacterYaml('艾达', { 身份: '机械师', 状态: '在门口', 关键记忆: ['a', 'b'] });
+    assert(yaml.includes('姓名: "艾达"') && yaml.includes('  - "a"'), '角色 YAML 生成失败');
+    const parsedYaml = wf.parseCharacterYaml(yaml);
+    assert(parsedYaml.姓名 === '艾达' && parsedYaml.状态 === '在门口', '角色 YAML 解析失败');
+    assert(Array.isArray(parsedYaml.关键记忆) && parsedYaml.关键记忆.length === 2, '角色 YAML 关键记忆解析失败');
+    const oldChar = wf.parseCharacterYaml('- 状态：在门口\n- 关键记忆：a');
+    assert(oldChar.状态 === '在门口' && oldChar.关键记忆 === 'a', '旧角色档案解析失败');
+    assert(wf.normalizeMemories('a\nb').length === 2, '关键记忆分行失败');
+    assert(wf.formatCharacterYaml('A:B', { 状态: 'x' }).includes('姓名: "A:B"'), 'YAML 引号失败');
 } catch (e) {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }

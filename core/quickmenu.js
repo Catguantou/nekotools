@@ -15,7 +15,7 @@ import {
     removeRosterName,
     removeCharacterEntry,
 } from './slots.js';
-import { slotLabel, parseStatusFields, formatRosterLine } from './worldfmt.js';
+import { slotLabel, parseStatusFields, formatRosterLine, parseCharacterYaml } from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
@@ -426,7 +426,7 @@ function updateClockUi() {
 
 // ========== 角色管理 ==========
 
-const CHAR_FIELD_ORDER = ['状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化'];
+const CHAR_FIELD_ORDER = ['姓名', '身份', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化'];
 
 function currentLayerNo() {
     const chat = stBridge.getContext().chat || [];
@@ -439,16 +439,12 @@ function charAge(item) {
     return age === 0 ? '本层更新' : `${age} 层前`;
 }
 
-function splitCharFields(content) {
-    const out = [];
-    for (const line of String(content || '').split('\n')) {
-        const s = line.trim();
-        if (!s) continue;
-        const m = s.match(/^[-·]\s*([^：:]+)[：:]([\s\S]*)$/);
-        if (m) out.push({ key: m[1].trim(), value: m[2].trim() });
-        else out.push({ key: '', value: s });
-    }
-    return out;
+function charFields(content) {
+    const parsed = parseCharacterYaml(content);
+    return Object.entries(parsed).map(([key, value]) => ({
+        key,
+        value: Array.isArray(value) ? value.join('\n') : String(value ?? ''),
+    }));
 }
 
 async function showRosterModal() {
@@ -718,7 +714,7 @@ async function showRosterModal() {
             return;
         }
 
-        const fields = splitCharFields(model);
+        const fields = charFields(model);
         if (!fields.length) {
             const note = document.createElement('div');
             note.className = 'nt-quick-note';

@@ -177,6 +177,101 @@ export function stripRosterLayer(value) {
     return String(value ?? '').replace(/[|｜]\s*第\s*\d+\s*层\s*$/, '').trim();
 }
 
+// ========== 角色档案（YAML 子集） ==========
+
+const CHAR_BASE_FIELDS = ['姓名', '身份', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化'];
+
+function yamlQuote(value) {
+    return JSON.stringify(String(value ?? ''));
+}
+
+function yamlUnquote(value) {
+    const s = String(value ?? '').trim();
+    if (s.startsWith('"') && s.endsWith('"')) {
+        try { return JSON.parse(s); } catch (_) {}
+    }
+    return s;
+}
+
+/** 关键记忆统一成字符串数组；模型给字符串时按换行拆 */
+export function normalizeMemories(value) {
+    if (Array.isArray(value)) return value.map(x => String(x).trim()).filter(Boolean);
+    const s = String(value ?? '').trim();
+    if (!s) return [];
+    return s.split('\n').map(x => x.trim()).filter(Boolean);
+}
+
+/** 角色档案写成 YAML：姓名必写，关键记忆用列表 */
+export function formatCharacterYaml(name, info = {}) {
+    const src = info && typeof info === 'object' ? info : {};
+    const lines = [`姓名: ${yamlQuote(name)}`];
+    const used = new Set(['姓名']);
+
+    for (const key of CHAR_BASE_FIELDS) {
+        if (key === '姓名') continue;
+        const v = src[key];
+        if (key === '关键记忆') {
+            const list = normalizeMemories(v);
+            if (!list.length) continue;
+            lines.push('关键记忆:');
+            for (const item of list) lines.push(`  - ${yamlQuote(item)}`);
+            used.add(key);
+            continue;
+        }
+        if (v === undefined || v === null || !String(v).trim()) continue;
+        lines.push(`${key}: ${yamlQuote(v)}`);
+        used.add(key);
+    }
+
+    for (const [key, v] of Object.entries(src)) {
+        if (used.has(key) || v === undefined || v === null) continue;
+        if (Array.isArray(v)) {
+            const list = v.map(x => String(x).trim()).filter(Boolean);
+            if (!list.length) continue;
+            lines.push(`${key}:`);
+            for (const item of list) lines.push(`  - ${yamlQuote(item)}`);
+        } else if (String(v).trim()) {
+            lines.push(`${key}: ${yamlQuote(v)}`);
+        }
+    }
+    return lines.join('\n');
+}
+
+/** 解析角色档案：新 YAML 子集 + 兼容旧的「- 字段：值」格式 */
+export function parseCharacterYaml(content) {
+    const text = String(content ?? '').trim();
+    const out = {};
+    if (!text) return out;
+
+    const firstLine = text.split('\n')[0].trim();
+    if (/^-\s*[^:：\n]+[:：]/.test(firstLine)) {
+        for (const line of text.split('\n')) {
+            const m = line.match(/^\s*-\s*([^：:]+)[：:]([\s\S]*)$/);
+            if (m) out[m[1].trim()] = m[2].trim();
+        }
+        return out;
+    }
+
+    let current = null;
+    for (const rawLine of text.split('\n')) {
+        const line = rawLine.replace(/\r$/, '');
+        const item = line.match(/^\s{2,}-\s*(.*)$/);
+        if (item && current) {
+            const arr = Array.isArray(out[current]) ? out[current] : [];
+            arr.push(yamlUnquote(item[1]));
+            out[current] = arr;
+            continue;
+        }
+        const kv = line.match(/^([^:：]+)[:：]\s*(.*)$/);
+        if (!kv) continue;
+        const key = kv[1].trim();
+        const value = kv[2].trim();
+        current = key;
+        out[key] = value ? yamlUnquote(value) : [];
+    }
+    return out;
+}
+
 /** 存档列表里的显示名 */
 export function slotLabel(n) {
     const num = Math.max(1, Math.floor(Number(n)) || 1);

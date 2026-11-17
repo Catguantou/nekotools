@@ -3,7 +3,7 @@ import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
-import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer } from '../core/worldfmt.js';
+import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories } from '../core/worldfmt.js';
 
 const defaultSettings = {
     enabled: true,
@@ -175,8 +175,9 @@ chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：c
 - 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
 - 长期目标：最重要的长期追求
 - 近期打算：短期内最可能采取的下一个具体行动
-- 关键记忆：【事件】→ 导致了什么转变（每次最多新增 1-2 条）
+- 关键记忆：【事件】→ 导致了什么转变（本轮只写新增的 1-2 条，用数组或换行分隔；插件会追加到旧记忆，不会覆盖）
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
+可选补充（会一起写进档案）：身份 / 外貌 / 与主角关系。姓名由插件自动写，不用输出。
 `;
         const focus = (settings.focusChars || '').trim();
         if (focus) {
@@ -283,22 +284,40 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '') {
     return list;
 }
 
-const CHAR_FIELD_ORDER = ['状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化'];
+/** 角色条目：YAML 格式，姓名写进正文；关键记忆追加不覆盖 */
+async function updateCharacterEntry(bookName, name, info, book) {
+    const target = book || await stBridge.loadWorldInfoAsync(bookName);
+    if (!target || !target.entries) return;
 
-/** 角色条目：把结构化字段排成多行，保证每人一条、格式统一 */
-function formatCharEntry(info) {
-    if (typeof info === 'string') return info.trim();
-    if (!info || typeof info !== 'object') return '';
-    const lines = [];
-    for (const key of CHAR_FIELD_ORDER) {
-        const v = info[key];
-        if (v !== undefined && v !== null && String(v).trim()) lines.push(`- ${key}：${String(v).trim()}`);
+    const oldEntry = Object.values(target.entries).find(e => e && e.comment === `角色·${name}`);
+    const old = oldEntry ? parseCharacterYaml(oldEntry.content) : {};
+
+    const oldMemories = normalizeMemories(old['关键记忆']);
+    const newMemories = normalizeMemories(info && info['关键记忆']);
+    const merged = [...oldMemories];
+    const seen = new Set(oldMemories);
+    for (const m of newMemories) {
+        if (!seen.has(m)) {
+            merged.push(m);
+            seen.add(m);
+        }
     }
-    for (const [k, v] of Object.entries(info)) {
-        if (CHAR_FIELD_ORDER.includes(k)) continue;
-        if (v !== undefined && v !== null && String(v).trim()) lines.push(`- ${k}：${String(v).trim()}`);
+
+    const finalInfo = { ...(info && typeof info === 'object' ? info : {}) };
+    // 旧的可选基本信息（身份/外貌/关系等）本轮没写就保留
+    for (const [k, v] of Object.entries(old)) {
+        if (k === '姓名' || k === '关键记忆') continue;
+        if (!(k in finalInfo) || !String(finalInfo[k] ?? '').trim()) finalInfo[k] = v;
     }
-    return lines.join('\n');
+    finalInfo['关键记忆'] = merged;
+
+    const content = formatCharacterYaml(name, finalInfo);
+    stBridge.upsertEntryInBook(target, `角色·${name}`, content, {
+        isConstant: false,
+        keywords: [name],
+        extra: { position: 0, depth: 0, order: 860 },
+    });
+    await stBridge.persistLorebook(bookName, target);
 }
 
 /** 非角色分类：合并成一条，一行一个对象 */
@@ -325,21 +344,25 @@ function readAggregate(content) {
     return map;
 }
 
-/** 绿灯激活词：用条目名 + 分类词；长名字额外拆出短词 */
+/** 绿灯激活词：短词根优先（ST 是精确匹配，长名字基本等不到原样出现） */
 function deriveKeys(map, title) {
     const keys = [];
     for (const name of Object.keys(map || {})) {
         const n = String(name || '').trim();
         if (!n) continue;
-        keys.push(n);
-        if (n.length > 6) {
-            for (const part of n.split(/[·｜|、\s]+/)) {
-                if (part.length >= 2 && part.length <= 6) keys.push(part);
-            }
+        if (n.length <= 6) keys.push(n);
+        for (const part of n.split(/[·｜|、\s]+/)) {
+            if (part.length >= 2 && part.length <= 8) keys.push(part);
         }
+        if (n.includes('的')) {
+            const tail = n.split('的').pop().trim();
+            if (tail.length >= 2 && tail.length <= 8) keys.push(tail);
+        }
+        if (n.length >= 4) keys.push(n.slice(-2));
+        if (n.length >= 5) keys.push(n.slice(-3));
     }
     keys.push(title);
-    return [...new Set(keys)].slice(0, 40);
+    return [...new Set(keys)].filter(k => k.length >= 2).slice(0, 60);
 }
 
 /** 解析增量指令：{ add: {名:描述}, del: [名] }；兼容旧的整表格式 */
@@ -534,6 +557,15 @@ async function normalizeEntryLayout(bookName) {
             if (layout.constant && Array.isArray(entry.key) && entry.key.length) {
                 entry.key = [];
                 changed = true;
+            }
+
+            // 旧的角色档案（- 字段：值）升级成 YAML；认不出字段的不动，避免误删内容
+            if (isChar) {
+                const parsed = parseCharacterYaml(entry.content);
+                if (Object.keys(parsed).length && !parsed.姓名) {
+                    entry.content = formatCharacterYaml(c.slice(3), parsed);
+                    changed = true;
+                }
             }
 
             if (!isChar && entry.comment !== '世界配置') {
@@ -820,13 +852,12 @@ registry.register({
                 if (data.chars && settings.enableChars) {
                     const focusArr = (settings.focusChars || '').split(/[,，\s]+/).map(n => n.trim()).filter(Boolean);
                     const allow = focusArr.length ? new Set([...focusArr, ...pinnedNow]) : null;
+                    const charsBook = await stBridge.loadWorldInfoAsync(currentLorebook);
                     for (const [name, info] of Object.entries(data.chars)) {
                         const n = String(name).trim();
                         if (!n || blockedNow.has(n)) continue;
                         if (allow && !allow.has(n)) continue;
-                        await stBridge.updateEntry(currentLorebook, `角色·${n}`, formatCharEntry(info), false, [n], {
-                            position: 0, depth: 0, order: 860,
-                        });
+                        await updateCharacterEntry(currentLorebook, n, info, charsBook);
                     }
                 }
                 if (data.roster) {
