@@ -2398,16 +2398,8 @@ async function showRefreshModal(preselectName = '') {
             return false;
         }
         const selectedChars = Object.keys(charChecks).filter(name => charChecks[name].checked);
-        if (selected.includes('chars')) {
-            if (!charList.length) {
-                toast('角色索引为空，不能单独更新角色', 'warning');
-                return false;
-            }
-            if (!selectedChars.length) {
-                toast('至少勾选一个要更新的角色', 'warning');
-                return false;
-            }
-        }
+        // 角色索引为空时直接跳过角色类别，不要让整次更新失败
+        const doChars = selected.includes('chars') && charList.length > 0 && selectedChars.length > 0;
         if (!(await backupBeforeWrite())) return false;
         const bookData = await stBridge.loadWorldInfoAsync(book);
         const get = (title) => {
@@ -2417,7 +2409,7 @@ async function showRefreshModal(preselectName = '') {
             return entry ? String(entry.content || '').slice(0, 6000) : '';
         };
         const blocks = [];
-        if (selected.includes('chars')) blocks.push(`【索引】\n${get('索引') || '（空）'}`);
+        if (doChars) blocks.push(`【索引】\n${get('索引') || '（空）'}`);
         if (selected.includes('world')) {
             blocks.push(`【世界·国家】\n${get('世界·国家') || '（空）'}`);
             blocks.push(`【世界·势力】\n${get('世界·势力') || '（空）'}`);
@@ -2435,7 +2427,7 @@ async function showRefreshModal(preselectName = '') {
         const schema = [];
         const userName = stBridge.getUserName() || '用户';
         const recordUserChar = settings.recordUserCharacter === true;
-        if (selected.includes('chars')) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`);
+        if (doChars) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`);
         if (selected.includes('world')) schema.push('"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}');
         if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}');
         if (selected.includes('quests')) {
@@ -2446,7 +2438,7 @@ async function showRefreshModal(preselectName = '') {
         if (selected.includes('foreshadow')) schema.push('"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}');
         if (selected.includes('plot')) schema.push('"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}');
 
-        const charLine = selected.includes('chars')
+        const charLine = doChars
             ? `本轮只更新这些角色：${selectedChars.join('、')}；不要输出其他人。`
             : '';
         const userLine = recordUserChar
@@ -2477,7 +2469,7 @@ ${schema.join('\n')}
                 for (const name of selectedChars) {
                     if (data.chars[name]) filtered[name] = data.chars[name];
                 }
-                data.chars = filtered;
+                data.chars = doChars ? filtered : {};
             }
             const summary = await applyRefreshData(book, data, currentLayerNo());
             const bits = [
