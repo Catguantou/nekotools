@@ -28,8 +28,6 @@ const defaultSettings = {
     clockJumpDays: 7,
     hideKeepCount: 2,
     visualHideKeep: 0,
-    focusChars: '',
-    recordUserCharacter: false,
     enableTicks: true,
     worldTickEvery: 3,
     charTickEvery: 2,
@@ -502,10 +500,6 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 信任 0-20 提防 / 21-40 保留 / 41-60 一般 / 61-80 信任 / 81-100 生死托付。
 只写本轮有变化的人；插件会按人合并，没写到的旧关系保留。姓名由插件自动写，不用输出。
 `;
-        const focus = (settings.focusChars || '').trim();
-        if (focus) {
-            c += `\n【重要限制】：你只能追踪并更新以下指定的角色，绝对不要输出名单外角色的 JSON：\n${focus}\n`;
-        }
         const custom = (settings.customPrompts.chars || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
         c += `</nekotools:track.chars>`;
@@ -1498,13 +1492,10 @@ registry.register({
                 const userCharName = stBridge.getUserName();
 
                 if (data.chars && settings.enableChars) {
-                    const focusArr = (settings.focusChars || '').split(/[,，\s]+/).map(n => n.trim()).filter(Boolean);
-                    const allow = focusArr.length ? new Set([...focusArr, ...pinnedNow]) : null;
                     for (const [name, info] of Object.entries(data.chars)) {
                         const n = String(name).trim();
                         if (!n || blockedNow.has(n)) continue;
                         if (!settings.recordUserCharacter && userCharName && n === userCharName) continue;
-                        if (allow && !allow.has(n)) continue;
                         await updateCharacterEntry(currentLorebook, n, info, charsBook, replyLayer);
                         touchedChars.push({ name: n, info });
                     }

@@ -19,6 +19,7 @@ import {
 import { slotLabel, parseStatusFields, parseCharacterYaml } from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
 import { readMap, findPath } from './worldmap.js';
+import { refreshChar } from './worldindex.js';
 import { readMain, readQuests, clampProgress, saveMain, saveQuests } from './worldquest.js';
 import { generateQuiet } from './st_api.js';
 import { applyRefreshData } from '../modules/worldsim.js';
@@ -520,9 +521,12 @@ async function showRosterModal() {
         }
         cfg = saved;
 
-        // 新钉住但索引里没有：补一行
-        if (pinned.includes(name) && !list.some(x => x.name === name)) {
-            await addRosterName(book, name, `T1｜第 ${currentLayerNo()} 层`);
+        // 新钉住但索引里没有：补一行；钉住 = 关注，自动升到 T1
+        if (pinned.includes(name)) {
+            if (!list.some(x => x.name === name)) {
+                await addRosterName(book, name, `T1｜第 ${currentLayerNo()} 层`);
+            }
+            await refreshChar(book, name, { tier: 'T1', layer: currentLayerNo() });
             list = await readRoster(book);
         }
         renderList();

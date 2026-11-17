@@ -187,16 +187,10 @@ export function mountPanel() {
                             <span class="nt-data-label">大总结触发层数 <span class="nt-hint">/ 每 N 层触发</span></span>
                             <input type="number" id="nt-ws-biglimit" class="nt-data-input" value="${s.bigSummaryLimit}" min="10" max="9999">
                         </div>
-                        <div class="nt-data-row" style="margin-top: 16px;">
-                            <span class="nt-data-label">关注角色 <span class="nt-hint">/ 逗号分隔，留空追踪全部</span></span>
-                        </div>
-                        <div class="nt-data-row">
-                            <input type="text" id="nt-ws-focuschars" class="nt-data-input" style="width:100%; text-align:left;" value="${escapeHtml(s.focusChars || '')}" placeholder="例如: 张三,李四">
-                        </div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">把用户角色记入世界书 <span class="nt-hint">/ 关闭后不创建/更新「角色·你」</span></span>
                             <label style="display:flex;align-items:center;gap:6px;">
-                                <input type="checkbox" id="nt-ws-record-user" ${s.recordUserCharacter ? 'checked' : ''}> 开启
+                                <input type="checkbox" id="nt-ws-record-user" ${s.recordUserCharacter ? 'checked' : ''}> 启用
                             </label>
                         </div>
                         <div class="nt-data-row" style="margin-top: 16px;">
@@ -221,7 +215,7 @@ export function mountPanel() {
                             <span class="nt-data-label">T3 间隔 <span class="nt-hint">/ 配角每 N 层更新一次（默认 5）</span></span>
                             <input type="number" id="nt-ws-stale-after" class="nt-data-input" value="${s.staleAfter}" min="5" max="200">
                             <label style="display:flex;align-items:center;gap:6px;margin-left:8px;">
-                                <input type="checkbox" id="nt-ws-antilazy" ${s.enableAntiLazy ? 'checked' : ''}> 20 层未出场降级
+                                <input type="checkbox" id="nt-ws-antilazy" ${s.enableAntiLazy ? 'checked' : ''}> 20层降级
                             </label>
                         </div>
                     </div>
@@ -1154,7 +1148,6 @@ export function mountPanel() {
         s.hideKeepCount = parseInt(wrap.querySelector('#nt-ws-keep').value) || 0;
         s.visualHideKeep = parseInt(wrap.querySelector('#nt-ws-visual-keep').value) || 0;
         s.bigSummaryLimit = parseInt(wrap.querySelector('#nt-ws-biglimit').value) || 100;
-        s.focusChars = wrap.querySelector('#nt-ws-focuschars').value;
         s.recordUserCharacter = wrap.querySelector('#nt-ws-record-user').checked;
         s.enableTicks = wrap.querySelector('#nt-ws-tick-enable').checked;
         s.charTickEvery = parseInt(wrap.querySelector('#nt-ws-char-tick').value) || 0;
