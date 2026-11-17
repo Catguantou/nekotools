@@ -334,41 +334,6 @@ function showSlotsModal() {
 
 // ========== 菜单 ==========
 
-const MOBILE_CONTROL_SPECS = [
-    ['#options_button', '#leftSendForm'],
-    ['#extensionsMenuButton', '#leftSendForm'],
-    ['#stscript_continue', '#rightSendForm'],
-    ['#stscript_pause', '#rightSendForm'],
-    ['#stscript_stop', '#rightSendForm'],
-];
-const mobileControlHomes = new Map();
-
-function parkMobileControls() {
-    if (!window.matchMedia('(max-width: 640px)').matches) return;
-    const bar = document.querySelector('#nt-quick-pop .nt-quick-mobile-actions');
-    if (!bar) return;
-    for (const [selector, fallbackParent] of MOBILE_CONTROL_SPECS) {
-        const el = document.querySelector(selector);
-        if (!el || el.closest('#nt-quick-pop')) continue;
-        mobileControlHomes.set(el, {
-            parent: el.parentElement || document.querySelector(fallbackParent) || document.body,
-            next: el.nextSibling,
-        });
-        el.classList.add('nt-in-mobile-menu');
-        bar.appendChild(el);
-    }
-}
-
-function restoreMobileControls() {
-    for (const [el, home] of mobileControlHomes) {
-        el.classList.remove('nt-in-mobile-menu');
-        const parent = home.parent && home.parent.isConnected ? home.parent : document.body;
-        if (home.next && home.next.parentNode === parent) parent.insertBefore(el, home.next);
-        else parent.appendChild(el);
-    }
-    mobileControlHomes.clear();
-}
-
 function floatState() {
     const cfg = settings.get('worldsim') || {};
     const s = cfg.quickFloat || {};
@@ -499,7 +464,6 @@ function ensureFloatButton() {
 function closePop() {
     const pop = $(POP_ID);
     if (pop) pop.hidden = true;
-    restoreMobileControls();
     showFloatButton();
 }
 
@@ -553,7 +517,6 @@ function openPop() {
     // 先显示，再刷新内容；任何刷新异常都不能导致菜单打不开
     pop.hidden = false;
     hideFloatButton();
-    parkMobileControls();
     try { updateJumpUi(); } catch (err) { console.warn('[nekotools] 刷新跳时提示失败', err); }
     try { updateClockUi(); } catch (err) { console.warn('[nekotools] 刷新时钟失败', err); }
     try { updateQuickStatus(); } catch (err) { console.warn('[nekotools] 刷新追踪状态失败', err); }
@@ -2683,11 +2646,6 @@ function buildPop() {
     const list = document.createElement('div');
     list.className = 'nt-quick-pop-list';
 
-    const mobileBar = document.createElement('div');
-    mobileBar.className = 'nt-quick-mobile-actions';
-    // 阻止冒泡到 ST 的 document 点击处理器，否则选项面板/扩展菜单会刚打开就被关掉
-    mobileBar.addEventListener('click', (e) => e.stopPropagation());
-
     const items = [
         { group: '世界', icon: '🕰', key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气', enabled: true },
         { group: '世界', icon: '🗺', key: 'map', label: '地图', hint: '区域 / 城市 / 小地点', enabled: true },
@@ -2748,7 +2706,6 @@ function buildPop() {
     pop.appendChild(head);
     pop.appendChild(status);
     pop.appendChild(banner);
-    pop.appendChild(mobileBar);
     pop.appendChild(list);
     const foot = document.createElement('div');
     foot.className = 'nt-quick-pop-foot';
