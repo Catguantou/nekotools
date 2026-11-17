@@ -355,15 +355,18 @@ function placePop() {
     if (!btn || !pop) return;
     const mobile = window.matchMedia('(max-width: 640px)').matches;
     if (mobile) {
+        // 手机 WebView 里 body 是 fixed，底部定位会算到视口上方；改成从顶部定位
+        pop.style.top = '70px';
+        pop.style.bottom = 'auto';
         pop.style.left = '8px';
         pop.style.right = '8px';
         pop.style.width = 'auto';
         pop.style.maxWidth = 'none';
-        pop.style.bottom = 'calc(140px + env(safe-area-inset-bottom, 0px))';
-        pop.style.maxHeight = 'calc(100vh - 230px)';
+        pop.style.maxHeight = 'calc(100vh - 150px)';
         pop.style.overflowY = 'auto';
         return;
     }
+    pop.style.top = '';
     pop.style.right = '';
     pop.style.width = '';
     pop.style.maxWidth = '';
@@ -2483,8 +2486,8 @@ function triggerMobileAction(selector) {
             menu.style.setProperty('position', 'fixed', 'important');
             menu.style.setProperty('left', '8px', 'important');
             menu.style.setProperty('right', '8px', 'important');
-            menu.style.setProperty('bottom', 'calc(84px + env(safe-area-inset-bottom, 0px))', 'important');
-            menu.style.setProperty('top', 'auto', 'important');
+            menu.style.setProperty('top', '70px', 'important');
+            menu.style.setProperty('bottom', 'auto', 'important');
             menu.style.setProperty('transform', 'none', 'important');
             menu.style.setProperty('max-width', 'calc(100vw - 16px)', 'important');
             menu.style.setProperty('max-height', 'calc(100vh - 170px)', 'important');
