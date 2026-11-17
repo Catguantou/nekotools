@@ -214,7 +214,8 @@ chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：c
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
 可选：身份。
 必填基础：性别 / 外貌（简单一句）/ 人际关系。
-人际关系是对象，键写对方名字；对用户角色固定写 <user>。值的格式："好感 X｜信任 Y｜标签：一句原因"。
+人际关系是对象，键写对方名字。只写已经见过/认识的人；<user> 要在第一次正式遇见之后才写，没遇见就不要写。
+值的格式："好感 X｜信任 Y｜标签：一句原因"。
 好感/信任都是 0-100：好感 0-20 敌意 / 21-40 冷淡 / 41-60 中性 / 61-80 亲近 / 81-100 信赖或爱慕；
 信任 0-20 提防 / 21-40 保留 / 41-60 一般 / 61-80 信任 / 81-100 生死托付。
 只写本轮有变化的人；插件会按人合并，没写到的旧关系保留。姓名由插件自动写，不用输出。
@@ -359,13 +360,7 @@ async function updateCharacterEntry(bookName, name, info, book) {
     }
     finalInfo['关键记忆'] = merged;
     if (Object.keys(mergedRel).length) finalInfo['人际关系'] = mergedRel;
-    else {
-        // 至少给用户角色一条中性关系，模型下轮再细化
-        mergedRel['<user>'] = '好感 50｜信任 50｜中性：尚未建立明确关系';
-        finalInfo['人际关系'] = mergedRel;
-    }
-    if (!String(finalInfo['性别'] ?? '').trim()) finalInfo['性别'] = '未定';
-    if (!String(finalInfo['外貌'] ?? '').trim()) finalInfo['外貌'] = '暂无描述';
+    else delete finalInfo['人际关系'];
 
     const content = formatCharacterYaml(name, finalInfo);
     stBridge.upsertEntryInBook(target, `角色·${name}`, content, {
