@@ -466,64 +466,65 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* ── 状态栏：编辑式数据条 ──────────────────────────────
-   深色玻璃底 + 钴蓝细节 + 衬线数值 + 发丝分隔线，
-   参考拼贴海报的「黑白 + 钴蓝 + 大字 + 细线」语言。 */
+/* ── 状态栏：与 NEKOTOOL 面板同一套视觉语言 ───────────────
+   近黑底 + 蓝图网格 + 电光蓝细节 + 无衬线字，
+   与面板的 01/02 编号区块、蓝色描边、切角按钮保持一致。 */
 .ws-status-bar {
     position: relative;
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    margin: 0 0 20px 0;
-    padding: 15px 22px 14px 21px;
-    background:
-        radial-gradient(120% 180% at 0% 0%, rgba(31, 59, 255, 0.16) 0%, rgba(31, 59, 255, 0) 55%),
-        linear-gradient(180deg, rgba(14, 14, 17, 0.94) 0%, rgba(9, 9, 11, 0.86) 100%);
-    -webkit-backdrop-filter: blur(10px) saturate(120%);
-    backdrop-filter: blur(10px) saturate(120%);
-    box-shadow:
-        inset 0 0 0 1px rgba(255, 255, 255, 0.07),
-        0 12px 34px rgba(0, 0, 0, 0.5);
-    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
-    font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
-    color: #f2f1ec;
+    margin: 0 0 18px 0;
+    padding: 13px 20px 12px 18px;
+    background-color: rgba(7, 7, 10, 0.94);
+    background-image:
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 26px),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 26px),
+        linear-gradient(180deg, rgba(31, 59, 255, 0.10) 0%, rgba(31, 59, 255, 0) 60%);
+    border: 1px solid rgba(47, 84, 255, 0.38);
+    border-left: 2px solid #2f54ff;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+    font-family: "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    color: #e8ebf7;
     overflow: hidden;
-    isolation: isolate;
 }
 
-/* 左侧钴蓝竖条 */
-.ws-status-bar::before {
-    content: "";
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 3px;
-    background: #1f3bff;
-}
-
-/* 顶部钴蓝渐隐细线 */
 .ws-status-bar::after {
-    content: "NEKOTOOL · STATUS";
+    content: "STATUS";
     position: absolute;
-    bottom: 5px;
-    right: 18px;
-    font-family: "HarmonyOS Sans SC", "Segoe UI", sans-serif;
+    right: 14px;
+    bottom: 6px;
     font-size: 8px;
-    letter-spacing: 0.32em;
-    color: rgba(255, 255, 255, 0.14);
+    font-weight: 700;
+    letter-spacing: 0.34em;
+    color: rgba(125, 146, 255, 0.34);
     pointer-events: none;
 }
 
 .ws-status-item {
     display: inline-flex;
     align-items: baseline;
-    gap: 12px;
-    padding: 1px 20px 1px 0;
-    margin-right: 20px;
-    border-right: 1px solid rgba(255, 255, 255, 0.09);
-    font-size: 14.5px;
-    line-height: 1.5;
+    gap: 10px;
+    padding: 1px 18px 1px 0;
+    margin-right: 18px;
+    border-right: 1px solid rgba(47, 84, 255, 0.28);
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1.6;
     letter-spacing: 0.02em;
     white-space: nowrap;
+}
+
+/* 首个条目前的蓝色方块标记（面板里的小方块语言） */
+.ws-status-item:first-child::before {
+    content: "";
+    flex: none;
+    width: 6px;
+    height: 6px;
+    background: #2f54ff;
+    transform: translateY(-2px);
+    align-self: baseline;
 }
 
 .ws-status-item:last-child {
@@ -534,21 +535,19 @@
 
 .ws-status-item b {
     flex: none;
-    font-family: "HarmonyOS Sans SC", "Segoe UI", "PingFang SC", sans-serif;
     font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.34em;
-    text-transform: uppercase;
-    color: #93a4ff;
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    color: #7d92ff;
     background: none;
     padding: 0;
+    margin: 0;
     transform: translateY(-1px);
 }
 
-/* 小屏时收窄 */
 @media (max-width: 640px) {
-    .ws-status-bar { padding: 12px 14px 11px 15px; }
-    .ws-status-item { font-size: 13px; padding-right: 14px; margin-right: 14px; gap: 8px; }
+    .ws-status-bar { padding: 11px 14px 10px 14px; }
+    .ws-status-item { font-size: 12.5px; padding-right: 12px; margin-right: 12px; gap: 7px; }
     .ws-status-bar::after { display: none; }
 }
 

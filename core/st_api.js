@@ -151,6 +151,22 @@ export async function setWorldActive(name, active) {
             console.warn('[nekotools] 重建世界书列表失败', e);
         }
 
+        // 强制同步 #world_info 的选中态并触发 change：
+        // ST 的「已启用的世界」标签由 select2 渲染，不触发 change 会一直显示 No Worlds active
+        const selEl = document.getElementById('world_info');
+        if (selEl) {
+            const want = new Set(arr);
+            for (const opt of selEl.options) {
+                opt.selected = want.has((opt.text || '').trim());
+            }
+            try {
+                if (window.jQuery) window.jQuery(selEl).trigger('change');
+                else selEl.dispatchEvent(new Event('change', { bubbles: true }));
+            } catch (e) {
+                console.warn('[nekotools] 同步世界书选中态失败', e);
+            }
+        }
+
         const ctx = getCtx();
         if (typeof ctx.saveSettingsDebounced === 'function') ctx.saveSettingsDebounced();
         emit('WORLDINFO_SETTINGS_UPDATED');

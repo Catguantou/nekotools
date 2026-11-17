@@ -196,7 +196,8 @@ export const stBridge = {
         if (!forceApi && typeof ctx.loadWorldInfo === 'function') {
             try {
                 const book = await ctx.loadWorldInfo(name);
-                if (book) { loreCache.set(name, book); return book; }
+                // ST 对不存在的书会返回空对象，不能当成功
+                if (book && book.entries) { loreCache.set(name, book); return book; }
             } catch (e) {}
         }
         try {
@@ -211,6 +212,8 @@ export const stBridge = {
             });
             if (!res.ok) return null;
             const book = await res.json();
+            // 关键：ST 的 /get 对不存在的书返回 200 + {}，没有 entries 就当不存在
+            if (!book || typeof book !== 'object' || !book.entries) return null;
             loreCache.set(name, book);
             return book;
         } catch (e) {
