@@ -1037,18 +1037,18 @@ function currentMapPath(data) {    const parts = String(data.current || '').spli
 
 function mapIcon(type, name) {
     const t = `${type || ''}${name || ''}`;
-    if (/酒馆|酒吧|旅店|客栈|食堂/.test(t)) return '🍺';
-    if (/市场|集市|商店|商会|摊|货/.test(t)) return '🛒';
-    if (/王宫|城堡|宫殿|神殿|教会|教堂/.test(t)) return '🏰';
-    if (/城门|要塞|军营|兵营|哨/.test(t)) return '🛡️';
-    if (/森林|野外|山|草原|海|河|湖|港|码头|沙漠/.test(t)) return '🌲';
-    if (/贫民|街区|街道|小巷|后巷|巷/.test(t)) return '🏘️';
-    if (/图书馆|学院|学校|书/.test(t)) return '📚';
-    if (/广场|喷泉|公园/.test(t)) return '⛲';
-    if (/城市|都城|港城|镇/.test(t)) return '🏙️';
-    if (/区域|王国|帝国|国家|地区|大陆/.test(t)) return '🗺️';
-    if (/宅|家|房间|客房|屋/.test(t)) return '🏠';
-    return '📍';
+    if (/酒馆|酒吧|旅店|客栈|食堂/.test(t)) return '▣';
+    if (/市场|集市|商店|商会|摊|货/.test(t)) return '◈';
+    if (/王宫|城堡|宫殿|神殿|教会|教堂/.test(t)) return '⬢';
+    if (/城门|要塞|军营|兵营|哨/.test(t)) return '⬡';
+    if (/森林|野外|山|草原|海|河|湖|港|码头|沙漠/.test(t)) return '△';
+    if (/贫民|街区|街道|小巷|后巷|巷/.test(t)) return '▤';
+    if (/图书馆|学院|学校|书/.test(t)) return '▥';
+    if (/广场|喷泉|公园/.test(t)) return '◉';
+    if (/城市|都城|港城|镇/.test(t)) return '⬡';
+    if (/区域|王国|帝国|国家|地区|大陆/.test(t)) return '◇';
+    if (/宅|家|房间|客房|屋/.test(t)) return '▢';
+    return '◌';
 }
 
 function mapTone(type, name) {

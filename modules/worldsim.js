@@ -53,6 +53,8 @@ const questTries = new Map();
 // 每轮只读快照（不写回、不持久化）：用于「在场候选」和 T1 名单
 const presenceCache = new Map();
 const rosterCache = new Map();
+// 连续在场轮数：用于“5 轮内一直在场”的角色自动按 T2 调度；不改索引，AI 仍可改写等级
+const presenceStreak = new Map();
 
 /** 开局世界生成：第一次运行时补全整个世界，而不是只提取当前文本 */
 function buildGenesisPrompt() {
@@ -97,16 +99,20 @@ function computeTickTargets(bookName, currentLayer) {
     const t3Every = Math.max(5, Number(settings.staleAfter) || 5);
     const max = Math.max(1, Number(settings.tickMaxChars) || 2);
     const picked = [];
+    const streaks = presenceStreak.get(bookName) || new Map();
 
     for (const c of chars) {
-        const tier = tierOf(c);
+        let tier = tierOf(c);
         const layer = Number(c.layer) || 0;
         const age = Math.max(0, currentLayer - layer);
         const present = place && (placeMatches(c.location, place) || placeMatches(c.action, place));
+        const streak = streaks.get(c.name) || 0;
+        const autoT2 = present && streak >= 5 && (tier === 'T3' || tier === 'T4');
+        if (autoT2) tier = 'T2';
         if (tier === 'T1') {
             picked.push({ name: c.name, tier, age, priority: 0, reason: 'T1' });
         } else if (tier === 'T2' && present) {
-            picked.push({ name: c.name, tier, age, priority: 1, reason: 'T2 在场' });
+            picked.push({ name: c.name, tier, age, priority: 1, reason: autoT2 ? 'T2 常驻5轮' : 'T2 在场' });
         } else if (tier === 'T2' && age >= t2Every) {
             picked.push({ name: c.name, tier, age, priority: 2, reason: `T2 离场 ${age} 层` });
         } else if (tier === 'T3' && age >= t3Every) {
@@ -180,6 +186,24 @@ function refreshSnapshots(bookName, book) {
 
     const idx = Object.values(book.entries).find(e => e && e.comment === INDEX_TITLE);
     rosterCache.set(bookName, idx ? parseIndex(idx.content).chars : []);
+}
+
+/** 连续在场轮数：5 轮内一直在当前地点的角色，调度时按 T2 处理（不写索引，AI 仍有等级决定权） */
+function updatePresenceStreaks(bookName) {
+    if (!bookName) return;
+    const chars = rosterCache.get(bookName) || [];
+    const clock = getSlotClock(bookName) || {};
+    const place = String(clock.place || '').trim();
+    const old = presenceStreak.get(bookName) || new Map();
+    const next = new Map();
+    if (place) {
+        for (const c of chars) {
+            const present = placeMatches(c.location, place) || placeMatches(c.action, place);
+            const n = present ? (old.get(c.name) || 0) + 1 : 0;
+            if (n > 0) next.set(c.name, n);
+        }
+    }
+    presenceStreak.set(bookName, next);
 }
 
 /** 开局地图生成：从世界书地点出发，补全周边可探索地点 */
@@ -1253,6 +1277,7 @@ registry.register({
         if (ctx.eventSource && ctx.eventTypes?.CHAT_CHANGED) {
             ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, () => {
                 lastAppliedUpdate = null;
+                presenceStreak.clear();
                 setTimeout(async () => {
                     try {
                         if (!settings.enabled) return;
@@ -1545,6 +1570,7 @@ registry.register({
                 }
                 await applyTierDowngrades(currentLorebook, replyLayer);
                 refreshSnapshots(currentLorebook, charsBook);
+                updatePresenceStreaks(currentLorebook);
                 if (data.items && settings.enableItems) {
                     const itemMap = await applyAggregateOps(currentLorebook, '道具', data.items, 900, { keyword: true });
                     if (itemMap) await syncNames(currentLorebook, 'items', Object.keys(itemMap));

@@ -3994,6 +3994,237 @@ body {
     -webkit-backdrop-filter: none !important;
 }
 
+/* ============================================================
+   空地图 + 地点 UI：点 / 线 / 面
+   ============================================================ */
+#nt-quick-modal .nt-map-canvas {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    min-height: 300px;
+    border: 1px solid rgba(80, 115, 225, 0.32) !important;
+    border-radius: 2px !important;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 50% 46%, rgba(47, 91, 215, 0.1), transparent 62%),
+        linear-gradient(rgba(120, 145, 210, 0.055) 1px, transparent 1px) 0 0 / 42px 42px,
+        linear-gradient(90deg, rgba(120, 145, 210, 0.055) 1px, transparent 1px) 0 0 / 42px 42px,
+        #090b10 !important;
+    box-shadow:
+        inset 0 0 70px rgba(0, 0, 0, 0.55),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.025) !important;
+}
+#nt-quick-modal .nt-map-canvas::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-color: transparent !important;
+    background-image:
+        radial-gradient(circle, rgba(170, 190, 240, 0.22) 1px, transparent 1.2px),
+        radial-gradient(circle, rgba(80, 115, 225, 0.18) 1px, transparent 1.2px);
+    background-size: 9px 9px, 27px 27px;
+    background-position: 0 0, 4px 4px;
+    filter: none;
+    opacity: 0.55;
+    -webkit-mask-image: radial-gradient(ellipse at 45% 45%, #000 0%, transparent 72%);
+    mask-image: radial-gradient(ellipse at 45% 45%, #000 0%, transparent 72%);
+    pointer-events: none;
+}
+#nt-quick-modal .nt-map-canvas::after {
+    content: 'N';
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 1;
+    padding-left: 12px;
+    border-left: 1px solid rgba(140, 160, 215, 0.35);
+    color: rgba(150, 170, 225, 0.62);
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    pointer-events: none;
+}
+#nt-quick-modal .nt-map-links {
+    z-index: 1;
+    stroke: #4f74df;
+    stroke-opacity: 0.5;
+    stroke-width: 0.36;
+    stroke-dasharray: 1.5 1.2;
+    stroke-linecap: round;
+}
+#nt-quick-modal .nt-map-nodes {
+    z-index: 2;
+}
+#nt-quick-modal .nt-map-node {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    min-width: 76px;
+    max-width: 158px;
+    padding: 6px 10px 5px 12px;
+    border: 1px solid rgba(110, 140, 225, 0.3);
+    border-left: 2px solid rgba(95, 130, 235, 0.9);
+    border-radius: 1px;
+    background: rgba(10, 13, 20, 0.94);
+    color: #e6eaf3;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    transform: translate(-50%, -50%);
+    transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+    z-index: 2;
+}
+#nt-quick-modal .nt-map-node::after {
+    content: none;
+}
+#nt-quick-modal .nt-map-node:hover {
+    border-color: rgba(120, 150, 240, 0.82);
+    background: #101624;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+    transform: translate(-50%, -50%) translateY(-1px);
+    z-index: 6;
+}
+#nt-quick-modal .nt-map-node.current {
+    border-color: rgba(143, 167, 245, 0.95);
+    background: linear-gradient(135deg, rgba(0, 47, 167, 0.28), rgba(10, 13, 20, 0.96) 70%);
+    box-shadow: 0 0 0 1px rgba(80, 115, 225, 0.55), 0 0 22px rgba(47, 91, 215, 0.28);
+}
+#nt-quick-modal .nt-map-node.current::after {
+    content: '';
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: 9px;
+    height: 9px;
+    border-top: 1px solid #9db1ff;
+    border-right: 1px solid #9db1ff;
+    background: transparent;
+}
+#nt-quick-modal .nt-map-node-region {
+    border-width: 1px;
+    border-style: solid;
+    border-left-width: 3px;
+    padding: 7px 11px 6px 13px;
+}
+#nt-quick-modal .nt-map-node-icon {
+    color: #7c96e8;
+    font-size: 11px;
+    line-height: 1;
+    margin-bottom: 3px;
+}
+#nt-quick-modal .nt-map-node-label {
+    max-width: 140px;
+    overflow: hidden;
+    color: #eef2fa;
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: 0.2px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#nt-quick-modal .nt-map-node-region .nt-map-node-label {
+    font-size: 11.5px;
+}
+#nt-quick-modal .nt-map-node-sub {
+    max-width: 140px;
+    overflow: hidden;
+    color: #77829a;
+    font-size: 8px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#nt-quick-modal .nt-map-node-current {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    left: auto;
+    width: 12px;
+    height: 12px;
+    padding: 0;
+    border: 1px solid #9db1ff;
+    border-radius: 1px;
+    background: #002fa7;
+    color: transparent;
+    font-size: 0;
+    line-height: 0;
+    transform: rotate(45deg);
+    box-shadow: 0 0 10px rgba(47, 91, 215, 0.8);
+}
+
+#nt-quick-modal .nt-map-detail {
+    border: 1px solid rgba(80, 115, 225, 0.4);
+    border-left: 2px solid #2f5bd7;
+    border-radius: 2px;
+    background:
+        linear-gradient(135deg, rgba(0, 47, 167, 0.12), transparent 42%),
+        #0c1018;
+    color: #d9dde6;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.25);
+}
+#nt-quick-modal .nt-map-detail-head {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    padding-bottom: 6px;
+}
+#nt-quick-modal .nt-map-detail-icon {
+    color: #7c96e8;
+    font-size: 16px;
+}
+#nt-quick-modal .nt-map-detail-title {
+    color: #f0f3f8;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+#nt-quick-modal .nt-map-detail-sub {
+    color: #77829a;
+    font-size: 9px;
+    letter-spacing: 0.4px;
+}
+#nt-quick-modal .nt-map-detail-desc {
+    color: #aeb6c6;
+    font-size: 10.5px;
+    line-height: 1.75;
+}
+#nt-quick-modal .nt-map-detail-current {
+    border: 1px solid rgba(80, 115, 225, 0.6);
+    background: rgba(0, 47, 167, 0.2);
+    color: #8fa7f5;
+    border-radius: 1px;
+    font-size: 8px;
+    letter-spacing: 1px;
+}
+#nt-quick-modal .nt-map-detail-facts {
+    gap: 6px;
+}
+#nt-quick-modal .nt-map-fact-label {
+    color: #6f7a90;
+    font-size: 8px;
+    letter-spacing: 1.4px;
+}
+#nt-quick-modal .nt-map-fact-value {
+    color: #d9dde6;
+    font-size: 10.5px;
+}
+#nt-quick-modal .nt-map-exit {
+    border: 1px dashed rgba(90, 125, 235, 0.55);
+    background: rgba(0, 47, 167, 0.1);
+    color: #c9d4f5;
+    border-radius: 1px;
+    font-size: 9px;
+}
+#nt-quick-modal .nt-map-exit:hover {
+    border-color: rgba(120, 150, 240, 0.9);
+    background: rgba(0, 47, 167, 0.2);
+    color: #fff;
+}
+
+
 
 
 
