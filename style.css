@@ -2110,8 +2110,8 @@ body {
     position: absolute;
     inset: 0;
     z-index: 0;
-    background: #d8bf8f url('./assets/map-parchment.jpg') center / cover no-repeat;
-    filter: saturate(1.12) brightness(1.04);
+    background: transparent;
+    filter: none;
     pointer-events: none;
 }
 #nt-quick-modal .nt-map-base,

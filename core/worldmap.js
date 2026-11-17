@@ -47,6 +47,12 @@ function parseSiteDesc(desc) {
     return out;
 }
 
+const BAD_MAP_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
+const safeMapName = (name) => {
+    const n = String(name || '').trim();
+    return n && !BAD_MAP_NAMES.has(n) ? n : '';
+};
+
 export function parseMap(content) {
     const data = { current: '', regions: {}, cities: {}, sites: {} };
     let section = null;
@@ -78,7 +84,8 @@ export function parseMap(content) {
 
         const m = line.match(/^-\s*([^｜|]+)[｜|]([\s\S]*)$/);
         if (!m) continue;
-        const name = m[1].trim();
+        const name = safeMapName(m[1]);
+        if (!name) continue;
         const rest = m[2].trim();
 
         if (section === 'regions') {
@@ -269,20 +276,30 @@ export async function applyMapOps(bookName, raw) {
     const sites = raw.sites && typeof raw.sites === 'object' ? raw.sites : {};
     const del = raw.del && typeof raw.del === 'object' ? raw.del : {};
 
-    for (const [regionName, desc] of Object.entries(regions)) {
+    for (const [rawName, desc] of Object.entries(regions)) {
+        const regionName = safeMapName(rawName);
+        if (!regionName) continue;
         data.regions[regionName] = parsePlaceDesc(desc);
     }
-    for (const [regionName, cityBlock] of Object.entries(cities)) {
+    for (const [rawName, cityBlock] of Object.entries(cities)) {
+        const regionName = safeMapName(rawName);
+        if (!regionName) continue;
         if (!cityBlock || typeof cityBlock !== 'object' || Array.isArray(cityBlock)) continue;
         ensureRegion(data, regionName);
-        for (const [cityName, desc] of Object.entries(cityBlock)) {
+        for (const [rawCity, desc] of Object.entries(cityBlock)) {
+            const cityName = safeMapName(rawCity);
+            if (!cityName) continue;
             data.cities[cityName] = { region: regionName, ...parsePlaceDesc(desc) };
         }
     }
-    for (const [cityName, siteBlock] of Object.entries(sites)) {
+    for (const [rawName, siteBlock] of Object.entries(sites)) {
+        const cityName = safeMapName(rawName);
+        if (!cityName) continue;
         if (!siteBlock || typeof siteBlock !== 'object') continue;
         if (!data.cities[cityName]) ensureCity(data, Object.keys(data.regions)[0] || '未命名区域', cityName);
-        for (const [siteName, desc] of Object.entries(siteBlock)) {
+        for (const [rawSite, desc] of Object.entries(siteBlock)) {
+            const siteName = safeMapName(rawSite);
+            if (!siteName) continue;
             data.sites[siteName] = { city: cityName, ...parseSiteDesc(desc) };
         }
     }
@@ -314,7 +331,9 @@ export async function applyMapOps(bookName, raw) {
     if (raw.add && typeof raw.add === 'object') {
         const cityName = Object.keys(data.cities)[0] || '未命名城市';
         if (!data.cities[cityName]) ensureCity(data, Object.keys(data.regions)[0] || '未命名区域', cityName);
-        for (const [siteName, desc] of Object.entries(raw.add)) {
+        for (const [rawSite, desc] of Object.entries(raw.add)) {
+            const siteName = safeMapName(rawSite);
+            if (!siteName) continue;
             data.sites[siteName] = { city: cityName, ...parseSiteDesc(desc) };
         }
     }

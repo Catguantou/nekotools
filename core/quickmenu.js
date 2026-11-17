@@ -1421,21 +1421,58 @@ async function showMapModal(opts = {}) {
         const nodes = document.createElement('div');
         nodes.className = 'nt-map-nodes';
         canvas.appendChild(nodes);
+        content.appendChild(canvas);
 
+        const canvasW = Math.max(240, canvas.clientWidth || 800);
+        const canvasH = Math.max(220, canvas.clientHeight || 450);
         const positions = new Map();
         const placed = [];
         const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+        const nodeBox = (name) => {
+            const len = [...String(name || '')].length;
+            const pxW = Math.min(158, Math.max(78, len * 12 + 30));
+            return {
+                w: Math.min(40, Math.max(9, (pxW / canvasW) * 100)),
+                h: Math.min(30, Math.max(8, (54 / canvasH) * 100)),
+            };
+        };
+        const hit = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 + 1.2
+            && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + 1.2;
         items.forEach((item, index) => {
-            let pos = mapNodePosition(item.p, item.name, index);
+            const size = nodeBox(item.name);
+            const minX = size.w / 2 + 2;
+            const maxX = 100 - size.w / 2 - 2;
+            const minY = size.h / 2 + 2;
+            const maxY = 100 - size.h / 2 - 2;
+            let pos = { ...mapNodePosition(item.p, item.name, index), ...size };
+            pos.x = clamp(pos.x, minX, maxX);
+            pos.y = clamp(pos.y, minY, maxY);
             let guard = 0;
-            while (placed.some(p => Math.hypot(p.x - pos.x, p.y - pos.y) < 10.5) && guard < 16) {
-                const ang = guard * 2.399 + index * 1.3;
+            while (placed.some(p => hit(p, pos)) && guard < 60) {
+                const ang = guard * 2.399 + index * 1.7;
+                const radius = 3 + guard * 0.9;
                 pos = {
                     ...pos,
-                    x: clamp(pos.x + Math.cos(ang) * 6.5, 9, 91),
-                    y: clamp(pos.y + Math.sin(ang) * 5.5, 20, 84),
+                    x: clamp(pos.x + Math.cos(ang) * radius, minX, maxX),
+                    y: clamp(pos.y + Math.sin(ang) * radius, minY, maxY),
                 };
                 guard++;
+            }
+            // 螺旋没解开时，用固定网格找最近的空位，避免卡片叠在一起
+            if (placed.some(p => hit(p, pos))) {
+                let best = null;
+                let bestDist = Infinity;
+                for (const gx of [16, 50, 84]) {
+                    for (const gy of [22, 40, 58, 76]) {
+                        const cx = clamp(gx, minX, maxX);
+                        const cy = clamp(gy, minY, maxY);
+                        const cand = { x: cx, y: cy, ...size };
+                        if (placed.some(p => hit(p, cand))) continue;
+                        const dist = Math.hypot(cx - pos.x, cy - pos.y);
+                        if (dist < bestDist) { best = cand; bestDist = dist; }
+                    }
+                }
+                if (best) pos = best;
             }
             placed.push(pos);
             positions.set(item.name, pos);
@@ -1474,7 +1511,6 @@ async function showMapModal(opts = {}) {
             }
         }
 
-        content.appendChild(canvas);
         const detail = renderDetail();
         content.appendChild(detail);
     };
@@ -1657,7 +1693,7 @@ async function showQuestsModal() {
         if (name) nameEl.readOnly = true;
         const valueEl = document.createElement('input');
         valueEl.className = 'nt-quest-input';
-        valueEl.placeholder = '类型｜目标｜状态｜钩子';
+        valueEl.placeholder = '类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子';
         valueEl.value = value;
         const del = document.createElement('button');
         del.type = 'button';
@@ -1939,7 +1975,7 @@ async function showRefreshModal() {
         if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜可交互：...｜常驻：..."}}}');
         if (selected.includes('quests')) {
             schema.push('"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}');
-            schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜钩子"}, "del":["支线名"]}');
+            schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}');
         }
         if (selected.includes('items')) schema.push('"items": {"add": {"道具名":"[类别] 描述"}, "del":["道具名"]}');
         if (selected.includes('foreshadow')) schema.push('"foreshadow": {"add": {"伏笔名":"[线索 | 指向] 描述"}, "del":["伏笔名"]}');

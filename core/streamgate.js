@@ -1,16 +1,3 @@
-function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-        switch (c) {
-            case '&': return '&amp;';
-            case '<': return '&lt;';
-            case '>': return '&gt;';
-            case '"': return '&quot;';
-            case "'": return '&#39;';
-            default: return c;
-        }
-    });
-}
-
 export class StreamGate {
     constructor(tags = [], options = {}) {
         this.buf = '';

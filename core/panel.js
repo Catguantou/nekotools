@@ -1237,6 +1237,7 @@ export function mountPanel() {
             const file = e.target.files && e.target.files[0];
             if (!file) return;
             try {
+                if (file.size > 5 * 1024 * 1024) throw new Error('file too large');
                 const text = await file.text();
                 const obj = JSON.parse(text);
                 const state = settings.importAll(obj);

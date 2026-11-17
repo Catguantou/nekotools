@@ -5,7 +5,7 @@ import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
-import { applyMain, applyQuests, parseMain, mainHasContent } from '../core/worldquest.js';
+import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent } from '../core/worldquest.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -264,9 +264,10 @@ function buildQuestGenesisPrompt() {
     let p = `${tagOpen}
 【开局主线生成】基于角色卡、世界书设定、用户角色，生成本局的长期主线 + 2 条支线，必须写在本轮 ws_update 的 JSON 里：
 "main": {"标题": "...", "目标": "...", "阶段": "开局", "进度": 0, "失败代价": "...", "下一步": "..."}
-"quests": {"add": {"支线名": "类型｜目标｜状态｜钩子"}}
+"quests": {"add": {"支线名": "类型｜目标｜状态｜期限｜失败条件｜钩子"}}
 - 主线必须是能长期推进的目标，由世界和 NPC 推动，**不要让玩家做选择**。
 - 支线要能在当前地区自然触发，和 NPC/势力/新闻有关。
+- 支线「期限」必须写绝对日期（如 2009年11月05日），没有期限写“无”；「失败条件」一句话写清怎样算失败。期限已过且状态未完成、或状态写失败的支线，插件会自动删除。
 ${tagClose}`;
     const custom = (settings.customPrompts.quest || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
@@ -278,8 +279,9 @@ function buildQuestPrompt() {
     return `<nekotools:track.quest>
 【主线】JSON 字段 "main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}
 只写本轮变化的字段；主线要自动推进，不要让玩家选择。这里只维护长期目标/阶段/进度，不写本轮三种走向或概率。
-【支线】JSON 字段 "quests": {"add": {"支线名":"类型｜目标｜状态｜钩子"}, "del": ["支线名"]}
+【支线】JSON 字段 "quests": {"add": {"支线名":"类型｜目标｜状态｜期限｜失败条件｜钩子"}, "del": ["支线名"]}
 只写新增/完成/失败/删除的支线；这里只维护支线状态，不写本轮短期走向；支线是**可执行的目标/钩子**，已经发生的公开事件写进世界局势的社会新闻，不要重复。可以自然生成新的支线钩子，但不要围着玩家转。
+「期限」写绝对日期（如 2009年11月05日），没有期限写“无”；「失败条件」一句话写清怎样算失败。期限已过且状态未完成、或状态写失败的支线，插件会自动删除。
 </nekotools:track.quest>`;
 }
 
@@ -1191,9 +1193,10 @@ export async function applyRefreshData(bookName, data, layer = 0) {
             questReady.set(bookName, mainHasContent(main));
         }
     }
-    if (data.quests) {
-        const quests = await applyQuests(bookName, data.quests);
+    if (data.quests && settings.enableQuests) {
+        const quests = await applyQuests(bookName, data.quests, { today: (getSlotClock(bookName) || {}).time || '' });
         summary.quests = quests ? Object.keys(quests).length : 0;
+        await pruneQuests(bookName, (getSlotClock(bookName) || {}).time || '');
     }
     if (data.items) {
         const map = await applyAggregateOps(bookName, '道具', data.items, 900, { keyword: true });
@@ -1600,8 +1603,9 @@ registry.register({
                     }
                 }
                 if (data.quests && settings.enableQuests) {
-                    await applyQuests(currentLorebook, data.quests);
+                    await applyQuests(currentLorebook, data.quests, { today: (getSlotClock(currentLorebook) || {}).time || '' });
                 }
+                if (settings.enableQuests) await pruneQuests(currentLorebook, (getSlotClock(currentLorebook) || {}).time || '');
                 if (data.foreshadow && settings.enableForeshadow) {
                     const foreMap = await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow, 920, { keyword: true });
                     if (foreMap) await syncNames(currentLorebook, 'foreshadows', Object.keys(foreMap));

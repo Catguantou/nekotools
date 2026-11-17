@@ -70,13 +70,19 @@ export const settings = {
 
     importAll(obj) {
         if (!obj || typeof obj !== 'object') throw new Error('Invalid file');
+        const bad = new Set(['__proto__', 'constructor', 'prototype']);
         let src = {};
         if (obj.data && typeof obj.data === 'object') src = obj.data;
         else if (obj.__nekotool_export === undefined) src = obj;
         const merged = { ...this.data };
         for (const [id, cfg] of Object.entries(src)) {
             if (!cfg || typeof cfg !== 'object') continue;
-            merged[id] = { ...(merged[id] || {}), ...cfg };
+            if (bad.has(id)) continue;
+            const clean = {};
+            for (const [key, value] of Object.entries(cfg)) {
+                if (!bad.has(key)) clean[key] = value;
+            }
+            merged[id] = { ...(merged[id] || {}), ...clean };
         }
         this.data = merged;
         this.save();
