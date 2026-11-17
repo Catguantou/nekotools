@@ -78,11 +78,17 @@ export const stBridge = {
         });
     },
 
-    /** 切角色时关掉上个角色自动挂上的追踪库，否则旧角色的总结会被注入新角色 */
+    /** 切角色时关掉其他角色的追踪库，否则旧角色的总结会被注入新角色 */
     async deactivateStaleAutoBooks(keepName) {
+        const prefix = '【NEKOTOOL世界加载器·';
+        const stale = new Set(
+            this.getGloballyActivatedWorlds().filter(n => n.startsWith(prefix) && n !== keepName)
+        );
         for (const name of this.getAutoActiveBooks()) {
-            if (name === keepName) continue;
-            if (this.isGloballyActivated(name)) {
+            if (name !== keepName) stale.add(name);
+        }
+        for (const name of stale) {
+            if (name && name !== keepName && this.isGloballyActivated(name)) {
                 try { await this.mountGlobalWorldbook(name, false); } catch (_) {}
             }
             this.forgetAutoActive(name);
@@ -217,42 +223,6 @@ export const stBridge = {
         for (const name of names) {
             await this.loadWorldInfoAsync(name, true);
         }
-    },
-
-    collectMatchedLoreEntries(recentText = '') {
-        // 只做兜底：ST 已全局激活的书由 ST 自己注入，这里再注入一次就是重复吃 token。
-        // 因此只处理「缓存里有、但 ST 没激活」的书（激活失败或旧版本 ST 的退路）。
-        const active = new Set(this.getGloballyActivatedWorlds());
-        const matched = [];
-        const lowerText = String(recentText).toLowerCase();
-
-        // 只处理用户在「独立注入」里显式登记、但 ST 没激活的书；
-        // 遍历整个 loreCache 会把只是打开看过一眼的书也塞进提示词。
-        const cfg = settings.get('loremanager');
-        const fallbackBooks = Array.isArray(cfg.activeBooks) ? cfg.activeBooks : [];
-        for (const name of fallbackBooks) {
-            if (active.has(name)) continue;
-            const book = loreCache.get(name) || this.getLorebook(name);
-            if (!book || !book.entries) continue;
-            for (const entry of Object.values(book.entries)) {
-                if (entry.disable) continue;
-
-                if (entry.constant) {
-                    matched.push(entry);
-                } else if (entry.key && entry.key.length > 0) {
-                    let hasKey = false;
-                    for (const k of entry.key) {
-                        if (!k) continue;
-                        if (lowerText.includes(String(k).toLowerCase())) {
-                            hasKey = true;
-                            break;
-                        }
-                    }
-                    if (hasKey) matched.push(entry);
-                }
-            }
-        }
-        return matched;
     },
 
     async createWorldbook(name, initContent = '') {
@@ -514,10 +484,10 @@ export const stBridge = {
         const charName = char.name;
         if (!charName) return;
         
-        const booksToDelete = [];
-        if (char.data?.extensions?.world) booksToDelete.push(char.data.extensions.world);
-        booksToDelete.push(this.sanitizeWorldName(`【角色卡内嵌】${charName}`));
-        booksToDelete.push(this.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`));
+        // 只删本插件自己建的追踪书；角色卡绑定的原生世界书属于用户资产，删卡时不动它
+        const booksToDelete = [
+            this.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`),
+        ];
         
         for (const book of booksToDelete) {
             const worldNames = this.getWorldNames();
@@ -591,7 +561,7 @@ export const stBridge = {
         }
     },
 
-    hideOldMessages(keepCount = 2) {
+    hideOldMessages(keepCount = 2, { visual = true } = {}) {
         const ctx = this.getContext();
         if (!ctx || !ctx.chat) return;
         let aiCount = 0;
@@ -613,10 +583,31 @@ export const stBridge = {
                 msg.extra = { ...(msg.extra || {}), hidden: true };
             }
             if (typeof ctx.saveChat === 'function') {
-                // ST 1.16 不消费 extra.hidden 做渲染，重载聊天只会跳回底部并打断可能的生成，
-                // 这里只落盘；「隐藏」体现在导出（exportSkipHidden）和下次重新加载。
+                // 数据层隐藏：只落盘，供导出过滤与下次重新加载使用
                 ctx.saveChat();
             }
+            // 视觉层隐藏：和上面是两回事，随时可一键恢复，不改任何数据
+            if (visual) this.applyVisualHide(cutoffIndex);
+        }
+    },
+
+    /** 视觉屏蔽：只给楼层加 class，看不见但数据没变 */
+    applyVisualHide(cutoffIndex) {
+        const chatEl = document.getElementById('chat');
+        const ctx = this.getContext();
+        if (!chatEl) return;
+        for (let i = 0; i < cutoffIndex; i++) {
+            if (ctx.chat?.[i]?.extra?.nekotool_favorite) continue;
+            const el = chatEl.querySelector(`.mes[mesid="${i}"]`);
+            if (el) el.classList.add('nt-visual-hidden');
+        }
+    },
+
+    /** 恢复全部视觉显示（不动数据层的 hidden） */
+    showAllHiddenMessages() {
+        const chatEl = document.getElementById('chat');
+        if (chatEl) {
+            chatEl.querySelectorAll('.mes.nt-visual-hidden').forEach(el => el.classList.remove('nt-visual-hidden'));
         }
     }
 };

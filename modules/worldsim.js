@@ -16,6 +16,7 @@ const defaultSettings = {
     lorebookName: '',
     bigSummaryLimit: 100,
     hideKeepCount: 2,
+    visualHide: true,
     focusChars: '',
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
@@ -38,26 +39,11 @@ function saveSettings() {
 }
 
 function getLorebookName() {
-    if (settings.lorebookName) return stBridge.sanitizeWorldName(settings.lorebookName);
+    // 每张角色卡一本专属追踪书。以前允许 settings.lorebookName 全局覆盖，
+    // 结果所有角色共用一本书，切卡时旧书永远关不掉。
     const charName = stBridge.getCharacterName();
     if (!charName) return '';
     return stBridge.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`);
-}
-
-function fetchConstantLore(recentText = '') {
-    const cfg = stBridge.getLoreManagerConfig();
-    if (!cfg.independentInject) return '';
-
-    const matched = stBridge.collectMatchedLoreEntries(recentText);
-    if (!matched.length) return '';
-
-    let text = '';
-    for (const entry of matched) {
-        if (entry.comment !== '小总结' && entry.comment !== '大总结') {
-            text += `[${entry.comment}]: ${entry.content}\n`;
-        }
-    }
-    return text;
 }
 
 const DIRECTOR_PROMPT = `<nekotools:director>
@@ -210,7 +196,7 @@ function buildBigSummaryPrompt() {
     return p;
 }
 
-function buildSystemMessages(needBig, recentText = '') {
+function buildSystemMessages(needBig) {
     const list = [{ role: 'system', content: DIRECTOR_PROMPT }];
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
@@ -219,14 +205,8 @@ function buildSystemMessages(needBig, recentText = '') {
     if (settings.enableSummary) list.push({ role: 'system', content: buildSummaryPrompt() });
     if (needBig) list.push({ role: 'system', content: buildBigSummaryPrompt() });
 
-    const loreText = fetchConstantLore(recentText);
-    if (loreText) {
-        list.push({
-            role: 'system',
-            content: `<nekotools:lore>\n【当前激活的世界书设定】\n${loreText}\n</nekotools:lore>`
-        });
-    }
-
+    // 世界书设定不再由本插件注入：追踪书已经全局激活，酒馆自己会把它送进提示词。
+    // 重复注入既浪费 token，也会让同一段设定出现两次。
     return list;
 }
 
@@ -279,11 +259,6 @@ registry.register({
         loadSettings();
         if (!settings.enabled) return;
 
-        const recentText = (ctx.messages || [])
-            .slice(-6)
-            .map(m => (typeof m.content === 'string' ? m.content : ''))
-            .join('\n');
-
         const turnCount = parseInt(localStorage.getItem('nt_worldsim_turn') || '0') + 1;
         localStorage.setItem('nt_worldsim_turn', turnCount.toString());
 
@@ -295,7 +270,7 @@ registry.register({
         }
         ctx.__ntNeedBig = needBig;
 
-        for (const msg of buildSystemMessages(needBig, recentText)) {
+        for (const msg of buildSystemMessages(needBig)) {
             ctx.__nt_pendingSystems.push(msg);
         }
     },
@@ -410,7 +385,7 @@ registry.register({
             }
         }
 
-        setTimeout(() => { stBridge.hideOldMessages(settings.hideKeepCount); }, 1000);
+        setTimeout(() => { stBridge.hideOldMessages(settings.hideKeepCount, { visual: settings.visualHide !== false }); }, 1000);
         } finally {
             this._settling = false;
         }

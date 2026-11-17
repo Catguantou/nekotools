@@ -257,6 +257,23 @@ registry.register({
                 header.style.position = 'relative';
                 header.appendChild(starBtn);
             });
+
+            // 状态栏视觉置顶：模型把 <ws_status> 输出在正文末尾，
+            // StreamGate 就地渲染，所以这里把它搬到消息文本最前面。
+            document.querySelectorAll('#chat .mes_text .ws-status-bar').forEach(bar => {
+                const holder = bar.closest('.mes_text');
+                if (holder && holder.firstElementChild !== bar) {
+                    holder.prepend(bar);
+                }
+            });
+
+            // 数据层已标记 hidden 的楼层，重载后重新套上视觉屏蔽
+            const ctx = stBridge.getContext();
+            document.querySelectorAll('#chat .mes[mesid]').forEach(el => {
+                if (el.classList.contains('nt-visual-hidden')) return;
+                const msg = ctx.chat?.[Number(el.getAttribute('mesid'))];
+                if (msg?.extra?.hidden) el.classList.add('nt-visual-hidden');
+            });
         });
 
         const chatEl = document.getElementById('chat');

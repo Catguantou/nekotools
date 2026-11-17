@@ -51,8 +51,6 @@ export function mountPanel() {
         slopRulesText: ''
     };
 
-    const loreCfg = stBridge.getLoreManagerConfig();
-
     if (!lifecycleBound) {
         lifecycleBound = true;
         const ctx = stBridge.getContext();
@@ -65,17 +63,13 @@ export function mountPanel() {
                 });
             }
             if (ctx.eventTypes.CHAT_CHANGED) {
-                ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, async () => {
-                    const cfg = stBridge.getLoreManagerConfig();
-                    if (cfg.syncCharLifecycle) {
-                        // 只做「提取内嵌书并绑定到角色」，不再额外全局激活：
-                        // 角色卡绑定的书 ST 会当作 character lore 自动注入，
-                        // 再全局激活一次就是同一本书注入两遍。
-                        await stBridge.syncFromCharacterCard(null, true);
-                    }
-                    await stBridge.preloadActivatedLorebooks();
-                    const listEl = document.getElementById('nt-lore-list');
-                    if (listEl) renderLoreList();
+                ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, () => {
+                    // 只刷新列表；建库/挂载/切旧书由 worldsim 负责，
+                    // 面板这里再插一手会重复触发。
+                    setTimeout(() => {
+                        const listEl = document.getElementById('nt-lore-list');
+                        if (listEl) renderLoreList();
+                    }, 1000);
                 });
             }
         }
@@ -172,6 +166,17 @@ export function mountPanel() {
                             <input type="number" id="nt-ws-keep" class="nt-data-input" value="${s.hideKeepCount}" min="1" max="50">
                         </div>
                         <div class="nt-data-row">
+                            <span class="nt-data-label">视觉屏蔽 <span class="nt-hint">/ 只是看不见，数据不删，随时可恢复</span></span>
+                            <label class="nt-grid-item" style="border:0; padding:0; min-width:0;">
+                                <input type="checkbox" id="nt-ws-visual-hide" class="nt-hidden-cb" ${s.visualHide !== false ? 'checked' : ''}>
+                                <span class="nt-box"></span>
+                                <span class="nt-text">跟随隐藏</span>
+                            </label>
+                        </div>
+                        <div class="nt-data-row">
+                            <button id="nt-ws-visual-restore" class="nt-btn-text" style="color:#00ffcc;">[恢复视觉显示]</button>
+                        </div>
+                        <div class="nt-data-row">
                             <span class="nt-data-label">大总结触发层数 <span class="nt-hint">/ 每 N 层触发</span></span>
                             <input type="number" id="nt-ws-biglimit" class="nt-data-input" value="${s.bigSummaryLimit}" min="10" max="9999">
                         </div>
@@ -192,18 +197,9 @@ export function mountPanel() {
                             <div class="nt-sec-line"></div>
                         </div>
                         <div class="nt-grid-layout">
-                            <label class="nt-grid-item" title="导入/切卡自动提取内嵌世界书，删角色卡自动删关联世界书">
-                                <input type="checkbox" id="nt-lore-sync-life" class="nt-hidden-cb" ${loreCfg.syncCharLifecycle ? 'checked' : ''}>
-                                <span class="nt-box"></span>
-                                <span class="nt-text">角色卡同生共死</span>
-                                <span class="nt-code">L_01</span>
-                            </label>
-                            <label class="nt-grid-item" title="由 NEKOTOOL 独立接管全局激活世界书注入，彻底解决酒馆开关失灵">
-                                <input type="checkbox" id="nt-lore-indep-inject" class="nt-hidden-cb" ${loreCfg.independentInject ? 'checked' : ''}>
-                                <span class="nt-box"></span>
-                                <span class="nt-text">独立强制全局生效</span>
-                                <span class="nt-code">L_02</span>
-                            </label>
+                            <div class="nt-hint" style="padding:8px 2px; line-height:1.6;">
+                                进入角色卡会自动为这张卡建一本空追踪书并挂到全局；切换角色时旧卡的书会自动取消挂载。
+                            </div>
                         </div>
                     </div>
 
@@ -218,7 +214,6 @@ export function mountPanel() {
                                 <button id="nt-ws-refresh" class="nt-btn-text">[刷新]</button>
                                 <button id="nt-ws-select-all-books" class="nt-btn-text">[全选]</button>
                                 <button id="nt-ws-new" class="nt-btn-text" style="color: var(--nt-blue);">[+ 新建]</button>
-                                <button id="nt-ws-sync-char" class="nt-btn-text" style="color: #00ffcc;">[提取当前卡世界书]</button>
                                 <button id="nt-ws-del-book" class="nt-btn-text" style="color: #ff3333;">[多选删除]</button>
                             </div>
                             <div class="nt-data-row" style="display:flex; gap: 8px; margin-bottom: 8px; align-items:center; flex-wrap: wrap;">
@@ -403,13 +398,6 @@ export function mountPanel() {
     const bookForwardSelect = wrap.querySelector('#nt-ws-book-forward-target');
     let currentEditingBook = null;
 
-    wrap.querySelector('#nt-lore-sync-life').onchange = (e) => {
-        stBridge.saveLoreManagerConfig({ syncCharLifecycle: e.target.checked });
-    };
-    wrap.querySelector('#nt-lore-indep-inject').onchange = (e) => {
-        stBridge.saveLoreManagerConfig({ independentInject: e.target.checked });
-    };
-
     async function renderLoreList() {
         listEl.innerHTML = '<div style="color:#888; font-size:11px; padding:6px;">正在同步世界书列表...</div>';
         let allNames = stBridge.getWorldNames();
@@ -557,6 +545,11 @@ export function mountPanel() {
         renderLoreList();
     };
 
+    wrap.querySelector('#nt-ws-visual-restore').onclick = () => {
+        stBridge.showAllHiddenMessages();
+        if (window.toastr) toastr.success('已恢复视觉显示（数据层隐藏未改变）');
+    };
+
     wrap.querySelector('#nt-ws-refresh').onclick = async () => {
         await stBridge.fetchWorldNamesFromApi();
         await renderLoreList();
@@ -591,41 +584,16 @@ export function mountPanel() {
         }
     };
 
-    wrap.querySelector('#nt-ws-sync-char').onclick = async () => {
-        const result = await stBridge.syncFromCharacterCard(null, false);
-        if (result === false) {
-            if (window.toastr) toastr.warning('当前角色卡没有内嵌或绑定的世界书');
-        } else if (result) {
-            await stBridge.mountGlobalWorldbook(result, true);
-            await renderLoreList();
-            if (window.toastr) toastr.success(`已提取绑定角色卡世界书并全局激活：${result}`);
-        } else if (window.toastr) {
-            toastr.error('同步提取失败');
-        }
-    };
-
     wrap.querySelector('#nt-ws-del-book').onclick = async () => {
         const selected = Array.from(listEl.querySelectorAll('.nt-book-select:checked')).map(cb => cb.dataset.name);
         if (!selected.length) {
             if (window.toastr) toastr.warning('请先勾选要删除的世界书');
             return;
         }
-        if (!confirm(`确定要彻底删除选中的 ${selected.length} 本世界书吗？此操作不可恢复！`)) return;
-
-        const syncLife = wrap.querySelector('#nt-lore-sync-life')?.checked;
-        let delLinkedChar = false;
-        if (syncLife) {
-            const ctx = stBridge.getContext();
-            const hasBoundChar = Array.isArray(ctx.characters) && ctx.characters.some(
-                c => selected.includes(c?.data?.extensions?.world)
-            );
-            if (hasBoundChar) {
-                delLinkedChar = confirm('检测到部分世界书绑定了专属角色卡。\n点击【确定】连同关联角色卡一起彻底删除；\n点击【取消】仅删除世界书并解绑角色卡。');
-            }
-        }
+        if (!confirm(`确定要彻底删除选中的 ${selected.length} 本世界书吗？此操作不可恢复！\n（绑定它的角色卡会被解绑，但不会删除角色卡）`)) return;
 
         for (const name of selected) {
-            await stBridge.deleteWorldbook(name, { syncUnbindChar: true, deleteLinkedChar: delLinkedChar });
+            await stBridge.deleteWorldbook(name, { syncUnbindChar: true });
         }
         await renderLoreList();
         if (window.toastr) toastr.success(`已删除 ${selected.length} 本世界书`);
@@ -803,6 +771,7 @@ export function mountPanel() {
         s.enableSummary = wrap.querySelector('#nt-ws-summary').checked;
         s.enableBigSummary = wrap.querySelector('#nt-ws-bigsummary').checked;
         s.hideKeepCount = parseInt(wrap.querySelector('#nt-ws-keep').value) || 2;
+        s.visualHide = wrap.querySelector('#nt-ws-visual-hide').checked;
         s.bigSummaryLimit = parseInt(wrap.querySelector('#nt-ws-biglimit').value) || 100;
         s.focusChars = wrap.querySelector('#nt-ws-focuschars').value;
 

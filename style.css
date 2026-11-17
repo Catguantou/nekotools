@@ -489,6 +489,11 @@
     font-weight: 900;
 }
 
+/* 视觉屏蔽：只是看不见，数据没动，可一键恢复 */
+#chat .mes.nt-visual-hidden {
+    display: none !important;
+}
+
 #nt-ws-panel .nt-ws-booklist {
     display: flex;
     flex-wrap: wrap;

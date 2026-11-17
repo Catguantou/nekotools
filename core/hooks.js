@@ -206,11 +206,14 @@ export function installFetchHook(verbose = false) {
     if (window.__nekotool_fetch_hooked) return;
     window.__nekotool_fetch_hooked = true;
 
+    let seq = 0;
     const _f = window.fetch;
     window.fetch = function (input, init) {
         const url = getUrl(input);
         if (!isTarget(url)) return _f.call(this, input, init);
-        if (verbose) console.log('[nekotools:hook]', url);
+        const n = ++seq;
+        // 每条回复应该正好一行；如果一次回复出现两行不同编号，就是真的发了两次生成请求
+        if (verbose) console.log(`[nekotools:hook] #${n}`, url);
 
         if (input instanceof Request) {
             return input.clone().text().then(b => {
