@@ -7,7 +7,14 @@ import './modules/rewriter.js';
 import './modules/worldsim.js';
 import './modules/textmanager.js';
 
+let booted = false;
+
 function boot() {
+    // 三个入口（DOMContentLoaded / jQuery ready / 兜底）会重复触发，
+    // 不挡一下就会把模块 init 跑两遍、监听器注册两份。
+    if (booted) return;
+    booted = true;
+
     console.log('[nekotools] 正在启动...');
     settings.load();
 

@@ -2,9 +2,13 @@ const ST_KEY = 'NEKOTOOL';
 const LS_KEY = 'nekotools:settings:v1';
 
 function getSTStore() {
-    if (window.extension_settings && typeof window.extension_settings === 'object') {
-        return window.extension_settings;
-    }
+    // ST 并不把 extension_settings 挂到 window 上，必须从 getContext() 取真实引用，
+    // 否则设置只会写进 localStorage，永远不会进 ST 的 settings.json。
+    try {
+        const ctx = window.SillyTavern?.getContext?.() || window.getContext?.();
+        const st = ctx?.extensionSettings || window.extension_settings;
+        if (st && typeof st === 'object') return st;
+    } catch (_) {}
     return null;
 }
 

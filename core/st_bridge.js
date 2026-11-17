@@ -1,4 +1,14 @@
 import { settings } from './settings.js';
+import {
+    readWorldNames,
+    readActiveWorlds,
+    isWorldActive,
+    refreshWorldList,
+    setWorldActive,
+    refreshGlobalSelectUi,
+    writeCharWorld,
+    reloadChatUi,
+} from './st_api.js';
 
 function extractStringName(item) {
     if (typeof item === 'string') return item.trim();
@@ -59,16 +69,11 @@ export const stBridge = {
         const ctx = this.getContext();
         const raw = [];
 
-        if (typeof ctx.getWorldInfoNames === 'function') {
-            try {
-                const names = ctx.getWorldInfoNames();
-                if (Array.isArray(names)) raw.push(...names);
-            } catch (_) {}
-        }
+        // ST 的活列表（world-info.js 的 world_names）最可信
+        const live = readWorldNames();
+        if (Array.isArray(live)) raw.push(...live);
 
-        if (Array.isArray(ctx.world_names)) {
-            raw.push(...ctx.world_names);
-        }
+        if (Array.isArray(ctx.world_names)) raw.push(...ctx.world_names);
 
         const selectEl = document.getElementById('world_info');
         if (selectEl && selectEl.options) {
@@ -105,20 +110,10 @@ export const stBridge = {
             else if (data && typeof data === 'object') raw = Object.keys(data);
             
             const names = cleanAndDedupeList(raw);
-            if (names.length) {
-                if (!Array.isArray(ctx.world_names)) ctx.world_names = [];
-                let changed = false;
-                for (const n of names) {
-                    if (!ctx.world_names.includes(n)) {
-                        ctx.world_names.push(n);
-                        changed = true;
-                    }
-                }
-                if (changed) {
-                    ctx.world_names = cleanAndDedupeList(ctx.world_names);
-                }
-            }
-            return names;
+            // 让 ST 自己刷新列表：它会重建 #world_info 选项并重算 world_names。
+            // 不再手工往 ctx.world_names 里塞——getContext() 返回的是快照对象，写了不生效。
+            await refreshWorldList();
+            return names.length ? names : cleanAndDedupeList(readWorldNames());
         } catch (e) {
             console.warn('[nekotools] /api/worldinfo/list 请求失败', e);
             return [];
@@ -159,48 +154,27 @@ export const stBridge = {
     },
 
     getGloballyActivatedWorlds() {
-        if (window.extension_settings?.world_info?.globalSelect) {
-            return window.extension_settings.world_info.globalSelect;
-        }
-        return [];
+        return readActiveWorlds();
+    },
+
+    isGloballyActivated(name) {
+        return isWorldActive(name);
     },
 
     async mountGlobalWorldbook(name, activate) {
-        const ctx = this.getContext();
-        if (!window.extension_settings) window.extension_settings = {};
-        if (!window.extension_settings.world_info) window.extension_settings.world_info = {};
-        if (!Array.isArray(window.extension_settings.world_info.globalSelect)) {
-            window.extension_settings.world_info.globalSelect = [];
+        if (!name) return false;
+        // 新建的书还没进 #world_info 的选项表时，官方激活会报「No world found named」，
+        // 所以先让 ST 重新拉一遍列表。
+        if (!this.getWorldNames().includes(name)) {
+            await refreshWorldList();
         }
-
-        const arr = window.extension_settings.world_info.globalSelect;
-        const idx = arr.indexOf(name);
-        if (activate && idx === -1) arr.push(name);
-        else if (!activate && idx !== -1) arr.splice(idx, 1);
-
-        if (typeof ctx.saveSettingsDebounced === 'function') {
-            ctx.saveSettingsDebounced();
-        }
-        
-        if (window.eventSource && window.event_types && window.event_types.WORLDINFO_SETTINGS_UPDATED) {
-            window.eventSource.emit(window.event_types.WORLDINFO_SETTINGS_UPDATED);
-        }
-
-        setTimeout(() => {
-            if (window.jQuery) {
-                const selectEl = window.jQuery('#world_info_global');
-                if (selectEl.length) {
-                    if (selectEl.data('multipleSelect')) {
-                        selectEl.multipleSelect('refresh');
-                    }
-                }
-            }
-        }, 100);
-
-        return true;
+        const ok = await setWorldActive(name, activate);
+        refreshGlobalSelectUi();
+        return ok;
     },
 
     async preloadActivatedLorebooks() {
+        await refreshWorldList();
         const names = this.getGloballyActivatedWorlds();
         for (const name of names) {
             await this.loadWorldInfoAsync(name, true);
@@ -208,23 +182,25 @@ export const stBridge = {
     },
 
     collectMatchedLoreEntries(recentText = '') {
-        const names = this.getGloballyActivatedWorlds();
+        // 只做兜底：ST 已全局激活的书由 ST 自己注入，这里再注入一次就是重复吃 token。
+        // 因此只处理「缓存里有、但 ST 没激活」的书（激活失败或旧版本 ST 的退路）。
+        const active = new Set(this.getGloballyActivatedWorlds());
         const matched = [];
         const lowerText = String(recentText).toLowerCase();
 
-        for (const name of names) {
-            const book = loreCache.get(name) || this.getLorebook(name);
+        for (const [name, book] of loreCache.entries()) {
+            if (active.has(name)) continue;
             if (!book || !book.entries) continue;
             for (const entry of Object.values(book.entries)) {
                 if (entry.disable) continue;
-                
+
                 if (entry.constant) {
                     matched.push(entry);
                 } else if (entry.key && entry.key.length > 0) {
                     let hasKey = false;
                     for (const k of entry.key) {
                         if (!k) continue;
-                        if (lowerText.includes(k.toLowerCase())) {
+                        if (lowerText.includes(String(k).toLowerCase())) {
                             hasKey = true;
                             break;
                         }
@@ -236,27 +212,28 @@ export const stBridge = {
         return matched;
     },
 
-    async createWorldbook(name, initContent = 'NEKOTOOL初始化') {
+    async createWorldbook(name, initContent = '') {
         const ctx = this.getContext();
-        if (!ctx) return false;
+        if (!ctx || !name) return false;
 
-        const initData = {
-            entries: {
-                "1": {
-                    uid: "1",
-                    key: ["初始化"],
-                    comment: "NEKOTOOL初始化",
-                    content: initContent,
-                    constant: true,
-                    selective: true,
-                    order: 100,
-                    position: 0,
-                    disable: false,
-                    excludeRecursion: true,
-                    preventRecursion: true
-                }
-            }
-        };
+        // 空书就是空书。以前默认塞一条 constant 的「NEKOTOOL初始化」，
+        // 一旦全局激活，这条会被 ST 每一轮都注入，等于往提示词里灌垃圾。
+        const initData = { entries: {} };
+        if (initContent) {
+            initData.entries['1'] = {
+                uid: '1',
+                key: ['初始化'],
+                comment: 'NEKOTOOL初始化',
+                content: initContent,
+                constant: true,
+                selective: true,
+                order: 100,
+                position: 0,
+                disable: false,
+                excludeRecursion: true,
+                preventRecursion: true,
+            };
+        }
 
         try {
             const headers = {
@@ -275,12 +252,10 @@ export const stBridge = {
             loreCache.set(name, initData);
             const wInfo = ctx.world_info || ctx.worldInfo;
             if (wInfo) wInfo[name] = initData;
-            
-            if (!Array.isArray(ctx.world_names)) ctx.world_names = [];
-            if (!ctx.world_names.includes(name)) {
-                ctx.world_names.push(name);
-                ctx.world_names.sort();
-            }
+
+            // 关键：让 ST 重新拉一次列表。否则新书不在 #world_info 的选项里，
+            // 激活时会报 No world found named，表现就是「书建出来了但挂不上」。
+            await refreshWorldList();
             return true;
         } catch (e) {
             console.error('[nekotools] 创建世界书失败', e);
@@ -288,16 +263,33 @@ export const stBridge = {
         }
     },
 
+    /** 确保某本书记存在且已全局激活；不存在就创建。返回可用的书数据。 */
+    async ensureWorldbook(name, initContent = '') {
+        if (!name) return null;
+
+        let book = await this.loadWorldInfoAsync(name, true);
+        if (!book) {
+            const created = await this.createWorldbook(name, initContent);
+            if (!created) return null;
+            book = await this.loadWorldInfoAsync(name, true);
+            if (!book) return null;
+        }
+
+        if (!this.isGloballyActivated(name)) {
+            await this.mountGlobalWorldbook(name, true);
+        }
+        return book;
+    },
+
     async deleteWorldbook(name, { syncUnbindChar = true, deleteLinkedChar = false } = {}) {
         const ctx = this.getContext();
         try {
             if (syncUnbindChar && Array.isArray(ctx.characters)) {
-                for (const char of ctx.characters) {
-                    if (char.data?.extensions?.world === name) {
-                        char.data.extensions.world = '';
-                        if (typeof ctx.saveCharacterDebounced === 'function') {
-                            ctx.saveCharacterDebounced(char.avatar);
-                        }
+                for (let i = 0; i < ctx.characters.length; i++) {
+                    const char = ctx.characters[i];
+                    if (char?.data?.extensions?.world === name) {
+                        // 走官方 merge-attributes 落盘；saveCharacterDebounced 在 ST 里不存在
+                        await writeCharWorld(i, '');
                     }
                 }
                 await new Promise(r => setTimeout(r, 300));
@@ -314,14 +306,12 @@ export const stBridge = {
             
             if (res.ok) {
                 loreCache.delete(name);
-                if (ctx.world_names) {
-                    const idx = ctx.world_names.indexOf(name);
-                    if (idx !== -1) ctx.world_names.splice(idx, 1);
-                }
                 const wInfo = ctx.world_info || ctx.worldInfo;
                 if (wInfo && wInfo[name]) delete wInfo[name];
-                
+
+                // 先解绑全局激活，再让 ST 刷新列表，避免留下幽灵选项
                 await this.mountGlobalWorldbook(name, false);
+                await refreshWorldList();
                 return true;
             }
             return false;
@@ -449,18 +439,16 @@ export const stBridge = {
             loreCache.set(targetName, initData);
             const wInfo = ctx.world_info || ctx.worldInfo;
             if (wInfo) wInfo[targetName] = initData;
-            
-            if (!Array.isArray(ctx.world_names)) ctx.world_names = [];
-            if (!ctx.world_names.includes(targetName)) {
-                ctx.world_names.push(targetName);
-                ctx.world_names.sort();
-            }
-            
-            if (!targetChar.data.extensions) targetChar.data.extensions = {};
-            targetChar.data.extensions.world = targetName;
-            
-            if (!silent && typeof ctx.saveCharacterDebounced === 'function') {
-                ctx.saveCharacterDebounced(targetChar.avatar);
+
+            await refreshWorldList();
+
+            const charIndex = Array.isArray(ctx.characters) ? ctx.characters.indexOf(targetChar) : -1;
+            if (charIndex >= 0) {
+                await writeCharWorld(charIndex, targetName);
+            } else {
+                if (!targetChar.data) targetChar.data = {};
+                if (!targetChar.data.extensions) targetChar.data.extensions = {};
+                targetChar.data.extensions.world = targetName;
             }
             return targetName;
         } catch (e) {
@@ -575,9 +563,9 @@ export const stBridge = {
             }
             if (typeof ctx.saveChat === 'function') {
                 ctx.saveChat().then(() => {
-                    if (window.SillyTavern?.eventSource) {
-                        window.SillyTavern.eventSource.emit('chat_changed');
-                    }
+                    // 'chat_changed' 不是合法事件名，真名是 'chat_id_changed'；
+                    // 走 st_api 的 reloadChatUi 让 ST 重新渲染，隐藏才会立刻生效
+                    reloadChatUi();
                 });
             }
         }

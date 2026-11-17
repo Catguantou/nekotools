@@ -241,7 +241,33 @@ registry.register({
 
     init() {
         loadSettings();
-        setTimeout(() => { stBridge.preloadActivatedLorebooks(); }, 800);
+
+        // 首次运行：自动建库 + 挂到全局，而不是等用户手动去面板里建
+        setTimeout(async () => {
+            try {
+                if (!stBridge.getCharacterName()) return;
+                const name = getLorebookName();
+                await stBridge.ensureWorldbook(name);
+                await stBridge.preloadActivatedLorebooks();
+            } catch (e) {
+                console.warn('[worldsim] 初始化世界书失败', e);
+            }
+        }, 1200);
+
+        // 换角色/换会话时，追踪库要跟着换，并保证它处于全局激活状态
+        const ctx = stBridge.getContext();
+        if (ctx.eventSource && ctx.eventTypes?.CHAT_CHANGED) {
+            ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, () => {
+                setTimeout(async () => {
+                    try {
+                        if (!stBridge.getCharacterName()) return;
+                        await stBridge.ensureWorldbook(getLorebookName());
+                    } catch (e) {
+                        console.warn('[worldsim] 切换会话同步世界书失败', e);
+                    }
+                }, 800);
+            });
+        }
     },
 
     onRequest(ctx) {
@@ -257,7 +283,9 @@ registry.register({
         localStorage.setItem('nt_worldsim_turn', turnCount.toString());
 
         let needBig = false;
-        if (settings.enableBigSummary && turnCount > 0 && turnCount % settings.bigSummaryLimit === 0) {
+        const bigLimit = Number(settings.bigSummaryLimit) || 0;
+        // limit 为 0 时 %0 会得到 NaN，大总结永远不触发；先挡掉
+        if (settings.enableBigSummary && bigLimit > 0 && turnCount % bigLimit === 0) {
             needBig = true;
         }
         ctx.__ntNeedBig = needBig;
@@ -274,11 +302,17 @@ registry.register({
         const currentLorebook = getLorebookName();
         if (!currentLorebook) return;
 
-        // 异步安全读取（若缓存没有则自动从后端拉取，绝不丢失第一轮记录）
+        // 异步安全读取（若缓存没有则自动从后端拉取；没有就自动建库并挂全局，绝不静默丢第一轮）
         let book = await stBridge.loadWorldInfoAsync(currentLorebook);
         if (!book) {
-            console.warn('[nekotools] 追踪世界书尚未创建，跳过写入:', currentLorebook);
+            book = await stBridge.ensureWorldbook(currentLorebook);
+        }
+        if (!book) {
+            console.warn('[nekotools] 追踪世界书创建失败，跳过写入:', currentLorebook);
             return;
+        }
+        if (!stBridge.isGloballyActivated(currentLorebook)) {
+            await stBridge.mountGlobalWorldbook(currentLorebook, true);
         }
 
         if (captured.ws_big_summary && settings.enableBigSummary) {
@@ -286,7 +320,7 @@ registry.register({
                 position: 4, depth: 9999, order: 9999, role: 2, insertion_order: 9999
             });
             book = await stBridge.loadWorldInfoAsync(currentLorebook);
-            for (const entry of Object.values(book.entries)) {
+            for (const entry of Object.values(book?.entries || {})) {
                 if (entry.comment === '小总结') entry.content = '（已浓缩入大总结）';
             }
             await stBridge.persistLorebook(currentLorebook, book);
@@ -296,7 +330,7 @@ registry.register({
         if (captured.ws_summary && settings.enableSummary && !captured.ws_big_summary) {
             book = await stBridge.loadWorldInfoAsync(currentLorebook);
             let currentSum = '';
-            const entry = Object.values(book.entries).find(e => e.comment === '小总结');
+            const entry = Object.values(book?.entries || {}).find(e => e.comment === '小总结');
             if (entry && entry.content !== '（已浓缩入大总结）') currentSum = entry.content + '\n';
             await stBridge.updateEntry(currentLorebook, '小总结', currentSum + captured.ws_summary.trim(), true, [], {
                 position: 4, depth: 999, order: 999, role: 2, insertion_order: 999
@@ -327,7 +361,7 @@ registry.register({
 
                     book = await stBridge.loadWorldInfoAsync(currentLorebook);
                     const trackedNames = new Set();
-                    for (const entry of Object.values(book.entries)) {
+                    for (const entry of Object.values(book?.entries || {})) {
                         if (entry.comment && entry.comment.startsWith('角色·')) {
                             trackedNames.add(entry.comment.replace('角色·', ''));
                         }
