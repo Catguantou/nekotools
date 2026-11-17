@@ -153,7 +153,8 @@ function buildTickPrompt({ needWorldTick, targets = [] }) {
     if (targets.length) {
         lines.push('- 只写插件指定的这些角色，不要写名单外的人：');
         for (const t of targets) lines.push(`  · ${t.name}（${t.reason}）`);
-        lines.push('  "tick": {"角色名": {"位置":"地图小地点名","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
+        lines.push('  "tick": {"角色名": {"位置":"地图小地点名","日程":{"早晨":"地点｜做什么","白天":"地点｜做什么","夜晚":"地点｜做什么"},"当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
+        lines.push('- 日程有变化时写「日程」对象；没变化可省略，插件保留旧日程。');
         lines.push('- 玩家不在场也要推进他们自己的计划；tick 写在本轮 ws_update 里。');
     }
     if (needWorldTick) {
@@ -524,10 +525,10 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
         const userName = stBridge.getUserName() || '用户';
         const recordUserChar = settings.recordUserCharacter === true;
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
-要求：记录活跃角色${recordUserChar ? `（包括用户角色${userName}）` : `（不包括用户角色${userName}）`}。六个字段全部必填，每个字段写完整的句子，不要合并成一句话：
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","日程":{"早晨":"地点｜做什么","白天":"地点｜做什么","夜晚":"地点｜做什么"},"人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
+要求：记录活跃角色${recordUserChar ? `（包括用户角色${userName}）` : `（不包括用户角色${userName}）`}。以下字段尽量写完整，每个字段写完整的句子，不要合并成一句话：
 - 位置：优先使用「地图」里的小地点名；没有就写当前地点
-- 日程：早晨/白天/夜晚 各写「地点｜做什么」，地点同样用地图小地点名
+- 日程：**必须是对象**，早晨/白天/夜晚 各写「地点｜做什么」，地点同样用地图小地点名；不要写成一整句字符串。首次记录或日程变化时必须写；如果这个角色还没有日程，本轮必须补一次。
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
 - 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
 - 长期目标：最重要的长期追求
@@ -655,6 +656,21 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
     return list;
 }
 
+/** 日程兼容对象和字符串两种写法；字符串按「早晨：地点｜做什么；白天：…」解析 */
+function normalizeSchedule(value) {
+    if (typeof value === 'string') {
+        const out = {};
+        const re = /(早晨|白天|夜晚|凌晨|清晨|上午|中午|下午|傍晚|深夜|全天)[：:]\s*([^；;，,\n]+)/g;
+        for (const m of String(value).matchAll(re)) {
+            const key = m[1];
+            const val = m[2].trim();
+            if (key && val) out[key] = val;
+        }
+        return out;
+    }
+    return normalizeRelationships(value);
+}
+
 /** 角色条目：YAML 格式，姓名写进正文；关键记忆追加不覆盖 */
 async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) {
     const target = book || await stBridge.loadWorldInfoAsync(bookName);
@@ -684,8 +700,8 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
         ...normalizeRelationships(info && info['人际关系']),
     };
     const mergedSchedule = {
-        ...normalizeRelationships(old['日程']),
-        ...normalizeRelationships(info && info['日程']),
+        ...normalizeSchedule(old['日程']),
+        ...normalizeSchedule(info && info['日程']),
     };
 
     const finalInfo = { ...(info && typeof info === 'object' ? info : {}) };
