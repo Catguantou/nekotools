@@ -2555,6 +2555,8 @@ function buildPop() {
 
     const mobileBar = document.createElement('div');
     mobileBar.className = 'nt-quick-mobile-actions';
+    // 阻止冒泡到 ST 的 document 点击处理器，否则选项面板/扩展菜单会刚打开就被关掉
+    mobileBar.addEventListener('click', (e) => e.stopPropagation());
 
     const items = [
         { group: '世界', icon: '🕰', key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气', enabled: true },
