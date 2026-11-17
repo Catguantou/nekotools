@@ -632,6 +632,38 @@ export const stBridge = {
         return removed;
     },
 
+    /** 按 comment 前缀批量删除条目（旧版按条目拆分的数据要迁移掉） */
+    async removeEntriesByPrefix(bookName, prefix) {
+        const book = await this.loadWorldInfoAsync(bookName);
+        if (!book || !book.entries) return 0;
+        let removed = 0;
+        for (const [uid, entry] of Object.entries(book.entries)) {
+            if (entry && typeof entry.comment === 'string' && entry.comment.startsWith(prefix)) {
+                delete book.entries[uid];
+                removed++;
+            }
+        }
+        if (removed) await this.persistLorebook(bookName, book);
+        return removed;
+    },
+
+    /** 迁移：清掉旧版按对象拆分的条目（道具·/计划·/伏笔·），统一改为单条目聚合 */
+    async pruneLegacySplitEntries(bookName) {
+        const book = await this.loadWorldInfoAsync(bookName);
+        if (!book || !book.entries) return 0;
+        const prefixes = ['道具·', '计划·', '伏笔·'];
+        let removed = 0;
+        for (const [uid, entry] of Object.entries(book.entries)) {
+            if (entry && typeof entry.comment === 'string'
+                && prefixes.some(p => entry.comment.startsWith(p))) {
+                delete book.entries[uid];
+                removed++;
+            }
+        }
+        if (removed) await this.persistLorebook(bookName, book);
+        return removed;
+    },
+
     async updateEntry(bookName, title, content, isConstant = false, keywords = [], extra = {}) {
         const book = await this.loadWorldInfoAsync(bookName, true);
         if (!book) return;

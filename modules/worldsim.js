@@ -103,19 +103,20 @@ function buildTrackingMessages() {
         role: 'system',
         content: `<nekotools:update>
 【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略，标签内含合法 JSON（不要代码块包裹，标签外不加任何其它字符）。
-JSON 仅包含下方已启用的字段键名，请根据剧情进展综合判断更新，若是首次出场则新建，若状态未变可省略。
+chars / items / plot / world / foreshadow 中，除 chars 可按需只写有变化的角色外，其余四类都必须给出**完整清单**：前端会用本轮清单整条覆盖世界书条目，未列出的视为删除。
 </nekotools:update>`
     });
 
     if (settings.enableChars) {
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": "多行文本"}
-要求：记录活跃 NPC（严禁记录 user）。请结合角色的主观能动性，综合以下维度进行状态快照：
-- 状态：[动作/衣着/生理状态/本次更新的剧情时间戳]
-- 后台运行：[若刚出场或时间跳跃：以A→B→C的动作链条记录]
-- 长期目标：[概括最重要的长期追求] / 近期打算：[短期内最可能采取的下一个具体行动]
-- 关键记忆：[格式：【事件】→导致了什么转变。每次最多添加 1-2 个最关键的新记忆]
-- 特殊变化：[角色→角色生理状态变动|人生目标变化|持有道具物品|所有人际关系变化|个人理念变动|身份地位变化]
+【角色追踪】JSON 字段 "chars": {"角色名": {"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":"...","特殊变化":"..."}}
+要求：记录活跃 NPC（严禁记录 user）。六个字段全部必填，每个字段写完整的句子，不要合并成一句话：
+- 状态：动作/衣着/生理状态/本次更新的剧情时间
+- 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
+- 长期目标：最重要的长期追求
+- 近期打算：短期内最可能采取的下一个具体行动
+- 关键记忆：【事件】→ 导致了什么转变（每次最多新增 1-2 条）
+- 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
 `;
         const focus = (settings.focusChars || '').trim();
         if (focus) {
@@ -129,8 +130,9 @@ JSON 仅包含下方已启用的字段键名，请根据剧情进展综合判断
 
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
-【道具追踪】JSON 字段 "items": {"道具名": "描述"}
-要求：追踪剧情关键道具、剩余金钱、随身重要物品、礼物等。格式：[当前持有者 | 作用 | 来源]。重点标注那些未来剧情可能召回的道具，失去后删除。
+【道具追踪】JSON 字段 "items": {"道具名": "[持有者 | 作用 | 来源] 描述"}
+要求：每轮输出**当前完整清单**（不是增量）；未列出的道具视为已失去，会被前端删除。
+重点保留未来剧情可能召回的道具，最多 30 条。
 `;
         const custom = (settings.customPrompts.items || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
@@ -140,8 +142,8 @@ JSON 仅包含下方已启用的字段键名，请根据剧情进展综合判断
 
     if (settings.enablePlot) {
         let c = `<nekotools:track.plot>
-【计划追踪】JSON 字段 "plot": {"计划名": "描述"}
-要求：记录 NPC 或势力的暗计划。格式：[执行者 | 目标 | 进度 | 状态(暗中进行/已暴露)]。
+【计划追踪】JSON 字段 "plot": {"计划名": "[执行者 | 目标 | 进度 | 状态] 描述"}
+要求：每轮输出当前仍在推进的**完整清单**（不是增量）；已结束或已暴露的计划保留并标注状态；未列出视为已作废，会被前端删除。
 重要：此条目与角色后台动向联动。暗中进行的计划必须严守认知隔离，绝不能提前在正文中让用户或无关角色得知
 `;
         const custom = (settings.customPrompts.plot || '').trim();
@@ -152,8 +154,9 @@ JSON 仅包含下方已启用的字段键名，请根据剧情进展综合判断
 
     if (settings.enableWorld) {
         let c = `<nekotools:track.world>
-【世界局势】JSON 字段 "world": {"局势": "描述"}
-要求：宏观层面的变动（国家、势力、政治经济文化），社会的舆论、争端、风向，某个大人物的重要动向等。可能发生或酝酿世界级事件，模拟真实世界运转，不要围着主角转。
+【世界局势】JSON 字段 "world": {"局势名": "描述"}
+要求：每轮输出当前宏观格局的**完整清单**（可多条，键名自定）；过时的局势可合并成一条趋势；未列出视为已淡化。
+内容为国家、势力、政治经济文化、舆论争端风向、大人物动向等，模拟真实世界运转，不要围着主角转。
 `;
         const custom = (settings.customPrompts.world || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
@@ -163,9 +166,8 @@ JSON 仅包含下方已启用的字段键名，请根据剧情进展综合判断
 
     if (settings.enableForeshadow) {
         let c = `<nekotools:track.foreshadow>
-【草蛇伏笔】JSON 字段 "foreshadow": {"伏笔名": "描述"}
-要求：记录未来可能有用的情报、暗线、物件线索。与计划追踪严格分开。
-格式：[线索内容 | 指向/可能的作用]。已触发的伏笔进行删除。
+【草蛇伏笔】JSON 字段 "foreshadow": {"伏笔名": "[线索 | 指向/可能的作用] 描述"}
+要求：每轮输出尚未触发的**完整清单**（不是增量）；已触发的伏笔不再列出，会被前端删除。与计划追踪严格分开。
 `;
         const custom = (settings.customPrompts.foreshadow || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
@@ -214,6 +216,33 @@ function buildSystemMessages(needBig, includeTracking = true) {
     // 世界书设定不再由本插件注入：追踪书已经全局激活，酒馆自己会把它送进提示词。
     // 重复注入既浪费 token，也会让同一段设定出现两次。
     return list;
+}
+
+const CHAR_FIELD_ORDER = ['状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化'];
+
+/** 角色条目：把结构化字段排成多行，保证每人一条、格式统一 */
+function formatCharEntry(info) {
+    if (typeof info === 'string') return info.trim();
+    if (!info || typeof info !== 'object') return '';
+    const lines = [];
+    for (const key of CHAR_FIELD_ORDER) {
+        const v = info[key];
+        if (v !== undefined && v !== null && String(v).trim()) lines.push(`- ${key}：${String(v).trim()}`);
+    }
+    for (const [k, v] of Object.entries(info)) {
+        if (CHAR_FIELD_ORDER.includes(k)) continue;
+        if (v !== undefined && v !== null && String(v).trim()) lines.push(`- ${k}：${String(v).trim()}`);
+    }
+    return lines.join('\n');
+}
+
+/** 非角色分类：合并成一条，一行一个对象 */
+function formatAggregate(map) {
+    if (!map || typeof map !== 'object') return '';
+    const lines = Object.entries(map)
+        .filter(([, v]) => v !== undefined && v !== null && String(v).trim())
+        .map(([k, v]) => `- ${k}｜${String(v).trim()}`);
+    return lines.length ? lines.join('\n') : '（暂无）';
 }
 
 registry.register({
@@ -336,6 +365,9 @@ registry.register({
             await stBridge.mountGlobalWorldbook(currentLorebook, true);
         }
 
+        // 迁移：旧版按对象拆分的条目清掉，统一改成「道具/计划/伏笔」单条目
+        await stBridge.pruneLegacySplitEntries(currentLorebook);
+
         if (captured.ws_big_summary && settings.enableBigSummary) {
             await stBridge.updateEntry(currentLorebook, '大总结', captured.ws_big_summary.trim(), true, [], {
                 position: 4, depth: 9999, order: 9999, role: 2, insertion_order: 9999
@@ -377,10 +409,10 @@ registry.register({
 
                 if (data.chars && settings.enableChars) {
                     const focusArr = (settings.focusChars || '').split(/[,，\s]+/).map(n => n.trim()).filter(Boolean);
-                    for (const [name, desc] of Object.entries(data.chars)) {
+                    for (const [name, info] of Object.entries(data.chars)) {
                         const n = String(name).trim();
                         if (focusArr.length > 0 && !focusArr.includes(n)) continue;
-                        await stBridge.updateEntry(currentLorebook, `角色·${n}`, desc, false, [n]);
+                        await stBridge.updateEntry(currentLorebook, `角色·${n}`, formatCharEntry(info), false, [n]);
                     }
 
                     book = await stBridge.loadWorldInfoAsync(currentLorebook);
@@ -397,24 +429,30 @@ registry.register({
                     }
                 }
                 if (data.items && settings.enableItems) {
-                    for (const [name, desc] of Object.entries(data.items)) {
-                        await stBridge.updateEntry(currentLorebook, `道具·${name}`, desc, false, [name]);
-                    }
+                    await stBridge.updateEntry(currentLorebook, '道具', formatAggregate(data.items), true, [], {
+                        position: 4, depth: 999, order: 900
+                    });
                 }
                 if (data.plot && settings.enablePlot) {
-                    for (const [name, desc] of Object.entries(data.plot)) {
-                        await stBridge.updateEntry(currentLorebook, `计划·${name}`, desc, true);
-                    }
+                    await stBridge.updateEntry(currentLorebook, '计划', formatAggregate(data.plot), true, [], {
+                        position: 4, depth: 999, order: 900
+                    });
                 }
                 if (data.world && settings.enableWorld) {
-                    if (data.world['局势']) {
-                        await stBridge.updateEntry(currentLorebook, '世界局势', data.world['局势'], true);
+                    const worldRaw = data.world;
+                    const worldText = typeof worldRaw === 'string'
+                        ? worldRaw.trim()
+                        : (worldRaw && worldRaw['局势'] ? String(worldRaw['局势']).trim() : formatAggregate(worldRaw));
+                    if (worldText) {
+                        await stBridge.updateEntry(currentLorebook, '世界局势', worldText, true, [], {
+                            position: 4, depth: 999, order: 900
+                        });
                     }
                 }
                 if (data.foreshadow && settings.enableForeshadow) {
-                    for (const [name, desc] of Object.entries(data.foreshadow)) {
-                        await stBridge.updateEntry(currentLorebook, `伏笔·${name}`, desc, true);
-                    }
+                    await stBridge.updateEntry(currentLorebook, '伏笔', formatAggregate(data.foreshadow), true, [], {
+                        position: 4, depth: 999, order: 900
+                    });
                 }
             } catch (e) {
                 console.warn('[worldsim] JSON 解析失败', e, captured.ws_update);
