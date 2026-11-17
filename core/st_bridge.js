@@ -1,4 +1,5 @@
 import { settings } from './settings.js';
+import { slotBaseName, slotName, isSlotOf, slotNumber } from './worldfmt.js';
 import {
     readWorldNames,
     readActiveWorlds,
@@ -83,11 +84,48 @@ export const stBridge = {
             .slice(0, 120);
     },
 
-    /** 当前角色对应的追踪书名；没有选中角色时返回空串 */
-    trackerBookName() {
+    /** 当前角色第 1 档的基础书名；没有选中角色时返回空串 */
+    trackerBaseName() {
         const charName = this.getCharacterName();
         if (!charName) return '';
-        return this.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`);
+        return slotBaseName(charName);
+    },
+
+    /** 当前角色的所有存档书（按档位从小到大） */
+    listTrackerBooksForCurrentChar() {
+        const charName = this.getCharacterName();
+        if (!charName) return [];
+        // 启动早期 world_names 可能还没拉全，把「已激活列表」也算上，
+        // 否则会把第 2 档误判成不存在、又新建一个第 1 档。
+        const names = new Set();
+        for (const n of this.getWorldNames()) names.add(n);
+        for (const n of this.getGloballyActivatedWorlds()) names.add(n);
+        const active = new Set(this.getGloballyActivatedWorlds());
+        return [...names]
+            .filter(n => isSlotOf(n, charName))
+            .map(n => ({ name: n, slot: slotNumber(n), active: active.has(n) }))
+            .sort((a, b) => a.slot - b.slot);
+    },
+
+    /**
+     * 当前该用哪一档：
+     *   1. 有激活的档 → 取编号最大的那档（多本同时激活时以它为准）
+     *   2. 没有激活但有存档 → 取编号最大的那档
+     *   3. 一本都没有 → 第 1 档
+     */
+    currentTrackerName() {
+        const charName = this.getCharacterName();
+        if (!charName) return '';
+        const books = this.listTrackerBooksForCurrentChar();
+        if (!books.length) return slotName(charName, 1);
+        const activeBooks = books.filter(b => b.active);
+        const pick = activeBooks.length ? activeBooks[activeBooks.length - 1] : books[books.length - 1];
+        return pick.name;
+    },
+
+    /** 兼容旧调用：当前档书名 */
+    trackerBookName() {
+        return this.currentTrackerName();
     },
 
     /** 判断一本书是不是本插件自动建的追踪书 */
@@ -557,12 +595,14 @@ export const stBridge = {
         const charName = char.name;
         if (!charName) return;
         
-        // 删角色卡 → 追踪书一定删；绑定的原生世界书只在「同步删除」开启时才删
+        // 删角色卡 → 该角色的所有存档档一起删；绑定的原生世界书只在「同步删除」开启时才删
         const cfg = this.getLoreManagerConfig();
         const booksToDelete = [];
         const bound = char.data?.extensions?.world;
         if (cfg.syncCharLifecycle && bound && !this.isTrackerBook(bound)) booksToDelete.push(bound);
-        booksToDelete.push(this.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`));
+        for (const name of this.getWorldNames()) {
+            if (this.isTrackerBook(name) && isSlotOf(name, charName)) booksToDelete.push(name);
+        }
         
         for (const book of booksToDelete) {
             const worldNames = this.getWorldNames();
