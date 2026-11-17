@@ -637,6 +637,11 @@ export const stBridge = {
             }
             if (dirty) settings.set('worldsim', { slotMeta: ws.slotMeta });
         }
+
+        // 通知配置缓存：删掉的档不要留下旧的黑/白名单
+        try {
+            window.dispatchEvent(new CustomEvent('nekotool:config-invalidated', { detail: { names: booksToDelete } }));
+        } catch (_) {}
     },
 
     /** 按 comment 删除条目（剧情推演换会话时要清掉） */

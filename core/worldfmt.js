@@ -130,38 +130,50 @@ export function parseRosterLine(line) {
     const raw = String(line ?? '').trim();
     if (!raw) return null;
     const body = raw.replace(/^[-·]\s*/, '');
-    const parts = body.split('｜').map(s => s.trim());
+    const parts = body.split(/[|｜]/).map(s => s.trim());
     if (!parts[0]) return null;
 
     let layer = 0;
     const tail = parts[parts.length - 1] || '';
-    const m = tail.match(/第\s*(\d+)\s*层/);
-    if (m) layer = Number(m[1]);
-    const fields = m ? parts.slice(0, -1) : parts;
+    if (/^第\s*\d+\s*层$/.test(tail)) {
+        layer = Number((tail.match(/\d+/) || ['0'])[0]);
+        parts.pop();
+    }
 
-    return {
-        name: fields[0] || '',
-        tier: fields[1] || '',
-        location: fields[2] || '',
-        action: fields[3] || '',
-        layer,
-        raw,
-    };
+    const [name, second = '', third = '', fourth = ''] = parts;
+    let tier = '';
+    let location = '';
+    let action = '';
+    if (/^T[1-4]$/i.test(second)) {
+        tier = second.toUpperCase();
+        location = third;
+        action = fourth;
+    } else if (parts.length >= 3) {
+        // 没写等级但有位置/行动
+        location = second;
+        action = third;
+    } else {
+        // 两段旧格式：第二段当备注/最近行动
+        action = second;
+    }
+
+    return { name, tier, location, action, layer, raw };
 }
 
 /** 生成角色索引的一行；layer > 0 时追加「第 N 层」 */
 export function formatRosterLine({ name, tier = 'T3', location = '', action = '', layer = 0 }) {
-    const parts = [String(name || '').trim(), tier || 'T3'];
-    if (location) parts.push(location);
+    const clean = s => String(s ?? '').replace(/[|｜]/g, '/').trim();
+    const parts = [clean(name), tier || 'T3'];
+    if (location) parts.push(clean(location));
     else if (action) parts.push('');
-    if (action) parts.push(action);
+    if (action) parts.push(clean(action));
     if (layer > 0) parts.push(`第 ${layer} 层`);
     return `- ${parts.join('｜')}`;
 }
 
 /** 从一行里去掉旧的「第 N 层」，方便重新打时间戳 */
 export function stripRosterLayer(value) {
-    return String(value ?? '').replace(/｜\s*第\s*\d+\s*层\s*$/, '').trim();
+    return String(value ?? '').replace(/[|｜]\s*第\s*\d+\s*层\s*$/, '').trim();
 }
 
 /** 存档列表里的显示名 */

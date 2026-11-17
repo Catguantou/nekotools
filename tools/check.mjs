@@ -179,6 +179,17 @@ try {
     assert(wf.parseRosterLine('') === null, '空行不应解析成角色');
     assert(wf.formatRosterLine({ name: '阿猫', tier: 'T2', location: '北境', action: '喝酒', layer: 37 }) === '- 阿猫｜T2｜北境｜喝酒｜第 37 层', '角色索引行生成失败');
     assert(wf.stripRosterLayer('T2｜北境｜喝酒｜第 37 层') === 'T2｜北境｜喝酒', '去掉层号失败');
+
+    // 行动文案里出现「第 N 层」不能被当时间戳
+    const rl2 = wf.parseRosterLine('- 阿猫｜T3｜地下室｜在第 5 层巡逻');
+    assert(rl2 && rl2.action === '在第 5 层巡逻' && rl2.layer === 0, '行动里的「第 N 层」被误判成时间戳');
+    // ASCII 竖线 + 竖线转义
+    const rl3 = wf.parseRosterLine('- 阿猫 | T2 | 北境 | 喝酒 | 第 37 层');
+    assert(rl3 && rl3.tier === 'T2' && rl3.location === '北境' && rl3.layer === 37, 'ASCII 竖线解析失败');
+    const rl4 = wf.parseRosterLine('- 阿猫｜只是备注');
+    assert(rl4 && rl4.tier === '' && rl4.action === '只是备注', '两段旧格式解析失败');
+    assert(!wf.formatRosterLine({ name: 'A｜B', tier: 'T1' }).includes('A｜B'), '名字里的竖线未转义');
+    assert(wf.stripRosterLayer('T2|北境|第 3 层') === 'T2|北境', 'ASCII 竖线去层号失败');
 } catch (e) {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }

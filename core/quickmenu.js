@@ -12,8 +12,10 @@ import {
     readRoster,
     readCharacterEntry,
     saveCharacterEntry,
+    removeRosterName,
+    removeCharacterEntry,
 } from './slots.js';
-import { slotLabel, parseStatusFields } from './worldfmt.js';
+import { slotLabel, parseStatusFields, formatRosterLine } from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
@@ -449,13 +451,6 @@ function splitCharFields(content) {
     return out;
 }
 
-async function rewriteRoster(book, items) {
-    const lines = items.map(x => x.raw || `- ${x.name}`);
-    await stBridge.updateEntry(book, '角色索引', lines.join('\n'), true, [], {
-        position: 4, depth: 999, order: 998,
-    });
-}
-
 async function showRosterModal() {
     const book = stBridge.currentTrackerName();
     if (!book) {
@@ -476,6 +471,7 @@ async function showRosterModal() {
     let cfg = { pinned: [], blocked: [] };
     let selected = '';
     let editing = false;
+    let renderSeq = 0;
 
     openModal({ title: '角色管理', body, wide: true, footer: [{ label: '关闭', primary: true }] });
 
@@ -492,12 +488,17 @@ async function showRosterModal() {
         const pinned = cfg.pinned.includes(name)
             ? cfg.pinned.filter(n => n !== name)
             : [...cfg.pinned, name];
-        cfg = await saveConfig(book, { pinned });
+        const saved = await saveConfig(book, { pinned });
+        if (!saved) {
+            toast('保存失败：追踪书可能已被删除', 'error');
+            return;
+        }
+        cfg = saved;
 
         // 新钉住但索引里没有：补一行
         if (pinned.includes(name) && !list.some(x => x.name === name)) {
             const lines = list.map(x => x.raw);
-            lines.push(`- ${name}｜T1｜第 ${currentLayerNo()} 层`);
+            lines.push(formatRosterLine({ name, tier: 'T1', layer: currentLayerNo() }));
             await stBridge.updateEntry(book, '角色索引', lines.join('\n'), true, [], {
                 position: 4, depth: 999, order: 998,
             });
@@ -508,12 +509,19 @@ async function showRosterModal() {
     };
 
     const blockChar = async (name) => {
-        if (!window.confirm(`把「${name}」加入黑名单？之后不再记录它，并从索引里移除。`)) return;
-        cfg = await saveConfig(book, {
+        if (!window.confirm(`把「${name}」加入黑名单？之后不再记录它、从索引移除，并删掉它的档案。`)) return;
+        const saved = await saveConfig(book, {
             blocked: [...new Set([...cfg.blocked, name])],
             pinned: cfg.pinned.filter(n => n !== name),
         });
-        await rewriteRoster(book, list.filter(x => x.name !== name));
+        if (!saved) {
+            toast('保存失败：追踪书可能已被删除', 'error');
+            return;
+        }
+        cfg = saved;
+        // 读最新索引再删，别用打开面板时的旧快照覆盖 AI 刚写的人
+        await removeRosterName(book, name);
+        await removeCharacterEntry(book, name);
         list = await readRoster(book);
         selected = list[0] ? list[0].name : '';
         renderList();
@@ -521,7 +529,12 @@ async function showRosterModal() {
     };
 
     const unblock = async (name) => {
-        cfg = await saveConfig(book, { blocked: cfg.blocked.filter(n => n !== name) });
+        const saved = await saveConfig(book, { blocked: cfg.blocked.filter(n => n !== name) });
+        if (!saved) {
+            toast('保存失败：追踪书可能已被删除', 'error');
+            return;
+        }
+        cfg = saved;
         renderList();
     };
 
@@ -531,6 +544,37 @@ async function showRosterModal() {
         head.className = 'nt-quick-chars-head';
         head.textContent = `角色 ${list.length}`;
         left.appendChild(head);
+
+        // 手动钉住/拉黑一个还没进索引的名字
+        const addRow = document.createElement('div');
+        addRow.className = 'nt-quick-chars-add';
+        const nameInput = document.createElement('input');
+        nameInput.className = 'nt-quick-input';
+        nameInput.placeholder = '名字';
+        const pinBtn = document.createElement('button');
+        pinBtn.type = 'button';
+        pinBtn.className = 'nt-quick-btn-text';
+        pinBtn.textContent = '钉住';
+        pinBtn.addEventListener('click', async () => {
+            const n = nameInput.value.trim();
+            if (!n) return;
+            nameInput.value = '';
+            await togglePin(n);
+        });
+        const blockBtn = document.createElement('button');
+        blockBtn.type = 'button';
+        blockBtn.className = 'nt-quick-btn-text danger';
+        blockBtn.textContent = '拉黑';
+        blockBtn.addEventListener('click', async () => {
+            const n = nameInput.value.trim();
+            if (!n) return;
+            nameInput.value = '';
+            await blockChar(n);
+        });
+        addRow.appendChild(nameInput);
+        addRow.appendChild(pinBtn);
+        addRow.appendChild(blockBtn);
+        left.appendChild(addRow);
 
         for (const item of list) {
             const row = document.createElement('button');
@@ -599,6 +643,7 @@ async function showRosterModal() {
     }
 
     async function renderDetail() {
+        const seq = ++renderSeq;
         right.textContent = '';
         const item = list.find(x => x.name === selected);
         if (!item) {
@@ -610,6 +655,7 @@ async function showRosterModal() {
         }
 
         const model = await readCharacterEntry(book, item.name);
+        if (seq !== renderSeq) return;
 
         const title = document.createElement('div');
         title.className = 'nt-quick-char-detail-title';
@@ -718,40 +764,38 @@ async function showRosterModal() {
 // ========== 快捷行动 ==========
 
 async function sendUserText(text) {
-    const ctx = stBridge.getContext();
-    try {
-        if (ctx && typeof ctx.executeSlashCommandsWithOptions === 'function') {
-            await ctx.executeSlashCommandsWithOptions(`/send ${text}`, { showOutput: false });
-            return true;
-        }
-    } catch (e) {
-        console.warn('[nekotools] /send 失败，改用输入框', e);
-    }
+    // 必须走酒馆输入框 + 发送按钮：/send 只插消息、不触发 AI 生成
     const ta = document.getElementById('send_textarea');
     const btn = document.getElementById('send_but');
     if (!ta || !btn) return false;
+
     ta.value = text;
     ta.dispatchEvent(new Event('input', { bubbles: true }));
+    // 等酒馆把发送按钮从隐藏状态切回来
+    await new Promise(r => setTimeout(r, 40));
+
+    if (btn.classList.contains('displayNone')) {
+        ta.focus();
+        return false;
+    }
     btn.click();
     return true;
 }
 
 async function sendContinue() {
     const ctx = stBridge.getContext();
-    try {
-        if (ctx && typeof ctx.executeSlashCommandsWithOptions === 'function') {
-            await ctx.executeSlashCommandsWithOptions('/continue', { showOutput: false });
-            return true;
-        }
-    } catch (e) {
-        console.warn('[nekotools] /continue 失败，改用按钮', e);
+    const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
+    const last = chat[chat.length - 1];
+    if (last && last.is_user) {
+        toast('最后一条是你的消息，先等回复再续写', 'warning');
+        return false;
     }
+
+    // 直接点酒馆的「继续」按钮；它才会走完整生成流程
     const btn = document.getElementById('mes_continue');
-    if (btn && !btn.classList.contains('displayNone')) {
-        btn.click();
-        return true;
-    }
-    return false;
+    if (!btn || btn.classList.contains('displayNone')) return false;
+    btn.click();
+    return true;
 }
 
 function actionRow(label, control) {

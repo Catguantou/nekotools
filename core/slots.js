@@ -3,6 +3,7 @@
 
 import { stBridge } from './st_bridge.js';
 import { settings } from './settings.js';
+import { invalidateConfig } from './worldcfg.js';
 import {
     slotName,
     sanitizeWorldName,
@@ -84,10 +85,49 @@ export async function readCharacterEntry(bookName, name) {
     return entry ? String(entry.content || '') : '';
 }
 
-/** 保存某个角色的六字段条目（手动编辑） */
+/** 保存某个角色的六字段条目（手动编辑）；写后复核 */
 export async function saveCharacterEntry(bookName, name, content) {
     if (!bookName || !name) return false;
-    await stBridge.updateEntry(bookName, `角色·${name}`, String(content || ''), false, [name]);
+    const text = String(content || '');
+    await stBridge.updateEntry(bookName, `角色·${name}`, text, false, [name]);
+    const after = await readCharacterEntry(bookName, name);
+    return after === text;
+}
+
+/** 从索引里删掉一个名字（读最新内容再删，避免覆盖 AI 刚写的内容） */
+export async function removeRosterName(bookName, name) {
+    if (!bookName || !name) return false;
+    const book = await stBridge.loadWorldInfoAsync(bookName, true);
+    if (!book || !book.entries) return false;
+    const entry = Object.values(book.entries).find(e => e && e.comment === '角色索引');
+    if (!entry) return false;
+    const lines = String(entry.content || '')
+        .split('\n')
+        .filter(line => {
+            const parsed = parseRosterLine(line);
+            return !(parsed && parsed.name === name);
+        });
+    await stBridge.updateEntry(bookName, '角色索引', lines.join('\n'), true, [], {
+        position: 4, depth: 999, order: 998,
+    });
+    return true;
+}
+
+/** 删除某个角色的六字段条目（拉黑时用） */
+export async function removeCharacterEntry(bookName, name) {
+    if (!bookName || !name) return false;
+    const book = await stBridge.loadWorldInfoAsync(bookName, true);
+    if (!book || !book.entries) return false;
+    let uid = null;
+    for (const [key, entry] of Object.entries(book.entries)) {
+        if (entry && entry.comment === `角色·${name}`) {
+            uid = key;
+            break;
+        }
+    }
+    if (!uid) return false;
+    delete book.entries[uid];
+    await stBridge.persistLorebook(bookName, book);
     return true;
 }
 
@@ -174,6 +214,7 @@ export async function deleteSlot(n) {
     const ok = await stBridge.deleteWorldbook(target.name, { syncUnbindChar: false });
     if (!ok) throw new Error('删除失败（文件没删掉）');
     removeSlotMeta(target.name);
+    invalidateConfig(target.name);
 
     if (wasActive) {
         const rest = stBridge.listTrackerBooksForCurrentChar();
@@ -263,6 +304,7 @@ export async function importCurrent(file) {
 
     const wrote = await stBridge._writeBook(targetName, parsed.book);
     if (!wrote) throw new Error('写入失败（没落盘）');
+    invalidateConfig(targetName);
 
     const after = await stBridge.loadWorldInfoAsync(targetName, true);
     if (!after || !after.entries) throw new Error('导入后读取失败');

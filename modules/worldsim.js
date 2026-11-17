@@ -392,7 +392,7 @@ function sanitizeLastMessage() {
  * 解析本轮状态栏，把时钟记到当前存档的元数据里（不写世界书）。
  * 只用本轮捕获的 ws_status，不发额外请求。
  */
-async function applyClock(bookName, captured) {
+async function applyClock(bookName, captured, replyLayer = 0) {
     if (!settings.enableStatus) {
         clearClockJump(bookName);
         return;
@@ -411,7 +411,7 @@ async function applyClock(bookName, captured) {
     const newDate = parseGameDate(merged.time);
 
     const ctx = stBridge.getContext();
-    const layer = Array.isArray(ctx.chat) ? ctx.chat.length : 0;
+    const layer = replyLayer || (Array.isArray(ctx.chat) ? ctx.chat.length : 0);
     setSlotClock(bookName, { ...merged, layer, at: Date.now() });
     try { window.dispatchEvent(new CustomEvent('nekotool:clock-changed')); } catch (_) {}
 
@@ -528,7 +528,7 @@ registry.register({
         // 切档/新建档后重新载入世界配置（白名单/黑名单）
         window.addEventListener('nekotool:slots-changed', () => {
             const name = getLorebookName();
-            if (name) loadConfig(name).catch(e => console.warn('[worldsim] 世界配置加载失败', e));
+            if (name) loadConfig(name, { force: true }).catch(e => console.warn('[worldsim] 世界配置加载失败', e));
         });
 
         if (ctx.eventSource && ctx.eventTypes?.CHAT_CHANGED) {
@@ -595,6 +595,8 @@ registry.register({
         const bookName = getLorebookName();
         // 记下本轮用的是哪一档：生成期间用户切档时，结算仍写回发起时那一档
         ctx.__nt_bookName = bookName;
+        // 本轮回复将落在第几层（1 基）。onResponse 时 chat 可能还没算上这条回复
+        ctx.__nt_replyLayer = chat.length + 1;
         const includeTracking = Boolean(bookName) && stBridge.getWorldNames().includes(bookName);
         if (!includeTracking) {
             console.warn('[worldsim] 追踪书不存在，本轮只注入世界规则与状态栏，跳过追踪契约:', bookName || '(无角色)');
@@ -625,7 +627,9 @@ registry.register({
         const ctx = stBridge.getContext();
         const currentLorebook = ctx.__nt_bookName || getLorebookName();
         if (!currentLorebook) return;
+        const replyLayer = Number(ctx.__nt_replyLayer) || (Array.isArray(ctx.chat) ? ctx.chat.length : 0);
         delete ctx.__nt_bookName;
+        delete ctx.__nt_replyLayer;
 
         // 先收拾模型漏到正文的标签/推演块
         sanitizeLastMessage();
@@ -667,7 +671,7 @@ registry.register({
         };
 
         // 状态栏 → 时钟（只存设置，供 TOOL 菜单显示和跳跃检测）
-        await applyClock(currentLorebook, captured);
+        await applyClock(currentLorebook, captured, replyLayer);
 
         if (captured.ws_big_summary && settings.enableBigSummary) {
             await stBridge.updateEntry(currentLorebook, '大总结', captured.ws_big_summary.trim(), true, [], {
@@ -714,10 +718,11 @@ registry.register({
 
                 if (data.chars && settings.enableChars) {
                     const focusArr = (settings.focusChars || '').split(/[,，\s]+/).map(n => n.trim()).filter(Boolean);
+                    const allow = focusArr.length ? new Set([...focusArr, ...pinnedNow]) : null;
                     for (const [name, info] of Object.entries(data.chars)) {
                         const n = String(name).trim();
                         if (!n || blockedNow.has(n)) continue;
-                        if (focusArr.length > 0 && !focusArr.includes(n)) continue;
+                        if (allow && !allow.has(n)) continue;
                         await stBridge.updateEntry(currentLorebook, `角色·${n}`, formatCharEntry(info), false, [n]);
                     }
                 }
@@ -727,16 +732,16 @@ registry.register({
                     const source = (raw.add && typeof raw.add === 'object') || Array.isArray(raw.del)
                         ? raw
                         : { add: raw, del: [] };
-                    const layer = (stBridge.getContext().chat || []).length;
                     const add = {};
                     for (const [name, value] of Object.entries(source.add || {})) {
                         const n = String(name || '').trim();
                         if (!n || blockedNow.has(n)) continue;
                         const base = stripRosterLayer(String(value ?? '')) || 'T3';
-                        add[n] = `${base}｜第 ${layer} 层`;
+                        add[n] = `${base}｜第 ${replyLayer} 层`;
                     }
+                    // 黑名单允许 del（把旧行删掉）；钉住的保护，不让模型删
                     const del = Array.isArray(source.del)
-                        ? source.del.map(String).filter(n => !blockedNow.has(n) && !pinnedNow.has(n))
+                        ? source.del.map(String).filter(n => !pinnedNow.has(n))
                         : [];
                     if (Object.keys(add).length || del.length) {
                         await applyAggregateOps(currentLorebook, '角色索引', { add, del }, 998);
