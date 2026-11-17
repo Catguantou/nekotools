@@ -63,9 +63,11 @@ function buildStatusPrompt() {
 
 function buildPreviewPrompt() {
     const tagOpen = '<ws_' + 'preview>';
+    const tagClose = '</ws_' + 'preview>';
     let p = `<nekotools:preview>
 【剧情推演 · 仅供后台参考 · 绝对禁止向用户直接展示或罗列选项】
-你必须在 ${tagOpen} 标签内完成以下推演，为下一轮生成提供指导：
+你必须把全部推演内容夹在下面两个标签之间，**开始标签和结束标签都必须原样输出**；缺少结束标签会被判为正文泄露：
+${tagOpen}
 ## 1. 行为推演
 评估：结合世界观与当前阻力，用户的行动成功率大约是 XX%。
 三种走向（按概率排序）：
@@ -77,7 +79,8 @@ function buildPreviewPrompt() {
 支线触发：[提供 1-2 个背后的暗线、可探索的区域或即将发生的随机事件]
 铺垫追踪：[若有突发事件，指明其前置铺垫线索是什么，但决不让突发事件一直出现打断现有正在做的事，只有在剧情偏向无聊时优先考虑]
 倾向量表：【喜剧%+悲剧%+正剧%+幽默%+严肃%+欢快%+宏大%】
-</nekotools:preview>`;
+${tagClose}
+（标签之外绝对不要重复上述推演内容）`;
 
     const custom = (settings.customPrompts.preview || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
@@ -96,10 +99,11 @@ function buildTrackingMessages() {
     if (!anyEnabled) return list;
 
     const tagOpen = '<ws_' + 'update>';
+    const tagClose = '</ws_' + 'update>';
     list.push({
         role: 'system',
         content: `<nekotools:update>
-【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} 标签，内含合法 JSON（不要代码块包裹，前后不加任何其它字符）。
+【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略，标签内含合法 JSON（不要代码块包裹，标签外不加任何其它字符）。
 JSON 仅包含下方已启用的字段键名，请根据剧情进展综合判断更新，若是首次出场则新建，若状态未变可省略。
 </nekotools:update>`
     });
@@ -175,8 +179,9 @@ JSON 仅包含下方已启用的字段键名，请根据剧情进展综合判断
 
 function buildSummaryPrompt() {
     const tagOpen = '<ws_' + 'summary>';
+    const tagClose = '</ws_' + 'summary>';
     let p = `<nekotools:summary>
-【格式契约】必须在末尾输出 ${tagOpen} 标签，100字内对本轮剧情进行简洁概括，完整保留角色行为、发展与对话，包括详细日期时间，记录如学习到的经验/领悟/技巧/教训，或者是约定/承诺/性格转变/道具/礼物等等重要内容，确保记录具体且清晰的实际内容，严禁概括为模糊形容词
+【格式契约】必须在末尾输出 ${tagOpen} ... ${tagClose}，开始与结束标签都要有。100字内对本轮剧情进行简洁概括，完整保留角色行为、发展与对话，包括详细日期时间，记录如学习到的经验/领悟/技巧/教训，或者是约定/承诺/性格转变/道具/礼物等等重要内容，确保记录具体且清晰的实际内容，严禁概括为模糊形容词
 </nekotools:summary>`;
     const custom = (settings.customPrompts.summary || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
@@ -185,22 +190,27 @@ function buildSummaryPrompt() {
 
 function buildBigSummaryPrompt() {
     const tagOpen = '<ws_' + 'big_summary>';
+    const tagClose = '</ws_' + 'big_summary>';
     let p = `<nekotools:bigsummary>
-【格式契约 · 仅本轮触发】必须输出 ${tagOpen} 标签。停止所有角色扮演，作为总结助手对本局游戏至此的剧情进行【大总结】。保持中性客观，总体2000token上下对已发生时间进行总结，以自然语言交代清楚发生了什么，且事件时间顺序必须与前文一致，保持时间线清晰度。相近时间事件整合为同一时间跨度，并使用【】对时间跨度进行标记，保留关键事件、人物关系变化、重要伏笔。
+【格式契约 · 仅本轮触发】必须输出 ${tagOpen} ... ${tagClose}，开始与结束标签都要有。停止所有角色扮演，作为总结助手对本局游戏至此的剧情进行【大总结】。保持中性客观，总体2000token上下对已发生时间进行总结，以自然语言交代清楚发生了什么，且事件时间顺序必须与前文一致，保持时间线清晰度。相近时间事件整合为同一时间跨度，并使用【】对时间跨度进行标记，保留关键事件、人物关系变化、重要伏笔。
 </nekotools:bigsummary>`;
     const custom = (settings.customPrompts.bigSummary || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
     return p;
 }
 
-function buildSystemMessages(needBig) {
+function buildSystemMessages(needBig, includeTracking = true) {
     const list = [{ role: 'system', content: DIRECTOR_PROMPT }];
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
     if (settings.enablePreview) list.push({ role: 'system', content: buildPreviewPrompt() });
-    list.push(...buildTrackingMessages());
-    if (settings.enableSummary) list.push({ role: 'system', content: buildSummaryPrompt() });
-    if (needBig) list.push({ role: 'system', content: buildBigSummaryPrompt() });
+
+    // 追踪书不存在时不要再要求模型输出追踪 JSON：写了也没地方存，白烧 token
+    if (includeTracking) {
+        list.push(...buildTrackingMessages());
+        if (settings.enableSummary) list.push({ role: 'system', content: buildSummaryPrompt() });
+        if (needBig) list.push({ role: 'system', content: buildBigSummaryPrompt() });
+    }
 
     // 世界书设定不再由本插件注入：追踪书已经全局激活，酒馆自己会把它送进提示词。
     // 重复注入既浪费 token，也会让同一段设定出现两次。
@@ -279,7 +289,14 @@ registry.register({
         }
         ctx.__ntNeedBig = needBig;
 
-        for (const msg of buildSystemMessages(needBig)) {
+        // 追踪书确实存在才注入追踪契约；被删掉时不复活、也不让模型空写
+        const bookName = getLorebookName();
+        const includeTracking = Boolean(bookName) && stBridge.getWorldNames().includes(bookName);
+        if (!includeTracking) {
+            console.warn('[worldsim] 追踪书不存在，本轮只注入世界规则与状态栏，跳过追踪契约:', bookName || '(无角色)');
+        }
+
+        for (const msg of buildSystemMessages(needBig, includeTracking)) {
             ctx.__nt_pendingSystems.push(msg);
         }
     },
@@ -299,13 +316,14 @@ registry.register({
         const currentLorebook = getLorebookName();
         if (!currentLorebook) return;
 
-        // 异步安全读取（若缓存没有则自动从后端拉取；没有就自动建库并挂全局，绝不静默丢第一轮）
-        let book = await stBridge.loadWorldInfoAsync(currentLorebook);
+        // 强制从磁盘读，避免书被删后仍从旧缓存写回去（导致「已删除的追踪书复活」）
+        let book = await stBridge.loadWorldInfoAsync(currentLorebook, true);
         if (!book) {
-            book = await stBridge.ensureWorldbook(currentLorebook);
-        }
-        if (!book) {
-            console.warn('[nekotools] 追踪世界书创建失败，跳过写入:', currentLorebook);
+            console.warn('[worldsim] 追踪书不存在（可能已被删除），本次不写入:', currentLorebook);
+            // 顺手把幽灵全局激活关掉，免得酒馆每轮报 does not exist
+            if (stBridge.isGloballyActivated(currentLorebook)) {
+                await stBridge.mountGlobalWorldbook(currentLorebook, false);
+            }
             return;
         }
         if (!stBridge.isGloballyActivated(currentLorebook)) {
