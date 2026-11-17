@@ -503,7 +503,7 @@ function charFields(content) {
     });
 }
 
-async function showRosterModal() {
+async function showRosterModal(preselectName = '') {
     const book = stBridge.currentTrackerName();
     if (!book) {
         toast('请先选择一个角色卡', 'warning');
@@ -515,6 +515,9 @@ async function showRosterModal() {
 
     const headerEl = document.createElement('div');
     headerEl.className = 'nt-quick-roster-head';
+    const headerText = document.createElement('span');
+    headerText.className = 'nt-quick-roster-text';
+    headerEl.appendChild(headerText);
     body.appendChild(headerEl);
 
     const cols = document.createElement('div');
@@ -538,9 +541,17 @@ async function showRosterModal() {
     const updateHeader = () => {
         const place = clockNow && clockNow.place ? clockNow.place : '未知地点';
         const time = clockNow && clockNow.time ? clockNow.time : '未知时间';
-        headerEl.textContent = `第 ${currentLayerNo()} 层 · ${place} · ${time}`;
+        headerText.textContent = `第 ${currentLayerNo()} 层 · ${place} · ${time}`;
     };
     updateHeader();
+
+    const graphBtn = document.createElement('button');
+    graphBtn.type = 'button';
+    graphBtn.className = 'nt-quick-btn-text';
+    graphBtn.textContent = '关系网';
+    graphBtn.style.marginLeft = 'auto';
+    graphBtn.addEventListener('click', () => showRelationshipModal(book));
+    headerEl.appendChild(graphBtn);
 
     openModal({ title: '角色管理', body, wide: true, footer: [{ label: '关闭', primary: true }] });
 
@@ -551,6 +562,7 @@ async function showRosterModal() {
         updateHeader();
         list = await readRoster(book);
         if (!selected || !list.some(x => x.name === selected)) selected = list[0] ? list[0].name : '';
+        if (preselectName && list.some(x => x.name === preselectName)) selected = preselectName;
         editing = false;
         renderList();
         await renderDetail();
@@ -761,8 +773,33 @@ async function showRosterModal() {
         block.className = 'nt-quick-btn-text danger';
         block.textContent = '拉黑';
         block.addEventListener('click', () => blockChar(item.name));
+
+        const tierSel = document.createElement('select');
+        tierSel.className = 'nt-edit-select nt-quick-tier-select';
+        for (const t of ['T1', 'T2', 'T3', 'T4']) {
+            const opt = document.createElement('option');
+            opt.value = t;
+            opt.textContent = t;
+            tierSel.appendChild(opt);
+        }
+        tierSel.value = (String(item.tier || 'T3').match(/T[1-4]/i) || ['T3'])[0].toUpperCase();
+        tierSel.addEventListener('change', async () => {
+            await refreshChar(book, item.name, { tier: tierSel.value });
+            list = await readRoster(book);
+            renderList();
+            await renderDetail();
+        });
+
+        const update = document.createElement('button');
+        update.type = 'button';
+        update.className = 'nt-quick-btn-text';
+        update.textContent = '请求更新';
+        update.addEventListener('click', () => showRefreshModal(item.name));
+
         actions.appendChild(pin);
         actions.appendChild(block);
+        actions.appendChild(tierSel);
+        actions.appendChild(update);
         right.appendChild(actions);
 
         if (editing) {
@@ -836,6 +873,130 @@ async function showRosterModal() {
     }
 
     await refresh();
+}
+
+// ========== 角色关系网 ==========
+
+function relationValue(text) {
+    const s = String(text || '');
+    const good = Number((s.match(/好感\s*(\d+)/) || [])[1]);
+    const trust = Number((s.match(/信任\s*(\d+)/) || [])[1]);
+    if (Number.isFinite(good) || Number.isFinite(trust)) return Math.max(good || 0, trust || 0);
+    return 50;
+}
+
+async function showRelationshipModal(book) {
+    if (!book) return;
+    const data = await stBridge.loadWorldInfoAsync(book);
+    if (!data || !data.entries) {
+        toast('追踪书读取失败', 'error');
+        return;
+    }
+    const roster = await readRoster(book);
+    const tierOfName = new Map(roster.map(c => [c.name, c.tier]));
+    const chars = Object.values(data.entries)
+        .filter(e => e && e.comment && e.comment.startsWith('角色·'))
+        .map(e => ({
+            name: e.comment.slice(3),
+            yaml: parseCharacterYaml(e.content),
+        }))
+        .slice(0, 18);
+    const names = new Set(chars.map(c => c.name));
+
+    const body = document.createElement('div');
+    body.className = 'nt-rel-graph-wrap';
+    const note = document.createElement('div');
+    note.className = 'nt-map-note';
+    note.textContent = '连线来自角色档案的人际关系；点节点回到角色管理。只读，不写书、不调用模型。';
+    body.appendChild(note);
+    if (!chars.length) {
+        body.appendChild(noteLine('还没有角色档案。'));
+        openModal({ title: '角色关系网', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+        return;
+    }
+
+    const graph = document.createElement('div');
+    graph.className = 'nt-rel-graph';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'nt-rel-links');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    graph.appendChild(svg);
+    const nodes = document.createElement('div');
+    nodes.className = 'nt-rel-nodes';
+    graph.appendChild(nodes);
+
+    const cx = 50;
+    const cy = 48;
+    const radius = chars.length === 1 ? 0 : 34;
+    const pos = new Map();
+    chars.forEach((c, i) => {
+        const angle = chars.length === 1 ? 0 : (Math.PI * 2 * i / chars.length) - Math.PI / 2;
+        pos.set(c.name, { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+    });
+
+    const seen = new Set();
+    let edgeCount = 0;
+    for (const c of chars) {
+        const rel = c.yaml['人际关系'];
+        if (!rel || typeof rel !== 'object') continue;
+        for (const [target, value] of Object.entries(rel)) {
+            if (!names.has(target) || target === c.name) continue;
+            const key = [c.name, target].sort().join('|');
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const a = pos.get(c.name);
+            const b = pos.get(target);
+            if (!a || !b) continue;
+            const score = relationValue(value);
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', a.x);
+            line.setAttribute('y1', a.y);
+            line.setAttribute('x2', b.x);
+            line.setAttribute('y2', b.y);
+            line.setAttribute('stroke-opacity', String(0.2 + Math.min(0.65, score / 160)));
+            line.setAttribute('stroke-width', score >= 60 ? '0.45' : '0.3');
+            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+            title.textContent = `${c.name} → ${target}：${String(value)}`;
+            line.appendChild(title);
+            svg.appendChild(line);
+            edgeCount++;
+        }
+    }
+
+    for (const c of chars) {
+        const p = pos.get(c.name);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'nt-rel-node';
+        btn.style.left = `${p.x}%`;
+        btn.style.top = `${p.y}%`;
+        btn.title = `${c.name}${tierOfName.get(c.name) ? ` · ${tierOfName.get(c.name)}` : ''}`;
+        const nameEl = document.createElement('span');
+        nameEl.className = 'nt-rel-node-name';
+        nameEl.textContent = c.name;
+        const meta = document.createElement('span');
+        meta.className = 'nt-rel-node-meta';
+        meta.textContent = [tierOfName.get(c.name), c.yaml['身份'], c.yaml['位置']].filter(Boolean).join(' · ');
+        btn.appendChild(nameEl);
+        btn.appendChild(meta);
+        btn.addEventListener('click', () => showRosterModal(c.name));
+        nodes.appendChild(btn);
+    }
+
+    body.appendChild(graph);
+    if (!edgeCount) {
+        const empty = noteLine('还没有记录到人际关系。等角色档案出现「人际关系」后再来看。');
+        body.appendChild(empty);
+    }
+    openModal({ title: '角色关系网', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+}
+
+function noteLine(text) {
+    const note = document.createElement('div');
+    note.className = 'nt-quick-note';
+    note.textContent = text;
+    return note;
 }
 
 // ========== 快捷行动 ==========
@@ -1859,7 +2020,7 @@ async function backupBeforeWrite() {
     }
 }
 
-async function showRefreshModal() {
+async function showRefreshModal(preselectName = '') {
     const book = stBridge.currentTrackerName();
     if (!book) {
         toast('请先选择一个角色卡', 'warning');
@@ -1945,6 +2106,13 @@ async function showRefreshModal() {
         }
     }
     body.appendChild(charWrap);
+
+    if (preselectName) {
+        Object.values(checks).forEach(cb => { cb.checked = false; });
+        Object.values(charChecks).forEach(cb => { cb.checked = false; });
+        checks.chars.checked = true;
+        if (charChecks[preselectName]) charChecks[preselectName].checked = true;
+    }
 
     const quick = document.createElement('div');
     quick.className = 'nt-refresh-quick';

@@ -20,6 +20,7 @@ const defaultSettings = {
     enableQuests: true,
     enableCognition: true,
     enablePresence: true,
+    enableProactiveChars: true,
     enableForeshadow: true,
     enableSummary: true,
     enableBigSummary: true,
@@ -37,7 +38,7 @@ const defaultSettings = {
     enableAntiLazy: true,
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '', presence: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '', presence: '', proactive: '',
     }
 };
 
@@ -182,6 +183,7 @@ function refreshSnapshots(bookName, book) {
             location: parsed['位置'] || '',
             action: parsed['当前行动'] || '',
             schedule: parsed['日程'] || {},
+            yaml: parsed,
         });
     }
     presenceCache.set(bookName, chars);
@@ -469,6 +471,53 @@ function buildPresencePrompt(bookName) {
     return p;
 }
 
+/** 主动角色档案：关键词绿灯有滞后，按位置/日程/T1 提前补 1–2 个角色档案 */
+function buildProactiveCharPrompt(bookName) {
+    if (!settings.enableProactiveChars || !bookName) return '';
+    const chars = presenceCache.get(bookName) || [];
+    if (!chars.length) return '';
+    const clock = getSlotClock(bookName) || {};
+    const place = String(clock.place || '').trim();
+    const roster = rosterCache.get(bookName) || [];
+    const t1Names = new Set(roster.filter(c => tierOf(c) === 'T1').map(c => c.name));
+    const chat = stBridge.getContext().chat || [];
+    const recent = chat.slice(-8).map(m => String(m && m.mes || '')).join('\n');
+    const picked = [];
+    for (const c of chars) {
+        if (picked.length >= 2) break;
+        if (recent.includes(c.name)) continue;
+        const present = place && [c.location, c.action, ...Object.values(c.schedule || {})]
+            .join(' ').includes(place);
+        if (!present && !t1Names.has(c.name)) continue;
+        picked.push(c);
+    }
+    if (!picked.length) return '';
+    const lines = ['<nekotools:charctx>', '【主动角色档案】以下角色按位置/日程/T1 可能在本轮出现，但可能还没被关键词触发；请严格按档案行动，不要凭空补设定：'];
+    for (const c of picked) {
+        const y = c.yaml || {};
+        const parts = [];
+        const add = (key) => {
+            const v = y[key];
+            if (v === undefined || v === null || !String(v).trim()) return;
+            if (key === '关键记忆') parts.push(`${key}：${normalizeMemories(v).slice(-2).join('；')}`);
+            else if (key === '日程' && v && typeof v === 'object') {
+                const sch = Object.entries(v).map(([k, val]) => `${k}=${val}`).join('；');
+                if (sch) parts.push(`日程：${sch}`);
+            } else if (key === '人际关系' && v && typeof v === 'object') {
+                const rel = Object.entries(v).slice(0, 6).map(([k, val]) => `${k}（${val}）`).join('；');
+                if (rel) parts.push(`人际关系：${rel}`);
+            } else parts.push(`${key}：${String(v).slice(0, 180)}`);
+        };
+        for (const key of ['性别', '外貌', '身份', '位置', '心情', '日程', '当前行动', '下一步', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '人际关系']) add(key);
+        lines.push(`- ${c.name}：${parts.join('｜').slice(0, 900)}`);
+    }
+    lines.push('</nekotools:charctx>');
+    let p = lines.join('\n');
+    const custom = (settings.customPrompts.proactive || '').trim();
+    if (custom) p += `\n【附加要求】\n${custom}`;
+    return p;
+}
+
 function buildStatusPrompt() {
     const tagOpen = '<ws_' + 'status>';
     const tagClose = '</ws_' + 'status>';
@@ -640,6 +689,10 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
     list.push({ role: 'system', content: DIRECTOR_PROMPT });
     if (settings.enableCognition) list.push({ role: 'system', content: buildCognitionPrompt() });
     if (settings.enablePresence && includeTracking) list.push({ role: 'system', content: buildPresencePrompt(bookName) });
+    if (settings.enableProactiveChars && includeTracking) {
+        const proactive = buildProactiveCharPrompt(bookName);
+        if (proactive) list.push({ role: 'system', content: proactive });
+    }
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
     if (settings.enablePreview) list.push({ role: 'system', content: buildPreviewPrompt() });

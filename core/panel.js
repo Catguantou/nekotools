@@ -114,6 +114,7 @@ export function mountPanel() {
             ['quest', 'P_14', '开局主线生成'],
             ['cognition', 'P_15', '认知隔离'],
             ['presence', 'P_16', '在场与日程'],
+            ['proactive', 'P_17', '主动角色档案'],
         ];
         return map.map(([key, code, name]) => {
             const val = (s.customPrompts && s.customPrompts[key]) || '';
@@ -327,6 +328,7 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quests" class="nt-hidden-cb" ${s.enableQuests ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">主线支线</span><span class="nt-code">T_10</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">认知隔离</span><span class="nt-code">T_11</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-presence" class="nt-hidden-cb" ${s.enablePresence ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">日程在场</span><span class="nt-code">T_12</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-proactive" class="nt-hidden-cb" ${s.enableProactiveChars !== false ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">主动角色档案</span><span class="nt-code">T_13</span></label>
                         </div>
                     </div>
 
@@ -1151,6 +1153,7 @@ export function mountPanel() {
         s.enableQuests = wrap.querySelector('#nt-ws-quests').checked;
         s.enableCognition = wrap.querySelector('#nt-ws-cognition').checked;
         s.enablePresence = wrap.querySelector('#nt-ws-presence').checked;
+        s.enableProactiveChars = wrap.querySelector('#nt-ws-proactive').checked;
         s.enableForeshadow = wrap.querySelector('#nt-ws-foreshadow').checked;
         s.enableSummary = wrap.querySelector('#nt-ws-summary').checked;
         s.enableBigSummary = wrap.querySelector('#nt-ws-bigsummary').checked;
