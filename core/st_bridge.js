@@ -43,6 +43,8 @@ export const stBridge = {
             activeBooks: Array.isArray(cfg.activeBooks) ? cfg.activeBooks : null,
             // 角色卡⇄世界书同步删除：默认关闭，面板里可开
             syncCharLifecycle: cfg.syncCharLifecycle === true,
+            // 连坐删角色时是否连聊天记录一起删（默认否，只删卡）
+            deleteChatsWithChar: cfg.deleteChatsWithChar === true,
             autoActivateCharBook: cfg.autoActivateCharBook !== false,
             independentInject: cfg.independentInject !== false,
         };
@@ -437,11 +439,12 @@ export const stBridge = {
             console.warn('[nekotools] 无法加载 script.js，退回裸接口删除（可能残留列表）', e);
         }
 
+        const deleteChats = this.getLoreManagerConfig().deleteChatsWithChar === true;
         let deleted = 0;
         for (const c of targets) {
             try {
                 if (scriptMod && typeof scriptMod.deleteCharacter === 'function') {
-                    await scriptMod.deleteCharacter(c.avatar, { deleteChats: false });
+                    await scriptMod.deleteCharacter(c.avatar, { deleteChats });
                     deleted++;
                     continue;
                 }
@@ -451,7 +454,7 @@ export const stBridge = {
                         ...(typeof ctx.getRequestHeaders === 'function' ? ctx.getRequestHeaders() : {}),
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ avatar_url: c.avatar, delete_chats: false }),
+                    body: JSON.stringify({ avatar_url: c.avatar, delete_chats: deleteChats }),
                 });
                 if (res.ok) deleted++;
                 else console.warn('[nekotools] 删除角色卡失败', c?.name, res.status);

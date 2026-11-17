@@ -203,6 +203,12 @@ export function mountPanel() {
                             <span class="nt-text">角色卡⇄世界书 同步删除</span>
                             <span class="nt-code">L_01</span>
                         </label>
+                        <label class="nt-grid-item" style="margin-top:8px;" title="连坐删除角色卡时，是否把它名下的聊天记录也一并删除。默认只删卡、保留聊天。">
+                            <input type="checkbox" id="nt-lore-del-chats" class="nt-hidden-cb" ${stBridge.getLoreManagerConfig().deleteChatsWithChar ? 'checked' : ''}>
+                            <span class="nt-box"></span>
+                            <span class="nt-text">同步删除聊天记录</span>
+                            <span class="nt-code">L_02</span>
+                        </label>
                     </div>
 
                     <div id="nt-lore-view-books">
@@ -404,6 +410,11 @@ export function mountPanel() {
     wrap.querySelector('#nt-lore-sync-delete').onchange = (e) => {
         stBridge.saveLoreManagerConfig({ syncCharLifecycle: e.target.checked });
         if (window.toastr) toastr.info(e.target.checked ? '已开启：角色卡与世界书同步删除' : '已关闭：删除只解绑，不连坐');
+    };
+
+    wrap.querySelector('#nt-lore-del-chats').onchange = (e) => {
+        stBridge.saveLoreManagerConfig({ deleteChatsWithChar: e.target.checked });
+        if (window.toastr) toastr.info(e.target.checked ? '连坐删卡时会同时删除聊天记录' : '连坐删卡时保留聊天记录');
     };
 
     async function renderLoreList() {
@@ -620,9 +631,11 @@ export function mountPanel() {
         );
         let deleteLinkedChar = false;
         if (stBridge.getLoreManagerConfig().syncCharLifecycle && boundChars.length) {
+            const withChats = stBridge.getLoreManagerConfig().deleteChatsWithChar;
             deleteLinkedChar = confirm(
                 `检测到 ${boundChars.length} 张角色卡绑定了所选世界书。\n\n` +
-                `点【确定】：连同角色卡一起删除\n点【取消】：只删世界书并解绑角色卡`
+                `点【确定】：连同角色卡一起删除${withChats ? '（含聊天记录）' : '（保留聊天记录）'}\n` +
+                `点【取消】：只删世界书并解绑角色卡`
             );
         }
 
