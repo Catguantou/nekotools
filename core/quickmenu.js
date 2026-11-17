@@ -382,15 +382,20 @@ function openPop() {
     if (window.matchMedia('(max-width: 640px)').matches) {
         try { document.activeElement?.blur(); } catch (_) {}
     }
-    updateJumpUi();
-    updateClockUi();
-    updateQuickStatus();
+    // 先显示，再刷新内容；任何刷新异常都不能导致菜单打不开
     pop.hidden = false;
-    placePop();
+    try { updateJumpUi(); } catch (err) { console.warn('[nekotools] 刷新跳时提示失败', err); }
+    try { updateClockUi(); } catch (err) { console.warn('[nekotools] 刷新时钟失败', err); }
+    try { updateQuickStatus(); } catch (err) { console.warn('[nekotools] 刷新追踪状态失败', err); }
+    try { placePop(); } catch (err) { console.warn('[nekotools] 计算菜单位置失败', err); }
 }
 
 function togglePop() {
-    const pop = $(POP_ID);
+    let pop = $(POP_ID);
+    if (!pop) {
+        buildPop();
+        pop = $(POP_ID);
+    }
     if (!pop) return;
     if (pop.hidden) openPop();
     else closePop();
@@ -2694,6 +2699,10 @@ function ensureButton() {
         activate(e);
     });
     btn.addEventListener('touchend', activate, { passive: false });
+    btn.addEventListener('touchstart', activate, { passive: false });
+    btn.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch') activate(e);
+    });
     host.appendChild(btn);
     updateJumpUi();
     return true;
