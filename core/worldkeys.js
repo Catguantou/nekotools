@@ -12,6 +12,18 @@ const ENTITY_SUFFIX = /([\u4e00-\u9fa5]{1,5}(?:区|城|镇|街|港|州|国|山|�
 
 const BAD_PREFIX = /^(居民|市民|百姓|人们|众人|有人|洽谈|谈判|封锁|连夜|已经|正在|开始|继续|发生|出现|造成|导致|引发|抵达|抵京|使节|盟约|使团|商队)/;
 const ABSTRACT_NAME = /(疑云|寻踪|谜团|秘影|暗流|回响|序曲|终章|秘闻|传说|风云|往事|余波|征兆|真相|阴谋|计划|序章|终局)/;
+// 含这些字/词的短句不是专名，不能当绿灯 key
+const KEY_STOP_RX = /(她|他|我|你|您|它|它们|这|那|哪|谁|什么|怎么|为什么|已经|正在|将要|会|能|可以|应该|可能|默认|觉得|认为|知道|看到|听到|说|问|让|被|把|给|从|到|在|是|有|和|与|或|但|而|因为|所以|如果|就|才|再|还|又|很|太|更|最|都|也|只|需要|想|要|开始|继续|然后|同时)/;
+
+export function isValidKey(value) {
+    const key = String(value || '').trim();
+    if (key.length < 2 || key.length > 6) return false;
+    if (STOP_WORDS.has(key)) return false;
+    if (ABSTRACT_NAME.test(key)) return false;
+    if (KEY_STOP_RX.test(key)) return false;
+    if (/(家门|家人|时候|之后|之前|上面|下面|里面|外面|后面|前面)$/.test(key)) return false;
+    return true;
+}
 
 export function isAbstractName(name) {
     return ABSTRACT_NAME.test(String(name || ''));
@@ -29,8 +41,7 @@ function clean(text) {
 function addKey(out, value, maxLen, max) {
     if (out.length >= max) return;
     const key = clean(value);
-    if (key.length < 2 || key.length > maxLen) return;
-    if (STOP_WORDS.has(key)) return;
+    if (!isValidKey(key)) return;
     if (!out.includes(key)) out.push(key);
 }
 
@@ -62,7 +73,7 @@ export function parseKeywordSpec(value) {
     const m = String(value || '').match(/关键词[：:]\s*([^；;。\n]+)/);
     if (!m) return [];
     return m[1].split(/[、,，/]/).map(clean)
-        .filter(k => k.length >= 2 && k.length <= 6 && !isAbstractName(k));
+        .filter(k => isValidKey(k) && k.length <= 6);
 }
 
 /** 通用绿灯：名字短就直接用；长名字取实体词、拆段、首尾短词 */
