@@ -9,8 +9,8 @@ import {
     toggleFavoriteFloor,
     undoLastClean,
     setFavoriteRange,
-    hideSlopEverywhere,
-    restoreSlopVisual
+    syncNativeSlopRegex,
+    refreshChatRender
 } from '../modules/textmanager.js';
 
 function escapeHtml(s) {
@@ -841,12 +841,11 @@ export function mountPanel() {
 
     wrap.querySelector('#nt-tm-hide-slop').onchange = (e) => {
         syncTextManagerInputs();
-        if (e.target.checked) {
-            const n = hideSlopEverywhere();
-            if (window.toastr) toastr.success(`已开启视觉隐藏（${n} 个楼层已处理）`);
-        } else {
-            restoreSlopVisual();
-            if (window.toastr) toastr.info('已关闭视觉隐藏，文字恢复显示');
+        const changed = syncNativeSlopRegex();
+        if (changed) refreshChatRender();
+        if (window.toastr) {
+            if (e.target.checked) toastr.success('已开启：八股在渲染前隐藏（与酒馆正则同一机制）');
+            else toastr.info('已关闭视觉隐藏，正文恢复显示');
         }
     };
 
@@ -889,6 +888,8 @@ export function mountPanel() {
 
         mod.saveSettings();
         syncTextManagerInputs();
+        // 词库/开关可能变了，同步到原生正则；只有真的变了才重渲染
+        if (syncNativeSlopRegex()) refreshChatRender();
         if (window.toastr) toastr.success('数据已同步');
     };
 

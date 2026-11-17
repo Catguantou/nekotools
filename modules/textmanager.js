@@ -335,91 +335,73 @@ export function canUndoClean() {
     return Boolean(lastCleanBackup && lastCleanBackup.length);
 }
 
-// ========== 视觉隐藏八股（只藏，不改数据） ==========
-const SLOP_HIDDEN_CLASS = 'nt-slop-hidden';
-let slopRegexCache = { text: null, re: null };
+// ========== 八股视觉隐藏：交给酒馆原生正则（渲染前生效） ==========
 
-function getSlopRegex() {
+let lastNativeSlopSig = null;
+
+/** 把八股规则同步成酒馆原生正则脚本（渲染前生效，无闪烁、无需刷新逐条处理） */
+export function syncNativeSlopRegex() {
+    const ctx = stBridge.getContext();
+    const es = ctx.extensionSettings || window.extension_settings;
+    if (!es) return false;
+    if (!Array.isArray(es.regex)) es.regex = [];
+
+    const id = 'nt-slop-visual';
+    const list = es.regex;
+    const idx = list.findIndex(s => s && s.id === id);
+    const moduleOn = registry.get('textmanager')?.enabled !== false;
+    const wantOn = moduleOn && tmSettings.hideSlopVisual === true;
+
     const text = tmSettings.slopRulesText || DEFAULT_SLOP_RULES.join('\n');
-    if (slopRegexCache.text === text) return slopRegexCache.re;
-
     const parts = parseSlopRules(text).map(r => `(?:${r.re.source})`);
-    let re = null;
-    if (parts.length) {
-        try {
-            re = new RegExp(parts.join('|'), 'g');
-        } catch (e) {
-            console.warn('[nekotools] 合并八股正则失败，视觉隐藏停用', e);
-            re = null;
-        }
+    const findRegex = parts.length ? `/${parts.join('|').replace(/\//g, '\\/')}/gm` : null;
+
+    const sig = `${wantOn}|${findRegex || ''}`;
+    if (sig === lastNativeSlopSig) return false; // 规则没变，不折腾
+    lastNativeSlopSig = sig;
+
+    if (!wantOn || !findRegex) {
+        if (idx !== -1) list.splice(idx, 1);
+    } else {
+        const script = {
+            id,
+            scriptName: '[NEKOTOOL] 八股视觉隐藏',
+            findRegex,
+            replaceString: '',
+            trimStrings: [],
+            placement: [2], // AI 输出
+            disabled: false,
+            markdownOnly: true,
+            promptOnly: false,
+            runOnEdit: true,
+            substituteRegex: 0,
+            minDepth: null,
+            maxDepth: null,
+        };
+        if (idx === -1) list.unshift(script);
+        else list[idx] = { ...list[idx], ...script };
     }
-    slopRegexCache = { text, re };
-    return re;
-}
 
-function hideSlopInTextEl(textEl) {
-    const re = getSlopRegex();
-    if (!re) return;
-    const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, {
-        acceptNode(node) {
-            if (!node.nodeValue || node.nodeValue.length < 2) return NodeFilter.FILTER_REJECT;
-            if (node.parentElement && node.parentElement.closest('.' + SLOP_HIDDEN_CLASS)) {
-                return NodeFilter.FILTER_REJECT;
-            }
-            return NodeFilter.FILTER_ACCEPT;
-        }
-    });
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-
-    for (const node of nodes) {
-        const text = node.nodeValue;
-        re.lastIndex = 0;
-        if (!re.test(text)) continue;
-
-        const frag = document.createDocumentFragment();
-        let last = 0;
-        let m;
-        re.lastIndex = 0;
-        while ((m = re.exec(text)) !== null) {
-            if (m[0] === '') { re.lastIndex++; continue; }
-            if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
-            const span = document.createElement('span');
-            span.className = SLOP_HIDDEN_CLASS;
-            span.textContent = m[0];
-            frag.appendChild(span);
-            last = m.index + m[0].length;
-        }
-        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
-        node.parentNode.replaceChild(frag, node);
+    try {
+        if (typeof ctx.saveSettingsDebounced === 'function') ctx.saveSettingsDebounced();
+    } catch (e) {
+        console.warn('[nekotools] 保存正则设置失败', e);
     }
+    return true;
 }
 
-/** 对所有已渲染楼层做视觉隐藏；内容没变就跳过，避免反复重排 */
-export function hideSlopEverywhere() {
-    if (tmSettings.hideSlopVisual !== true) return 0;
-    let count = 0;
-    document.querySelectorAll('#chat .mes .mes_text').forEach(textEl => {
-        const len = String(textEl.textContent.length);
-        if (textEl.dataset.ntSlopLen === len) return;
-        hideSlopInTextEl(textEl);
-        textEl.dataset.ntSlopLen = String(textEl.textContent.length);
-        count++;
-    });
-    return count;
-}
-
-/** 把视觉隐藏还原成普通文本（只处理当前 DOM，不改存档） */
-export function restoreSlopVisual() {
-    document.querySelectorAll('#chat .' + SLOP_HIDDEN_CLASS).forEach(span => {
-        const parent = span.parentNode;
-        if (!parent) return;
-        parent.replaceChild(document.createTextNode(span.textContent), span);
-        parent.normalize();
-    });
-    document.querySelectorAll('#chat .mes .mes_text').forEach(textEl => {
-        delete textEl.dataset.ntSlopLen;
-    });
+/** 让当前聊天重新走一遍渲染，正则改动才能立刻可见 */
+export function refreshChatRender() {
+    const ctx = stBridge.getContext();
+    try {
+        if (typeof ctx.reloadCurrentChat === 'function') {
+            ctx.reloadCurrentChat();
+            return true;
+        }
+    } catch (e) {
+        console.warn('[nekotools] 重新渲染聊天失败', e);
+    }
+    return false;
 }
 
 // ========== 注册模块 ==========
@@ -442,8 +424,9 @@ registry.register({
     init() {
         this.loadSettings();
 
-        // 八股默认只做视觉隐藏（见 hideSlopEverywhere），不再自动改动正文
+        // 八股默认只做视觉效果（原生正则脚本），不再自动改动正文
         const ctx = stBridge.getContext();
+        syncNativeSlopRegex();
 
         // 注入楼层收藏星标按钮
         const observer = new MutationObserver(() => {
@@ -483,9 +466,6 @@ registry.register({
 
             // 状态栏：模型把内容输出在正文末尾，这里把它升级成样式条并置顶
             upgradeStatusBars();
-
-            // 视觉隐藏八股：只藏不改，开关关闭时不动
-            hideSlopEverywhere();
 
             // 数据层已标记 hidden 的楼层，重载后重新套上视觉屏蔽
             const ctx = stBridge.getContext();
