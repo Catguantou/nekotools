@@ -2257,7 +2257,11 @@ async function showRefreshModal(preselectName = '') {
         };
         const blocks = [];
         if (selected.includes('chars')) blocks.push(`【索引】\n${get('索引') || '（空）'}`);
-        if (selected.includes('world')) blocks.push(`【世界局势】\n${get('世界局势') || '（空）'}`);
+        if (selected.includes('world')) {
+            blocks.push(`【世界·国家】\n${get('世界·国家') || '（空）'}`);
+            blocks.push(`【世界·势力】\n${get('世界·势力') || '（空）'}`);
+            blocks.push(`【社会新闻】\n${get('社会新闻') || '（空）'}`);
+        }
         if (selected.includes('map')) blocks.push(`【地图】\n${get('地图') || '（空）'}`);
         if (selected.includes('quests')) {
             blocks.push(`【主线】\n${get('主线') || '（空）'}`);
@@ -2277,9 +2281,9 @@ async function showRefreshModal(preselectName = '') {
             schema.push('"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}');
             schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}');
         }
-        if (selected.includes('items')) schema.push('"items": {"add": {"道具名":"[类别] 描述"}, "del":["道具名"]}');
-        if (selected.includes('foreshadow')) schema.push('"foreshadow": {"add": {"伏笔名":"[线索 | 指向] 描述"}, "del":["伏笔名"]}');
-        if (selected.includes('plot')) schema.push('"plot": {"add": {"计划名":"[谁 | 做什么 | 状态] 描述"}, "del":["计划名"]}');
+        if (selected.includes('items')) schema.push('"items": {"add": {"道具名": {"描述":"[类别] 描述","关键词":["具体词1","具体词2"]}}, "del":["道具名"]}');
+        if (selected.includes('foreshadow')) schema.push('"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}');
+        if (selected.includes('plot')) schema.push('"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}');
 
         const charLine = selected.includes('chars')
             ? `本轮只更新这些角色：${selectedChars.join('、')}；不要输出其他人。`
@@ -2296,7 +2300,8 @@ ${blocks.join('\n\n')}
 
 请只更新这些类别，只写本轮需要变化/新增的内容：
 ${schema.join('\n')}
-要求：人物位置用地图小地点名；没有变化就留空对象；不要编造与当前数据冲突的内容。`;
+要求：人物位置用地图小地点名；没有变化就留空对象；不要编造与当前数据冲突的内容。
+计划/伏笔/道具必须使用对象格式，并带 2–3 个「关键词」：2–6 字，必须是正文会原样出现的具体人名/地名/物件/动作；不要写“XX疑云、XX寻踪”这种标题式抽象词，也不要写句子碎片。`;
 
         try {
             toast('正在生成更新…', 'info');
