@@ -335,71 +335,114 @@ export function canUndoClean() {
     return Boolean(lastCleanBackup && lastCleanBackup.length);
 }
 
-// ========== 八股视觉隐藏：交给酒馆原生正则（渲染前生效） ==========
+// ========== 八股视觉隐藏（NEKOTOOL 自己实现，不写入酒馆正则列表） ==========
+const SLOP_HIDDEN_CLASS = 'nt-slop-hidden';
+let slopCache = { text: null, re: null };
 
-let lastNativeSlopSig = null;
-
-/** 把八股规则同步成酒馆原生正则脚本（渲染前生效，无闪烁、无需刷新逐条处理） */
-export function syncNativeSlopRegex() {
-    const ctx = stBridge.getContext();
-    const es = ctx.extensionSettings || window.extension_settings;
-    if (!es) return false;
-    if (!Array.isArray(es.regex)) es.regex = [];
-
-    const id = 'nt-slop-visual';
-    const list = es.regex;
-    const idx = list.findIndex(s => s && s.id === id);
-    const moduleOn = registry.get('textmanager')?.enabled !== false;
-    const wantOn = moduleOn && tmSettings.hideSlopVisual === true;
-
+function getSlopRegex() {
     const text = tmSettings.slopRulesText || DEFAULT_SLOP_RULES.join('\n');
+    if (slopCache.text === text) return slopCache.re;
     const parts = parseSlopRules(text).map(r => `(?:${r.re.source})`);
-    const findRegex = parts.length ? `/${parts.join('|').replace(/\//g, '\\/')}/gm` : null;
-
-    const sig = `${wantOn}|${findRegex || ''}`;
-    if (sig === lastNativeSlopSig) return false; // 规则没变，不折腾
-    lastNativeSlopSig = sig;
-
-    if (!wantOn || !findRegex) {
-        if (idx !== -1) list.splice(idx, 1);
-    } else {
-        const script = {
-            id,
-            scriptName: '[NEKOTOOL] 八股视觉隐藏',
-            findRegex,
-            replaceString: '',
-            trimStrings: [],
-            placement: [2], // AI 输出
-            disabled: false,
-            markdownOnly: true,
-            promptOnly: false,
-            runOnEdit: true,
-            substituteRegex: 0,
-            minDepth: null,
-            maxDepth: null,
-        };
-        if (idx === -1) list.unshift(script);
-        else list[idx] = { ...list[idx], ...script };
+    let re = null;
+    if (parts.length) {
+        try {
+            re = new RegExp(parts.join('|'), 'g');
+        } catch (e) {
+            console.warn('[nekotools] 合并八股正则失败', e);
+        }
     }
-
-    try {
-        if (typeof ctx.saveSettingsDebounced === 'function') ctx.saveSettingsDebounced();
-    } catch (e) {
-        console.warn('[nekotools] 保存正则设置失败', e);
-    }
-    return true;
+    slopCache = { text, re };
+    return re;
 }
 
-/** 让当前聊天重新走一遍渲染，正则改动才能立刻可见 */
-export function refreshChatRender() {
-    const ctx = stBridge.getContext();
-    try {
-        if (typeof ctx.reloadCurrentChat === 'function') {
-            ctx.reloadCurrentChat();
-            return true;
+/**
+ * 同步隐藏一条消息里的八股。
+ * 必须在 MutationObserver 回调里同步调用：回调发生在浏览器绘制之前，
+ * 所以用户看到的永远是已经隐藏好的文本（这就是不闪的关键）。
+ */
+export function hideSlopInMessage(mesEl) {
+    if (tmSettings.hideSlopVisual !== true) return 0;
+    const textEl = mesEl?.querySelector?.('.mes_text');
+    if (!textEl) return 0;
+    const re = getSlopRegex();
+    if (!re) return 0;
+
+    const len = String(textEl.textContent.length);
+    if (textEl.dataset.ntSlopLen === len) return 0;
+
+    const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+            if (!node.nodeValue || node.nodeValue.length < 2) return NodeFilter.FILTER_REJECT;
+            if (node.parentElement && node.parentElement.closest('.' + SLOP_HIDDEN_CLASS)) {
+                return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
         }
-    } catch (e) {
-        console.warn('[nekotools] 重新渲染聊天失败', e);
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+
+    let hits = 0;
+    for (const node of nodes) {
+        const text = node.nodeValue;
+        re.lastIndex = 0;
+        if (!re.test(text)) continue;
+
+        const frag = document.createDocumentFragment();
+        let last = 0;
+        let m;
+        re.lastIndex = 0;
+        while ((m = re.exec(text)) !== null) {
+            if (m[0] === '') { re.lastIndex++; continue; }
+            if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+            const span = document.createElement('span');
+            span.className = SLOP_HIDDEN_CLASS;
+            span.textContent = m[0];
+            frag.appendChild(span);
+            last = m.index + m[0].length;
+            hits++;
+        }
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        node.parentNode.replaceChild(frag, node);
+    }
+    textEl.dataset.ntSlopLen = String(textEl.textContent.length);
+    return hits;
+}
+
+/** 对所有楼层处理一次（开关打开、切换会话、初次加载时用） */
+export function applySlopVisualAll() {
+    let hits = 0;
+    document.querySelectorAll('#chat .mes').forEach(el => {
+        hits += hideSlopInMessage(el);
+    });
+    return hits;
+}
+
+/** 还原视觉隐藏（只动 DOM，不改存档） */
+export function restoreSlopVisual() {
+    document.querySelectorAll('#chat .' + SLOP_HIDDEN_CLASS).forEach(span => {
+        const parent = span.parentNode;
+        if (!parent) return;
+        parent.replaceChild(document.createTextNode(span.textContent), span);
+        parent.normalize();
+    });
+    document.querySelectorAll('#chat .mes .mes_text').forEach(el => {
+        delete el.dataset.ntSlopLen;
+    });
+}
+
+/** 迁移：清掉上一版写进酒馆正则列表里的脚本 */
+export function removeNativeSlopRegex() {
+    const ctx = stBridge.getContext();
+    const es = ctx.extensionSettings || window.extension_settings;
+    if (!es || !Array.isArray(es.regex)) return false;
+    const before = es.regex.length;
+    es.regex = es.regex.filter(s => s?.id !== 'nt-slop-visual');
+    if (es.regex.length !== before) {
+        try {
+            if (typeof ctx.saveSettingsDebounced === 'function') ctx.saveSettingsDebounced();
+        } catch (_) {}
+        return true;
     }
     return false;
 }
@@ -424,14 +467,46 @@ registry.register({
     init() {
         this.loadSettings();
 
-        // 八股默认只做视觉效果（原生正则脚本），不再自动改动正文
+        // 八股默认只做视觉隐藏（自研，不写入酒馆正则）
         const ctx = stBridge.getContext();
-        syncNativeSlopRegex();
+        removeNativeSlopRegex();
+        setTimeout(() => applySlopVisualAll(), 400);
 
         // 注入楼层收藏星标按钮
-        const observer = new MutationObserver(() => {
+        const observer = new MutationObserver((records) => {
+            // ① 同步去八股：MutationObserver 回调在绘制前执行，
+            //    在这里改 DOM 用户看不到中间态，所以不会闪。
+            if (tmSettings.hideSlopVisual === true) {
+                const touched = new Set();
+                for (const rec of records) {
+                    if (rec.type === 'characterData') {
+                        const mes = rec.target.parentElement?.closest?.('.mes');
+                        if (mes) touched.add(mes);
+                        continue;
+                    }
+                    if (rec.target instanceof Element) {
+                        const host = rec.target.closest?.('.mes_text');
+                        if (host) {
+                            const mes = host.closest('.mes');
+                            if (mes) touched.add(mes);
+                        }
+                    }
+                    for (const node of rec.addedNodes) {
+                        if (node.nodeType !== 1) continue;
+                        if (node.matches?.('.mes')) {
+                            touched.add(node);
+                        } else {
+                            const mes = node.closest?.('.mes');
+                            if (mes) touched.add(mes);
+                            else node.querySelectorAll?.('.mes').forEach(m => touched.add(m));
+                        }
+                    }
+                }
+                touched.forEach(hideSlopInMessage);
+            }
+
+            // ② 星标/状态栏/视觉屏蔽：可以延后合并处理
             // 尾部节流：合并高频变动，但保证最后一次一定执行
-            //（之前用「丢弃」式节流，会把消息渲染的最后一帧吞掉，导致状态栏不渲染）
             clearTimeout(observer._timer);
             observer._timer = setTimeout(() => {
             document.querySelectorAll('#chat .mes:not([data-nt-star])').forEach(mesEl => {
