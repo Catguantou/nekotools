@@ -2467,6 +2467,28 @@ async function showEditModal() {
     });
 }
 
+function triggerMobileAction(selector) {
+    const el = document.querySelector(selector);
+    if (!el) return;
+    try { el.click(); } catch (err) { console.warn('[nekotools] 手机快捷操作失败', err); }
+    if (selector === '#extensionsMenuButton') {
+        setTimeout(() => {
+            const menu = document.querySelector('#extensionsMenu');
+            if (!menu) return;
+            menu.style.setProperty('position', 'fixed', 'important');
+            menu.style.setProperty('left', '8px', 'important');
+            menu.style.setProperty('right', '8px', 'important');
+            menu.style.setProperty('bottom', 'calc(84px + env(safe-area-inset-bottom, 0px))', 'important');
+            menu.style.setProperty('top', 'auto', 'important');
+            menu.style.setProperty('transform', 'none', 'important');
+            menu.style.setProperty('max-width', 'calc(100vw - 16px)', 'important');
+            menu.style.setProperty('max-height', 'calc(100vh - 170px)', 'important');
+            menu.style.setProperty('overflow-y', 'auto', 'important');
+            menu.style.setProperty('z-index', '100001', 'important');
+        }, 30);
+    }
+}
+
 function buildPop() {
     if ($(POP_ID)) return;
 
@@ -2507,6 +2529,26 @@ function buildPop() {
 
     const list = document.createElement('div');
     list.className = 'nt-quick-pop-list';
+
+    const mobileBar = document.createElement('div');
+    mobileBar.className = 'nt-quick-mobile-actions';
+    for (const [label, selector] of [
+        ['选项', '#options_button'],
+        ['扩展', '#extensionsMenuButton'],
+        ['继续', '#stscript_continue'],
+        ['暂停', '#stscript_pause'],
+        ['停止', '#stscript_stop'],
+    ]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closePop();
+            triggerMobileAction(selector);
+        });
+        mobileBar.appendChild(b);
+    }
 
     const items = [
         { group: '世界', icon: '🕰', key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气', enabled: true },
@@ -2568,6 +2610,7 @@ function buildPop() {
     pop.appendChild(head);
     pop.appendChild(status);
     pop.appendChild(banner);
+    pop.appendChild(mobileBar);
     pop.appendChild(list);
     const foot = document.createElement('div');
     foot.className = 'nt-quick-pop-foot';
@@ -2631,10 +2674,26 @@ function ensureButton() {
     btn.className = 'nt-quick-btn';
     btn.title = 'NEKOTOOL 快捷菜单';
     btn.textContent = 'TOOL';
-    btn.addEventListener('click', (e) => {
-        e.stopPropagation();
+    let lastActivate = 0;
+    const activate = (e) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        const now = Date.now();
+        if (now - lastActivate < 350) return;
+        lastActivate = now;
         togglePop();
+    };
+    btn.addEventListener('click', (e) => {
+        if (Date.now() - lastActivate < 350) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        activate(e);
     });
+    btn.addEventListener('touchend', activate, { passive: false });
     host.appendChild(btn);
     updateJumpUi();
     return true;
