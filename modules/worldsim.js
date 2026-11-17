@@ -28,6 +28,35 @@ const settings = { ...defaultSettings, customPrompts: { ...defaultSettings.custo
 
 // 仅内存记录，用于识别「换了会话」，不持久化
 let lastChatId = null;
+// 上一次已应用的更新快照：重 roll / 删除时回滚
+let lastAppliedUpdate = null;
+
+function cloneBook(book) {
+    try {
+        return JSON.parse(JSON.stringify(book));
+    } catch (e) {
+        console.warn('[worldsim] 快照失败', e);
+        return null;
+    }
+}
+
+async function restoreLastApplied(reason) {
+    if (!lastAppliedUpdate) return false;
+    const ctx = stBridge.getContext();
+    if (lastAppliedUpdate.chatId !== (ctx.chatId ?? null)) {
+        lastAppliedUpdate = null;
+        return false;
+    }
+    try {
+        await stBridge._writeBook(lastAppliedUpdate.bookName, lastAppliedUpdate.pre);
+        console.log('[worldsim] 已回滚上一次追踪更新（' + reason + '）');
+        lastAppliedUpdate = null;
+        return true;
+    } catch (e) {
+        console.warn('[worldsim] 回滚失败', e);
+        return false;
+    }
+}
 
 function loadSettings() {
     const saved = coreSettings.get('worldsim');
@@ -368,6 +397,7 @@ registry.register({
         const ctx = stBridge.getContext();
         if (ctx.eventSource && ctx.eventTypes?.CHAT_CHANGED) {
             ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, () => {
+                lastAppliedUpdate = null;
                 setTimeout(async () => {
                     try {
                         if (!settings.enabled) return;
@@ -385,6 +415,25 @@ registry.register({
                         console.warn('[worldsim] 切换会话同步世界书失败', e);
                     }
                 }, 800);
+            });
+        }
+
+        // 重 roll：上一次回复作废，先回滚世界书再应用新的
+        if (ctx.eventSource && ctx.eventTypes?.GENERATION_STARTED) {
+            ctx.eventSource.on(ctx.eventTypes.GENERATION_STARTED, (type) => {
+                const t = typeof type === 'string' ? type : (type && type.type);
+                if (t === 'regenerate' || t === 'swipe') {
+                    restoreLastApplied('重新生成');
+                }
+            });
+        }
+
+        // 删除最后一条 AI 消息：同样回滚它带来的更新
+        if (ctx.eventSource && ctx.eventTypes?.MESSAGE_DELETED) {
+            ctx.eventSource.on(ctx.eventTypes.MESSAGE_DELETED, (id) => {
+                if (lastAppliedUpdate && Number(id) === lastAppliedUpdate.mesId) {
+                    restoreLastApplied('消息被删除');
+                }
             });
         }
     },
@@ -457,6 +506,15 @@ registry.register({
 
         // 迁移：旧版按对象拆分的条目清掉，统一改成「道具/计划/伏笔」单条目
         await stBridge.pruneLegacySplitEntries(currentLorebook);
+
+        // 应用前存一份快照，供重 roll / 删消息时回滚
+        lastAppliedUpdate = {
+            chatId: stBridge.getContext().chatId ?? null,
+            mesId: (stBridge.getContext().chat || []).length - 1,
+            bookName: currentLorebook,
+            pre: cloneBook(book),
+            at: Date.now(),
+        };
 
         if (captured.ws_big_summary && settings.enableBigSummary) {
             await stBridge.updateEntry(currentLorebook, '大总结', captured.ws_big_summary.trim(), true, [], {
