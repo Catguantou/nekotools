@@ -1,8 +1,8 @@
 import { registry } from '../core/registry.js';
 import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
-import { touchSlot } from '../core/slots.js';
-import { parseStatusFields, parseClockContent, parseGameDate, daysBetween, buildClockContent, tierForScore } from '../core/worldfmt.js';
+import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
+import { parseStatusFields, parseGameDate, daysBetween } from '../core/worldfmt.js';
 
 const defaultSettings = {
     enabled: true,
@@ -23,7 +23,7 @@ const defaultSettings = {
     focusChars: '',
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '',
     }
 };
 
@@ -58,6 +58,11 @@ async function restoreLastApplied(reason) {
             return false;
         }
         await stBridge._writeBook(lastAppliedUpdate.bookName, lastAppliedUpdate.pre);
+        // 时钟也回滚到本轮之前（时钟只存设置，不写世界书）
+        if (lastAppliedUpdate.clockBefore !== undefined) {
+            setSlotClock(lastAppliedUpdate.bookName, lastAppliedUpdate.clockBefore || null);
+            try { window.dispatchEvent(new CustomEvent('nekotool:clock-changed')); } catch (_) {}
+        }
         // 回滚了这一轮的时间跳跃，也要把提示一起清掉
         const jump = coreSettings.get('worldsim').clockJump;
         if (jump && jump.book === lastAppliedUpdate.bookName) {
@@ -157,7 +162,7 @@ function buildTrackingMessages() {
         role: 'system',
         content: `<nekotools:update>
 【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略，标签内含合法 JSON（不要代码块包裹，标签外不加任何其它字符）。
-chars / items / plot / world / foreshadow 都只写**本轮变化**：chars 写有变化的角色；其余四类只写增量（add/del），绝不重复输出未变化的内容。
+chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：chars 写有变化的角色；其余分类只写增量（add/del），绝不重复输出未变化的内容。
 </nekotools:update>`
     });
 
@@ -180,6 +185,8 @@ chars / items / plot / world / foreshadow 都只写**本轮变化**：chars 写�
         if (custom) c += `【附加要求】\n${custom}\n`;
         c += `</nekotools:track.chars>`;
         list.push({ role: 'system', content: c });
+        // 角色索引：让模型自己增删，插件只负责写进书里
+        list.push({ role: 'system', content: buildRosterPrompt() });
     }
 
     if (settings.enableItems) {
@@ -380,7 +387,7 @@ function sanitizeLastMessage() {
 }
 
 /**
- * 解析本轮状态栏，写「世界时钟」；时间跳跃超过阈值时留提示给快捷菜单。
+ * 解析本轮状态栏，把时钟记到当前存档的元数据里（不写世界书）。
  * 只用本轮捕获的 ws_status，不发额外请求。
  */
 async function applyClock(bookName, captured) {
@@ -391,25 +398,20 @@ async function applyClock(bookName, captured) {
     const fields = parseStatusFields(captured && captured.ws_status);
     if (!fields) return;
 
-    const book = await stBridge.loadWorldInfoAsync(bookName);
-    if (!book || !book.entries) return;
-    const entry = Object.values(book.entries).find(e => e && e.comment === '世界时钟');
-    const oldFields = entry ? parseClockContent(entry.content) : { time: '', place: '', weather: '', temperature: '' };
-
-    // 本轮缺的字段沿用上一轮，避免模型偶尔没写时间就把时钟抹掉
-    const merged = { ...oldFields };
+    const oldClock = getSlotClock(bookName) || {};
+    // 本轮缺的字段沿用上一轮，避免模型偶尔没写时间就把钟清掉
+    const merged = { ...oldClock };
     for (const key of ['time', 'place', 'weather', 'temperature']) {
         if (fields[key]) merged[key] = fields[key];
     }
 
-    const oldDate = parseGameDate(oldFields.time);
+    const oldDate = parseGameDate(oldClock.time);
     const newDate = parseGameDate(merged.time);
 
     const ctx = stBridge.getContext();
     const layer = Array.isArray(ctx.chat) ? ctx.chat.length : 0;
-    await stBridge.updateEntry(bookName, '世界时钟', buildClockContent(merged, layer), true, [], {
-        position: 4, depth: 999, order: 999,
-    });
+    setSlotClock(bookName, { ...merged, layer, at: Date.now() });
+    try { window.dispatchEvent(new CustomEvent('nekotool:clock-changed')); } catch (_) {}
 
     if (!oldDate || !newDate) return;
     // 只认「往前走」的跳跃；闪回/回档不报补算
@@ -431,98 +433,38 @@ function clearClockJump(bookName) {
     try { window.dispatchEvent(new CustomEvent('nekotool:clock-jump')); } catch (_) {}
 }
 
-const ROSTER_MAX = 40;
-const rosterInFlight = new Set();
-
-/** 检查名册是否需要重建（旧格式或缺失），需要就后台扫一次 */
-async function ensureRoster(bookName) {
-    if (!bookName || rosterInFlight.has(bookName)) return;
-    rosterInFlight.add(bookName);
+/** 清掉旧版本留下的「世界时钟」条目和自动扫描的旧名册 */
+async function cleanupLegacyEntries(bookName) {
     try {
-        if (!(await stBridge.bookExists(bookName))) return;
         const book = await stBridge.loadWorldInfoAsync(bookName, true);
         if (!book || !book.entries) return;
-        const entry = Object.values(book.entries).find(e => e && e.comment === '角色索引');
-        // 新格式：至少一行 `- 名字｜T1`；旧格式（一行顿号名单）视为待重建
-        const isNewFormat = Boolean(entry) && /(^|\n)\s*-\s*[^｜|\n]+｜T[1-4]/.test(String(entry.content || ''));
-        if (isNewFormat) return;
-        await buildRoster(bookName);
+        const entries = Object.values(book.entries);
+        if (entries.some(e => e && e.comment === '世界时钟')) {
+            await stBridge.removeEntryByComment(bookName, '世界时钟');
+            console.log('[worldsim] 已移除旧版「世界时钟」条目');
+        }
+        const roster = entries.find(e => e && e.comment === '角色索引');
+        if (roster && /^【(世界角色名册|当前已追踪角色名册)】/.test(String(roster.content || ''))) {
+            await stBridge.removeEntryByComment(bookName, '角色索引');
+            console.log('[worldsim] 已清空旧版自动扫描的「角色索引」');
+        }
     } catch (e) {
-        console.warn('[worldsim] 角色名册检查失败', e);
-    } finally {
-        rosterInFlight.delete(bookName);
+        console.warn('[worldsim] 清理旧条目失败', e);
     }
 }
 
-/** 扫世界书生成「角色索引」：本地扫描，不花 token，不额外请求 */
-async function buildRoster(bookName) {
-    if (!(await stBridge.bookExists(bookName))) {
-        console.warn('[worldsim] 追踪书已删除，跳过名册写入:', bookName);
-        return;
-    }
-    const list = await stBridge.scanCharacterCandidates();
-    if (!list.length) return;
-    // 扫描可能花几秒，写前再确认一次书还在
-    if (!(await stBridge.bookExists(bookName))) return;
-
-    const ctx = stBridge.getContext();
-    const layer = Array.isArray(ctx.chat) ? ctx.chat.length : 0;
-    const lines = ['【世界角色名册】'];
-    for (const { name, score } of list.slice(0, ROSTER_MAX)) {
-        lines.push(`- ${name}｜${tierForScore(score)}`);
-    }
-    if (layer > 0) lines.push(`（扫描于第 ${layer} 层）`);
-
-    await stBridge.updateEntry(bookName, '角色索引', lines.join('\n'), true, [], {
-        position: 4, depth: 999, order: 998,
-    });
-    console.log(`[worldsim] 角色索引已生成：${list.length} 个候选`);
-}
-
-/** 把本轮新追踪到的角色补进索引，保留扫描出来的等级，不清空已有名册 */
-async function mergeTrackedIntoRoster(bookName, trackedNames) {
-    if (!trackedNames || !trackedNames.size) return;
-    if (!(await stBridge.bookExists(bookName))) return;
-
-    const book = await stBridge.loadWorldInfoAsync(bookName);
-    if (!book || !book.entries) return;
-    const entry = Object.values(book.entries).find(e => e && e.comment === '角色索引');
-
-    // 解析已有名册（新格式 + 兼容旧格式的一行顿号名单）
-    const existing = new Map();
-    let oldFormat = false;
-    for (const line of String(entry?.content || '').split('\n').map(s => s.trim()).filter(Boolean)) {
-        if (line.startsWith('【') || line.startsWith('（')) continue;
-        const m = line.match(/^[-·]\s*([^｜|\n]+)\s*｜\s*(T[1-4])/);
-        if (m) {
-            existing.set(m[1].trim(), m[2]);
-            continue;
-        }
-        if (line.includes('、') || line.includes('，')) {
-            oldFormat = true;
-            for (const part of line.split(/[、,，]/)) {
-                const n = part.trim();
-                if (n && n.length <= 12) existing.set(n, 'T1');
-            }
-        }
-    }
-
-    const names = new Map();
-    for (const n of trackedNames) if (n) names.set(n, 'T1');
-    for (const [n, tier] of existing) if (!names.has(n)) names.set(n, tier);
-
-    const changed = oldFormat || [...trackedNames].some(n => n && !existing.has(n));
-    if (!changed && entry) return;
-
-    const lines = ['【世界角色名册】'];
-    let count = 0;
-    for (const [name, tier] of names) {
-        if (count++ >= ROSTER_MAX) break;
-        lines.push(`- ${name}｜${tier}`);
-    }
-    await stBridge.updateEntry(bookName, '角色索引', lines.join('\n'), true, [], {
-        position: 4, depth: 999, order: 998,
-    });
+/** 角色索引的默认契约（可在设置里整段改写）；让模型自己增删，插件只负责收 */
+function buildRosterPrompt() {
+    const tagOpen = '<nekotools:track.roster>';
+    const tagClose = '</nekotools:track.roster>';
+    let p = `${tagOpen}
+【角色索引】JSON 字段 "roster": {"add": {"角色名": "等级｜位置/备注"}, "del": ["角色名"]}
+要求：只写本轮变化——新角色出场就 add；角色死亡、离场、确定不再相关就 del。没有变化就写 "roster": {}。
+只记正文里真正出现过的人；不要写玩家/user，不要把地名、设定标题当角色。
+${tagClose}`;
+    const custom = (settings.customPrompts.roster || '').trim();
+    if (custom) p += `\n【附加要求】\n${custom}`;
+    return p;
 }
 
 registry.register({
@@ -553,8 +495,8 @@ registry.register({
                 const book = await stBridge.ensureWorldbook(name);
                 console.log(`[worldsim] 追踪书检查 #${attempt}:`, name, book ? 'OK' : 'FAILED');
                 if (book) {
-                    // 名册缺失或旧格式时后台重扫；换卡/换档也会触发
-                    ensureRoster(name).catch(e => console.warn('[worldsim] 角色名单检查失败', e));
+                    // 清掉旧版本留在书里的「世界时钟」和自动扫描名册
+                    cleanupLegacyEntries(name).catch(e => console.warn('[worldsim] 清理旧条目失败', e));
                     await stBridge.deactivateStaleAutoBooks(name);
                     await stBridge.preloadActivatedLorebooks();
                 } else if (attempt < 10) {
@@ -568,12 +510,6 @@ registry.register({
 
         // 换角色/换会话时，追踪库要跟着换，并保证它处于全局激活状态
         const ctx = stBridge.getContext();
-
-        // 切换/新建/删除存档后，新档要补名册
-        window.addEventListener('nekotool:slots-changed', () => {
-            const name = getLorebookName();
-            if (name) ensureRoster(name).catch(e => console.warn('[worldsim] 角色名单检查失败', e));
-        });
 
         if (ctx.eventSource && ctx.eventTypes?.CHAT_CHANGED) {
             ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, () => {
@@ -591,8 +527,7 @@ registry.register({
                         }
                         lastChatId = chatId;
                         await stBridge.deactivateStaleAutoBooks(name);
-                        // 换角色卡/新聊天：新追踪书要补一份名册
-                        ensureRoster(name).catch(e => console.warn('[worldsim] 角色名单检查失败', e));
+                        cleanupLegacyEntries(name).catch(e => console.warn('[worldsim] 清理旧条目失败', e));
                     } catch (e) {
                         console.warn('[worldsim] 切换会话同步世界书失败', e);
                     }
@@ -706,10 +641,11 @@ registry.register({
             mesId: (stBridge.getContext().chat || []).length - 1,
             bookName: currentLorebook,
             pre: cloneBook(book),
+            clockBefore: getSlotClock(currentLorebook),
             at: Date.now(),
         };
 
-        // 状态栏 → 世界时钟（含时间跳跃检测）
+        // 状态栏 → 时钟（只存设置，供 TOOL 菜单显示和跳跃检测）
         await applyClock(currentLorebook, captured);
 
         if (captured.ws_big_summary && settings.enableBigSummary) {
@@ -758,18 +694,10 @@ registry.register({
                         if (focusArr.length > 0 && !focusArr.includes(n)) continue;
                         await stBridge.updateEntry(currentLorebook, `角色·${n}`, formatCharEntry(info), false, [n]);
                     }
-
-                    book = await stBridge.loadWorldInfoAsync(currentLorebook);
-                    const trackedNames = new Set();
-                    for (const entry of Object.values(book?.entries || {})) {
-                        if (entry.comment && entry.comment.startsWith('角色·')) {
-                            trackedNames.add(entry.comment.replace('角色·', ''));
-                        }
-                    }
-                    if (trackedNames.size > 0) {
-                        // 只补新名字，保留扫描生成的名册与等级
-                        await mergeTrackedIntoRoster(currentLorebook, trackedNames);
-                    }
+                }
+                if (data.roster && settings.enableChars) {
+                    // 索引由模型自己增删，插件只做 add/del 合并
+                    await applyAggregateOps(currentLorebook, '角色索引', data.roster, 998);
                 }
                 if (data.items && settings.enableItems) {
                     await applyAggregateOps(currentLorebook, '道具', data.items);

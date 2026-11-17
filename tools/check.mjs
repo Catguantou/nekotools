@@ -173,15 +173,6 @@ try {
     assert(wf.parseGameDate('2026年4月31日') === null, '4 月 31 日应判非法');
     assert(wf.parseGameDate('2024年2月29日') !== null, '闰年 2 月 29 日应合法');
     assert(wf.parseGameDate('0026年1月1日') === null, '过小年份应判非法');
-
-    const clockFields = wf.parseClockContent('时间：2026年1月1日｜地点：王都｜天气：雪');
-    assert(clockFields.time === '2026年1月1日' && clockFields.place === '王都', '时钟条目解析失败');
-    assert(
-        wf.buildClockContent({ time: '2026年11月17日', place: '酒馆', weather: '雨', temperature: '18℃' }, 42).includes('第 42 层'),
-        '时钟条目缺少层号'
-    );
-    assert(wf.tierForScore(6) === 'T1' && wf.tierForScore(4) === 'T2', '角色等级映射不对');
-    assert(wf.tierForScore(2) === 'T3' && wf.tierForScore(1) === 'T4', '角色等级映射不对（低分）');
 } catch (e) {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }

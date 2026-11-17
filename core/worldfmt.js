@@ -155,17 +155,6 @@ export function parseStatusFields(raw) {
     };
 }
 
-/** 解析「世界时钟」条目内容；缺字段给空串，用于和本轮状态栏合并 */
-export function parseClockContent(text) {
-    const map = parseFieldMap(text);
-    return {
-        time: map['时间'] || '',
-        place: map['地点'] || '',
-        weather: map['天气'] || '',
-        temperature: map['温度'] || '',
-    };
-}
-
 function daysInMonth(year, month) {
     const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
     const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -193,26 +182,6 @@ function gameDayNumber(date) {
 export function daysBetween(a, b) {
     if (!a || !b) return 0;
     return gameDayNumber(b) - gameDayNumber(a);
-}
-
-/** 写进「世界时钟」条目的固定格式 */
-export function buildClockContent(fields, layer = 0) {
-    const bits = [];
-    if (fields.time) bits.push(`时间：${fields.time}`);
-    if (fields.place) bits.push(`地点：${fields.place}`);
-    if (fields.weather) bits.push(`天气：${fields.weather}`);
-    if (fields.temperature) bits.push(`温度：${fields.temperature}`);
-    if (layer > 0) bits.push(`更新于：第 ${layer} 层`);
-    return bits.join('｜');
-}
-
-/** 角色重要度评分 → 等级（T1 最高） */
-export function tierForScore(score) {
-    const s = Number(score) || 0;
-    if (s >= 6) return 'T1';
-    if (s >= 4) return 'T2';
-    if (s >= 2) return 'T3';
-    return 'T4';
 }
 
 /**

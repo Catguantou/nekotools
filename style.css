@@ -1573,6 +1573,25 @@ body {
     color: var(--ntq-dim);
 }
 
+#nt-quick-modal .nt-quick-clock-row {
+    display: flex;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--ntq-line);
+}
+#nt-quick-modal .nt-quick-clock-row:last-child {
+    border-bottom: 0;
+}
+#nt-quick-modal .nt-quick-clock-label {
+    flex: 0 0 56px;
+    color: var(--ntq-dim);
+}
+#nt-quick-modal .nt-quick-clock-value {
+    flex: 1;
+    color: #fff;
+    word-break: break-all;
+}
+
 #nt-quick-modal .nt-quick-slots {
     display: flex;
     flex-direction: column;

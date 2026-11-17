@@ -47,6 +47,19 @@ export function touchSlot(bookName) {
     });
 }
 
+/** 读取这一档最近一次的状态栏时钟（不写世界书，只存设置） */
+export function getSlotClock(bookName) {
+    if (!bookName) return null;
+    const clock = readMeta()[bookName]?.clock;
+    return clock && typeof clock === 'object' ? clock : null;
+}
+
+/** 保存这一档的状态栏时钟；不往世界书里写任何东西 */
+export function setSlotClock(bookName, clock) {
+    if (!bookName) return;
+    setSlotMeta(bookName, { clock: clock || null });
+}
+
 /** 当前角色的所有档；没有档时返回一个“第 1 档（未创建）”的占位 */
 export function listSlots() {
     const charName = stBridge.getCharacterName();

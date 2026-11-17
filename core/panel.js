@@ -107,6 +107,7 @@ export function mountPanel() {
             ['foreshadow', 'P_07', '草蛇伏笔'],
             ['summary', 'P_08', '小总结'],
             ['bigSummary', 'P_09', '大总结'],
+            ['roster', 'P_10', '角色索引'],
         ];
         return map.map(([key, code, name]) => {
             const val = (s.customPrompts && s.customPrompts[key]) || '';

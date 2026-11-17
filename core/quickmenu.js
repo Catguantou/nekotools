@@ -8,6 +8,7 @@ import {
     deleteSlot,
     exportCurrent,
     importCurrent,
+    getSlotClock,
 } from './slots.js';
 import { slotLabel } from './worldfmt.js';
 import { settings } from './settings.js';
@@ -339,6 +340,7 @@ function openPop() {
     const pop = $(POP_ID);
     if (!pop) return;
     updateJumpUi();
+    updateClockUi();
     pop.hidden = false;
     placePop();
 }
@@ -352,6 +354,51 @@ function togglePop() {
 
 function showSoon(label) {
     toast(`${label}：后续版本接入`);
+}
+
+function showClockModal() {
+    const name = stBridge.currentTrackerName();
+    const clock = name ? getSlotClock(name) : null;
+
+    const body = document.createElement('div');
+    if (!clock || !(clock.time || clock.place)) {
+        body.textContent = '还没有时钟。发一条消息，等模型输出状态栏后会自动记录。';
+        openModal({ title: '世界时钟', body });
+        return;
+    }
+
+    const rows = [
+        ['时间', clock.time],
+        ['地点', clock.place],
+        ['天气', clock.weather],
+        ['温度', clock.temperature],
+        ['最后更新', clock.layer ? `第 ${clock.layer} 层` : ''],
+    ];
+    for (const [label, value] of rows) {
+        if (!value) continue;
+        const row = document.createElement('div');
+        row.className = 'nt-quick-clock-row';
+        const l = document.createElement('span');
+        l.className = 'nt-quick-clock-label';
+        l.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'nt-quick-clock-value';
+        v.textContent = value;
+        row.appendChild(l);
+        row.appendChild(v);
+        body.appendChild(row);
+    }
+    openModal({ title: '世界时钟', body });
+}
+
+function updateClockUi() {
+    const hint = document.querySelector('#nt-quick-pop .nt-quick-item[data-key="clock"] .nt-quick-item-hint');
+    if (!hint) return;
+    const name = stBridge.currentTrackerName();
+    const clock = name ? getSlotClock(name) : null;
+    hint.textContent = clock && (clock.time || clock.place)
+        ? `${clock.time || '—'} · ${clock.place || '—'}`
+        : '还没有时钟';
 }
 
 function buildPop() {
@@ -388,6 +435,7 @@ function buildPop() {
     list.className = 'nt-quick-pop-list';
 
     const items = [
+        { key: 'clock', label: '世界时钟', hint: '读状态栏', enabled: true },
         { key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
         { key: 'refresh', label: '请求更新', hint: '角色 / 世界 / 地图', enabled: false },
         { key: 'map', label: '地图', hint: '周边可交互节点', enabled: false },
@@ -413,7 +461,8 @@ function buildPop() {
 
         row.addEventListener('click', () => {
             closePop();
-            if (item.key === 'slots') showSlotsModal();
+            if (item.key === 'clock') showClockModal();
+            else if (item.key === 'slots') showSlotsModal();
             else showSoon(item.label);
         });
         list.appendChild(row);
@@ -442,6 +491,8 @@ function buildPop() {
         if (popEl && !popEl.hidden) placePop();
     });
     window.addEventListener('nekotool:clock-jump', () => updateJumpUi());
+    window.addEventListener('nekotool:clock-changed', () => updateClockUi());
+    updateClockUi();
 }
 
 // ========== 挂载 ==========
