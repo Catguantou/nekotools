@@ -365,7 +365,7 @@ export function mountPanel() {
                     <div class="nt-section">
                         <div class="nt-sec-head">
                             <span class="nt-index">03</span>
-                            <span class="nt-title">一键清除八股 (代替正则)</span>
+                            <span class="nt-title">八股管理器</span>
                             <div class="nt-sec-line"></div>
                         </div>
                         <div class="nt-grid-layout" style="margin-bottom:10px;">
@@ -384,18 +384,18 @@ export function mountPanel() {
                             </div>
                         </div>
                         <div class="nt-slop-add">
-                            <select id="nt-slop-type" class="nt-data-select" style="width:92px;">
-                                <option value="literal">字面删除</option>
-                                <option value="regex">正则 /…/</option>
+                            <select id="nt-slop-type" class="nt-data-select" style="width:104px;">
+                                <option value="sentence">删整句</option>
+                                <option value="word">删这个词</option>
+                                <option value="paragraph">删整段</option>
+                                <option value="regex">正则</option>
                                 <option value="replace">替换</option>
                             </select>
-                            <select id="nt-slop-preset" class="nt-data-select" style="width:132px;">
-                                <option value="">常见规则…</option>
-                            </select>
-                            <input id="nt-slop-a" class="nt-data-input" style="flex:1; width:auto;" placeholder="词 / 正则">
+                            <input id="nt-slop-a" class="nt-data-input" style="flex:1; width:auto;" placeholder="输入几个字，例如：空气凝固">
                             <input id="nt-slop-b" class="nt-data-input" style="flex:1; width:auto; display:none;" placeholder="替换为">
                             <button id="nt-slop-add" class="nt-btn-text">[添加]</button>
                         </div>
+                        <div class="nt-hint" style="margin:4px 0 6px;">输入几个字即可：默认删掉<b>包含这些字的整句</b>；也可以选删词/删段/正则/替换。点左侧圆点停用，× 删除。</div>
                         <div class="nt-hint" style="margin:4px 0 6px;">快捷语法：字面=直接删；正则选 <code>/…/</code>、常见规则可从下拉直接选；替换填 A、B 两个框；点左侧圆点可停用</div>
                         <div id="nt-slop-list" class="nt-slop-list"></div>
                         <details class="nt-slop-raw">
@@ -408,7 +408,7 @@ export function mountPanel() {
                             </div>
                         </details>
                         <div class="nt-data-row" style="justify-content:flex-start; gap:12px;">
-                            <button id="nt-tm-run-clean" class="nt-btn-action primary">[立即一键清除八股]</button>
+                            <button id="nt-tm-run-clean" class="nt-btn-action primary">[应用规则并清除]</button>
                             <button id="nt-tm-undo-clean" class="nt-btn-text" style="color:#ffcc00;">[撤销上次清理]</button>
                         </div>
                     </div>
@@ -922,6 +922,9 @@ export function mountPanel() {
         const t = line.trim();
         if (!t) return 'empty';
         if (t.startsWith('#')) return 'off';
+        if (/^@句\s/.test(t)) return 'sentence';
+        if (/^@段\s/.test(t)) return 'paragraph';
+        if (/^@词\s/.test(t)) return 'word';
         if (/^\/.+\/[gimuy]*$/.test(t)) return 'regex';
         if (t.includes('=>')) return 'replace';
         return 'literal';
@@ -934,12 +937,16 @@ export function mountPanel() {
             const t = line.trim();
             if (!t) return;
             const type = slopTypeOf(t);
-            const label = { literal: '字面', regex: '正则', replace: '替换', off: '停用' }[type] || '字面';
+            const label = {
+                sentence: '整句', paragraph: '整段', word: '词',
+                literal: '词', regex: '正则', replace: '替换', off: '停用'
+            }[type] || '词';
+            const shown = t.replace(/^#\s*/, '').replace(/^@(词|句|段)\s+/, '');
             rows.push(`
                 <div class="nt-slop-row ${type === 'off' ? 'is-off' : ''}">
                     <button class="nt-slop-toggle" data-i="${i}" title="启用/停用">${type === 'off' ? '○' : '●'}</button>
                     <span class="nt-slop-type">${label}</span>
-                    <span class="nt-slop-text" title="${escapeHtml(t.replace(/^#\s*/, ''))}">${escapeHtml(t.replace(/^#\s*/, ''))}</span>
+                    <span class="nt-slop-text" title="${escapeHtml(shown)}">${escapeHtml(shown)}</span>
                     <button class="nt-slop-del" data-i="${i}" title="删除">×</button>
                 </div>`);
         });
@@ -973,45 +980,10 @@ export function mountPanel() {
         renderSlopList();
     });
 
-    // 常见八股正则，选中即填入输入框
-    const SLOP_PRESETS = [
-        { label: '不是…而是…', value: '不是([^，。\\n]+)，而是' },
-        { label: '不是…是…', value: '不是([^，。\\n]+)，是' },
-        { label: '没有…也没有…', value: '没有([^，。\\n]+)，也没有' },
-        { label: '一丝/微微/缓缓', value: '一丝|微微|缓缓|轻轻' },
-        { label: '眼中闪过', value: '(?:眼中|眼底|眸中)(?:闪过|掠过)' },
-        { label: '嘴角勾起', value: '嘴角[^。\\n]{0,6}(?:勾起|扬起|上扬)' },
-        { label: '仿佛/宛如', value: '仿佛|宛如|好似' },
-        { label: '不禁/不由得', value: '不禁|不由得' },
-        { label: '空气凝固', value: '空气(?:仿佛|似乎)?凝固' },
-        { label: '指节泛白', value: '(?:指节|关节)(?:微微)?泛白' },
-        { label: '生理性/本能', value: '生理性|本能地' },
-        { label: '语气', value: '语气' },
-        { label: '引用行', value: '/^[>＞].*$/gm' },
-    ];
-
     const slopTypeSel = wrap.querySelector('#nt-slop-type');
-    const slopPresetSel = wrap.querySelector('#nt-slop-preset');
     const slopA = wrap.querySelector('#nt-slop-a');
     const slopB = wrap.querySelector('#nt-slop-b');
     const slopAddBtn = wrap.querySelector('#nt-slop-add');
-
-    if (slopPresetSel) {
-        SLOP_PRESETS.forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = p.value;
-            opt.textContent = p.label;
-            slopPresetSel.appendChild(opt);
-        });
-        slopPresetSel.onchange = () => {
-            if (!slopPresetSel.value) return;
-            slopTypeSel.value = 'regex';
-            slopB.style.display = 'none';
-            slopA.value = slopPresetSel.value;
-            slopPresetSel.value = '';
-            slopA.focus();
-        };
-    }
 
     if (slopTypeSel) {
         slopTypeSel.onchange = () => {
@@ -1023,7 +995,7 @@ export function mountPanel() {
     if (slopAddBtn) {
         slopAddBtn.onclick = () => {
             const type = slopTypeSel.value;
-            let a = slopA.value.trim();
+            const a = slopA.value.trim();
             const b = slopB.value.trim();
             if (!a) return;
 
@@ -1047,11 +1019,19 @@ export function mountPanel() {
                     return;
                 }
                 val = src;
+            } else if (type === 'sentence') {
+                val = `@句 ${a}`;
+            } else if (type === 'paragraph') {
+                val = `@段 ${a}`;
             } else {
-                val = a;
+                val = `@词 ${a}`;
             }
 
             const lines = getSlopLines().filter(l => l.trim() !== '');
+            if (lines.some(l => l.trim() === val)) {
+                if (window.toastr) toastr.info('这条规则已经存在');
+                return;
+            }
             lines.push(val);
             setSlopLines(lines);
             slopA.value = '';

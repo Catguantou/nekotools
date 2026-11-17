@@ -252,39 +252,71 @@ export function exportPureStoryTxt({ favoritesOnly = false, from = 0, to = null 
 // ========== 一键清除八股 ==========
 let lastCleanBackup = null;
 
+/**
+ * 关键词规则引擎：
+ *  - 词：只删命中词（兼容旧版裸词条）
+ *  - 句：删掉包含该词的整句（最推荐，避免删词后句子残缺）
+ *  - 段：删掉包含该词的整段
+ */
+function buildKeywordRegex(keyword, mode) {
+    const k = escapeRegExp(keyword);
+    if (mode === 'sentence') {
+        return new RegExp(`[^。！？!?\\n]*${k}[^。！？!?\\n]*[。！？!?]?`, 'g');
+    }
+    if (mode === 'paragraph') {
+        return new RegExp(`(?:^|\\n)[^\\n]*${k}[^\\n]*(?:\\n|$)`, 'g');
+    }
+    return new RegExp(k, 'g');
+}
+
 function parseSlopRules(rulesText) {
     const raw = String(rulesText || '')
         .split('\n')
         .map(line => line.trim())
         .filter(line => line && !line.startsWith('#'));
+    // '# ' 前缀的停用规则在上面已被过滤；这里只处理启用规则
 
     const rules = [];
     for (const line of raw) {
+        // @句 keyword / @词 keyword / @段 keyword
+        const kw = line.match(/^@(词|句|段)\s+(.+)$/);
+        if (kw) {
+            const mode = kw[1] === '句' ? 'sentence' : (kw[1] === '段' ? 'paragraph' : 'word');
+            try {
+                rules.push({ re: buildKeywordRegex(kw[2].trim(), mode), to: '', mode: kw[1] });
+            } catch (e) {
+                console.warn('[nekotools] 无效关键词规则，已跳过:', line, e);
+            }
+            continue;
+        }
+
         // /正则/flags
         const m = line.match(/^\/(.+)\/([gimuy]*)$/);
         if (m) {
             try {
                 const flags = m[2].includes('g') ? m[2] : m[2] + 'g';
-                rules.push({ re: new RegExp(m[1], flags), to: '' });
+                rules.push({ re: new RegExp(m[1], flags), to: '', mode: '正则' });
             } catch (e) {
                 console.warn('[nekotools] 无效正则，已跳过:', line, e);
             }
             continue;
         }
-        // 旧词=>新词（字面替换，不做正则解释）
+
+        // 旧词=>新词（字面替换）
         if (line.includes('=>')) {
             const [from, to = ''] = line.split('=>').map(s => s.trim());
             if (!from) continue;
             try {
-                rules.push({ re: new RegExp(escapeRegExp(from), 'g'), to });
+                rules.push({ re: new RegExp(escapeRegExp(from), 'g'), to, mode: '替换' });
             } catch (e) {
                 console.warn('[nekotools] 无效替换规则，已跳过:', line, e);
             }
             continue;
         }
-        // 纯文本：按字面量删除，避免把 . * ? 之类当成正则
+
+        // 裸词（兼容旧版）：按字面删除
         try {
-            rules.push({ re: new RegExp(escapeRegExp(line), 'g'), to: '' });
+            rules.push({ re: new RegExp(escapeRegExp(line), 'g'), to: '', mode: '词' });
         } catch (e) {
             console.warn('[nekotools] 无效词条，已跳过:', line, e);
         }
