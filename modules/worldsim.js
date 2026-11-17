@@ -3,7 +3,7 @@ import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
-import { migrateIndex, syncChars, syncNames, refreshChar, INDEX_TITLE } from '../core/worldindex.js';
+import { migrateIndex, syncChars, syncNames, refreshChar, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
 import { applyMain, applyQuests, parseMain, mainHasContent } from '../core/worldquest.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
@@ -51,6 +51,9 @@ const mapReady = new Map();
 const mapTries = new Map();
 const questReady = new Map();
 const questTries = new Map();
+// 每轮只读快照（不写回、不持久化）：用于「在场候选」和 T1 名单
+const presenceCache = new Map();
+const rosterCache = new Map();
 
 /** 开局世界生成：第一次运行时补全整个世界，而不是只提取当前文本 */
 function buildGenesisPrompt() {
@@ -107,11 +110,37 @@ function buildTickPrompt({ needCharTick, needWorldTick }) {
     return p;
 }
 
+/** 每轮只读快照：角色位置/日程 + 索引等级，不写回 */
+function refreshSnapshots(bookName, book) {
+    if (!bookName || !book || !book.entries) return;
+    const chars = [];
+    for (const entry of Object.values(book.entries)) {
+        if (!entry || !entry.comment || !entry.comment.startsWith('角色·')) continue;
+        const parsed = parseCharacterYaml(entry.content);
+        chars.push({
+            name: entry.comment.slice(3),
+            location: parsed['位置'] || '',
+            action: parsed['当前行动'] || '',
+            schedule: parsed['日程'] || {},
+        });
+    }
+    presenceCache.set(bookName, chars);
+
+    const idx = Object.values(book.entries).find(e => e && e.comment === INDEX_TITLE);
+    rosterCache.set(bookName, idx ? parseIndex(idx.content).chars : []);
+}
+
 /** T1 每轮提醒：用户关注/钉住角色必须持续推进 */
-function buildT1Prompt() {
+function buildT1Prompt(bookName = '') {
+    const chars = rosterCache.get(bookName) || [];
+    const t1 = chars
+        .filter(c => /^T1/i.test(String(c.tier || '')))
+        .map(c => c.name)
+        .slice(0, 8);
+    const names = t1.length ? `本轮 T1 名单：${t1.join('、')}。` : '索引里没有 T1。';
     return `<nekotools:t1>
-【T1 每轮推进】索引里若有 T1（用户关注/钉住）角色，本轮至少推进 1 个，写进 tick：位置 / 当前行动 / 下一步。
-如果本轮 T1 已经在正文出场，也要补一条 tick 记录他接下来要做什么。索引里没有 T1 就跳过。
+【T1 每轮推进】${names}若有 T1，本轮至少推进 1 个，写进 tick：位置 / 当前行动 / 下一步。
+如果本轮 T1 已经在正文出场，也要补一条 tick 记录他接下来要做什么。
 </nekotools:t1>`;
 }
 
@@ -334,9 +363,21 @@ function buildCognitionPrompt() {
 /** 在场与日程：角色不能凭空出现在当前场景 */
 function buildPresencePrompt(bookName) {
     const clock = bookName ? getSlotClock(bookName) : null;
-    const place = clock && clock.place ? `当前地点：${clock.place}。` : '';
+    const placeText = clock && clock.place ? String(clock.place) : '';
+    const place = placeText ? `当前地点：${placeText}。` : '';
+    let candidates = '';
+    if (placeText) {
+        const chars = presenceCache.get(bookName) || [];
+        const here = chars
+            .filter(c => [c.location, c.action, ...Object.values(c.schedule || {})].join(' ').includes(placeText))
+            .map(c => c.name)
+            .slice(0, 10);
+        if (here.length) {
+            candidates = `按当前档案/日程，此刻在「${placeText}」的候选：${here.join('、')}。只能让这些人在场；其他角色要出场必须写明怎么赶来。`;
+        }
+    }
     let p = `<nekotools:presence>
-【在场与日程】${place}
+【在场与日程】${place}${candidates}
 - 角色出场必须满足：索引里的位置就是当前地点，或按他的日程/当前行动确实在此地。
 - 不在场的角色不能凭空出现；若要出场，必须先写清他如何赶到（路程、时间、理由）。
 - 每次让角色出场前先检查：他真的会在这里吗？不确定就让他不在。
@@ -1010,6 +1051,7 @@ async function normalizeEntryLayout(bookName) {
         markWorldReady(bookName, book);
         markMapReady(bookName, book);
         markQuestReady(bookName, book);
+        refreshSnapshots(bookName, book);
     } catch (e) {
         console.warn('[worldsim] 条目布局迁移失败', e);
     }
@@ -1113,6 +1155,7 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         const map = await applyAggregateOps(bookName, '计划', data.plot, 910);
         summary.plot = map ? Object.keys(map).length : 0;
     }
+    refreshSnapshots(bookName, book);
     return summary;
 }
 
@@ -1291,7 +1334,7 @@ registry.register({
             console.log(`[worldsim] 后台 tick：角色=${needCharTick} 世界=${needWorldTick}`);
         } else if (settings.enableTicks && includeTracking && !needGenesis) {
             // 非全量 tick 的轮次也要提醒 T1，否则 T1 做不到每轮
-            ctx.__nt_pendingSystems.push({ role: 'system', content: buildT1Prompt() });
+            ctx.__nt_pendingSystems.push({ role: 'system', content: buildT1Prompt(bookName) });
         }
     },
 
@@ -1471,6 +1514,7 @@ registry.register({
                         await syncChars(currentLorebook, add, del);
                     }
                 }
+                refreshSnapshots(currentLorebook, charsBook);
                 if (data.items && settings.enableItems) {
                     const itemMap = await applyAggregateOps(currentLorebook, '道具', data.items, 900, { keyword: true });
                     if (itemMap) await syncNames(currentLorebook, 'items', Object.keys(itemMap));
