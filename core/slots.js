@@ -9,6 +9,7 @@ import {
     buildSaveFile,
     parseSaveFile,
     slotLabel,
+    parseRosterLine,
 } from './worldfmt.js';
 
 function readMeta() {
@@ -60,7 +61,7 @@ export function setSlotClock(bookName, clock) {
     setSlotMeta(bookName, { clock: clock || null });
 }
 
-/** 读取当前档的「角色索引」条目（AI 维护），返回 [{ name, note }] */
+/** 读取当前档的「角色索引」条目（AI 维护），返回 [{ name, tier, location, action, layer, raw }] */
 export async function readRoster(bookName) {
     if (!bookName) return [];
     const book = await stBridge.loadWorldInfoAsync(bookName, true);
@@ -69,12 +70,25 @@ export async function readRoster(bookName) {
     if (!entry) return [];
     return String(entry.content || '')
         .split('\n')
-        .map(s => s.trim())
-        .filter(Boolean)
-        .map(line => {
-            const m = line.match(/^[-·]\s*([^｜|\n]+)\s*｜\s*([\s\S]*)$/);
-            return m ? { name: m[1].trim(), note: m[2].trim() } : { name: line, note: '' };
-        });
+        .map(parseRosterLine)
+        .filter(Boolean);
+}
+
+/** 读某个角色的六字段条目；没有返回空串 */
+export async function readCharacterEntry(bookName, name) {
+    if (!bookName || !name) return '';
+    const book = await stBridge.loadWorldInfoAsync(bookName, true);
+    const entry = book && book.entries
+        ? Object.values(book.entries).find(e => e && e.comment === `角色·${name}`)
+        : null;
+    return entry ? String(entry.content || '') : '';
+}
+
+/** 保存某个角色的六字段条目（手动编辑） */
+export async function saveCharacterEntry(bookName, name, content) {
+    if (!bookName || !name) return false;
+    await stBridge.updateEntry(bookName, `角色·${name}`, String(content || ''), false, [name]);
+    return true;
 }
 
 /** 当前角色的所有档；没有档时返回一个“第 1 档（未创建）”的占位 */

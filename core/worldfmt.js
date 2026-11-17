@@ -119,6 +119,51 @@ export function isSlotOf(name, charName) {
     return name === base || name.startsWith(`${prefix}${SLOT_SEP}`);
 }
 
+// ========== 角色索引 ==========
+
+/**
+ * 解析角色索引的一行：
+ *   - 名字｜T2｜位置｜最近行动｜第 37 层
+ * 返回 { name, tier, location, action, layer, raw }；空行返回 null。
+ */
+export function parseRosterLine(line) {
+    const raw = String(line ?? '').trim();
+    if (!raw) return null;
+    const body = raw.replace(/^[-·]\s*/, '');
+    const parts = body.split('｜').map(s => s.trim());
+    if (!parts[0]) return null;
+
+    let layer = 0;
+    const tail = parts[parts.length - 1] || '';
+    const m = tail.match(/第\s*(\d+)\s*层/);
+    if (m) layer = Number(m[1]);
+    const fields = m ? parts.slice(0, -1) : parts;
+
+    return {
+        name: fields[0] || '',
+        tier: fields[1] || '',
+        location: fields[2] || '',
+        action: fields[3] || '',
+        layer,
+        raw,
+    };
+}
+
+/** 生成角色索引的一行；layer > 0 时追加「第 N 层」 */
+export function formatRosterLine({ name, tier = 'T3', location = '', action = '', layer = 0 }) {
+    const parts = [String(name || '').trim(), tier || 'T3'];
+    if (location) parts.push(location);
+    else if (action) parts.push('');
+    if (action) parts.push(action);
+    if (layer > 0) parts.push(`第 ${layer} 层`);
+    return `- ${parts.join('｜')}`;
+}
+
+/** 从一行里去掉旧的「第 N 层」，方便重新打时间戳 */
+export function stripRosterLayer(value) {
+    return String(value ?? '').replace(/｜\s*第\s*\d+\s*层\s*$/, '').trim();
+}
+
 /** 存档列表里的显示名 */
 export function slotLabel(n) {
     const num = Math.max(1, Math.floor(Number(n)) || 1);

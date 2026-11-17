@@ -10,8 +10,11 @@ import {
     importCurrent,
     getSlotClock,
     readRoster,
+    readCharacterEntry,
+    saveCharacterEntry,
 } from './slots.js';
 import { slotLabel, parseStatusFields } from './worldfmt.js';
+import { loadConfig, saveConfig } from './worldcfg.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 
@@ -93,7 +96,7 @@ function closeModal() {
  * body 传 Node 或字符串；footer 传 [{ label, primary, onClick }]。
  * onClick 返回 false 时保持弹窗打开（适合异步操作后原地刷新）。
  */
-export function openModal({ title = '', body = null, footer = null, onClose = null } = {}) {
+export function openModal({ title = '', body = null, footer = null, wide = false, onClose = null } = {}) {
     closeModal();
 
     const mask = document.createElement('div');
@@ -104,7 +107,7 @@ export function openModal({ title = '', body = null, footer = null, onClose = nu
     });
 
     const panel = document.createElement('div');
-    panel.className = 'nt-quick-modal';
+    panel.className = 'nt-quick-modal' + (wide ? ' wide' : '');
 
     const head = document.createElement('div');
     head.className = 'nt-quick-modal-head';
@@ -419,36 +422,445 @@ function updateClockUi() {
         : '还没有时钟';
 }
 
+// ========== 角色管理 ==========
+
+const CHAR_FIELD_ORDER = ['状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化'];
+
+function currentLayerNo() {
+    const chat = stBridge.getContext().chat || [];
+    return chat.length;
+}
+
+function charAge(item) {
+    if (!item.layer) return '';
+    const age = Math.max(0, currentLayerNo() - item.layer);
+    return age === 0 ? '本层更新' : `${age} 层前`;
+}
+
+function splitCharFields(content) {
+    const out = [];
+    for (const line of String(content || '').split('\n')) {
+        const s = line.trim();
+        if (!s) continue;
+        const m = s.match(/^[-·]\s*([^：:]+)[：:]([\s\S]*)$/);
+        if (m) out.push({ key: m[1].trim(), value: m[2].trim() });
+        else out.push({ key: '', value: s });
+    }
+    return out;
+}
+
+async function rewriteRoster(book, items) {
+    const lines = items.map(x => x.raw || `- ${x.name}`);
+    await stBridge.updateEntry(book, '角色索引', lines.join('\n'), true, [], {
+        position: 4, depth: 999, order: 998,
+    });
+}
+
 async function showRosterModal() {
-    const body = document.createElement('div');
-    body.textContent = '读取中…';
-    openModal({ title: '角色索引', body });
-
-    const name = stBridge.currentTrackerName();
-    const list = name ? await readRoster(name) : [];
-    body.textContent = '';
-
-    if (!list.length) {
-        const note = document.createElement('div');
-        note.className = 'nt-quick-note';
-        note.textContent = '还没有角色索引。发几轮消息，模型会按 P_10 契约自己写；如果一直不写，去面板把 P_10 提示词改得更明确。';
-        body.appendChild(note);
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
         return;
     }
 
-    for (const item of list) {
-        const row = document.createElement('div');
-        row.className = 'nt-quick-roster-row';
-        const n = document.createElement('span');
-        n.className = 'nt-quick-roster-name';
-        n.textContent = item.name;
-        const note = document.createElement('span');
-        note.className = 'nt-quick-roster-note';
-        note.textContent = item.note;
-        row.appendChild(n);
-        row.appendChild(note);
-        body.appendChild(row);
+    const body = document.createElement('div');
+    body.className = 'nt-quick-chars';
+    const left = document.createElement('div');
+    left.className = 'nt-quick-chars-left';
+    const right = document.createElement('div');
+    right.className = 'nt-quick-chars-right';
+    body.appendChild(left);
+    body.appendChild(right);
+
+    let list = [];
+    let cfg = { pinned: [], blocked: [] };
+    let selected = '';
+    let editing = false;
+
+    openModal({ title: '角色管理', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+
+    const refresh = async () => {
+        cfg = await loadConfig(book, { force: true });
+        list = await readRoster(book);
+        if (!selected || !list.some(x => x.name === selected)) selected = list[0] ? list[0].name : '';
+        editing = false;
+        renderList();
+        await renderDetail();
+    };
+
+    const togglePin = async (name) => {
+        const pinned = cfg.pinned.includes(name)
+            ? cfg.pinned.filter(n => n !== name)
+            : [...cfg.pinned, name];
+        cfg = await saveConfig(book, { pinned });
+
+        // 新钉住但索引里没有：补一行
+        if (pinned.includes(name) && !list.some(x => x.name === name)) {
+            const lines = list.map(x => x.raw);
+            lines.push(`- ${name}｜T1｜第 ${currentLayerNo()} 层`);
+            await stBridge.updateEntry(book, '角色索引', lines.join('\n'), true, [], {
+                position: 4, depth: 999, order: 998,
+            });
+            list = await readRoster(book);
+        }
+        renderList();
+        await renderDetail();
+    };
+
+    const blockChar = async (name) => {
+        if (!window.confirm(`把「${name}」加入黑名单？之后不再记录它，并从索引里移除。`)) return;
+        cfg = await saveConfig(book, {
+            blocked: [...new Set([...cfg.blocked, name])],
+            pinned: cfg.pinned.filter(n => n !== name),
+        });
+        await rewriteRoster(book, list.filter(x => x.name !== name));
+        list = await readRoster(book);
+        selected = list[0] ? list[0].name : '';
+        renderList();
+        await renderDetail();
+    };
+
+    const unblock = async (name) => {
+        cfg = await saveConfig(book, { blocked: cfg.blocked.filter(n => n !== name) });
+        renderList();
+    };
+
+    function renderList() {
+        left.textContent = '';
+        const head = document.createElement('div');
+        head.className = 'nt-quick-chars-head';
+        head.textContent = `角色 ${list.length}`;
+        left.appendChild(head);
+
+        for (const item of list) {
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'nt-quick-char-row' + (item.name === selected ? ' active' : '');
+
+            const star = document.createElement('span');
+            const pinned = cfg.pinned.includes(item.name);
+            star.className = 'nt-quick-char-star' + (pinned ? ' pinned' : '');
+            star.textContent = pinned ? '★' : '☆';
+            star.title = pinned ? '取消钉住' : '钉住（长期关注）';
+            star.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await togglePin(item.name);
+            });
+
+            const main = document.createElement('span');
+            main.className = 'nt-quick-char-main';
+            const name = document.createElement('span');
+            name.className = 'nt-quick-char-name';
+            name.textContent = item.name;
+            const meta = document.createElement('span');
+            meta.className = 'nt-quick-char-meta';
+            meta.textContent = [item.tier, item.location, charAge(item)].filter(Boolean).join(' · ');
+            main.appendChild(name);
+            main.appendChild(meta);
+
+            row.appendChild(star);
+            row.appendChild(main);
+            row.addEventListener('click', () => {
+                selected = item.name;
+                editing = false;
+                renderList();
+                renderDetail();
+            });
+            left.appendChild(row);
+        }
+
+        if (cfg.blocked.length) {
+            const head2 = document.createElement('div');
+            head2.className = 'nt-quick-chars-head';
+            head2.textContent = `黑名单 ${cfg.blocked.length}`;
+            left.appendChild(head2);
+            for (const name of cfg.blocked) {
+                const row = document.createElement('div');
+                row.className = 'nt-quick-char-row blocked';
+                const main = document.createElement('span');
+                main.className = 'nt-quick-char-main';
+                const n = document.createElement('span');
+                n.className = 'nt-quick-char-name';
+                n.textContent = name;
+                main.appendChild(n);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'nt-quick-btn-text';
+                btn.textContent = '解除';
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await unblock(name);
+                });
+                row.appendChild(main);
+                row.appendChild(btn);
+                left.appendChild(row);
+            }
+        }
     }
+
+    async function renderDetail() {
+        right.textContent = '';
+        const item = list.find(x => x.name === selected);
+        if (!item) {
+            const note = document.createElement('div');
+            note.className = 'nt-quick-note';
+            note.textContent = '还没有角色。发几轮消息，模型会按 P_10 契约自己写；也可以先钉住一个名字。';
+            right.appendChild(note);
+            return;
+        }
+
+        const model = await readCharacterEntry(book, item.name);
+
+        const title = document.createElement('div');
+        title.className = 'nt-quick-char-detail-title';
+        title.textContent = `${item.name}${item.tier ? ` · ${item.tier}` : ''}`;
+        right.appendChild(title);
+
+        const meta = document.createElement('div');
+        meta.className = 'nt-quick-char-detail-meta';
+        meta.textContent = [
+            item.location ? `位置：${item.location}` : '',
+            item.action ? `最近行动：${item.action}` : '',
+            item.layer ? `最后更新：第 ${item.layer} 层（${charAge(item)}）` : '',
+        ].filter(Boolean).join('\n');
+        meta.style.whiteSpace = 'pre-line';
+        right.appendChild(meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'nt-quick-char-actions';
+        const pin = document.createElement('button');
+        pin.type = 'button';
+        pin.className = 'nt-quick-btn-text';
+        pin.textContent = cfg.pinned.includes(item.name) ? '取消钉住' : '钉住';
+        pin.addEventListener('click', () => togglePin(item.name));
+        const block = document.createElement('button');
+        block.type = 'button';
+        block.className = 'nt-quick-btn-text danger';
+        block.textContent = '拉黑';
+        block.addEventListener('click', () => blockChar(item.name));
+        actions.appendChild(pin);
+        actions.appendChild(block);
+        right.appendChild(actions);
+
+        if (editing) {
+            const ta = document.createElement('textarea');
+            ta.className = 'nt-prompt-textarea nt-quick-char-edit';
+            ta.value = model;
+            right.appendChild(ta);
+
+            const save = document.createElement('button');
+            save.type = 'button';
+            save.className = 'nt-quick-btn-text primary';
+            save.textContent = '保存';
+            save.addEventListener('click', async () => {
+                await saveCharacterEntry(book, item.name, ta.value);
+                toast('角色档案已保存', 'success');
+                editing = false;
+                renderDetail();
+            });
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'nt-quick-btn-text';
+            cancel.textContent = '取消';
+            cancel.addEventListener('click', () => { editing = false; renderDetail(); });
+
+            const bar = document.createElement('div');
+            bar.className = 'nt-quick-char-actions';
+            bar.appendChild(save);
+            bar.appendChild(cancel);
+            right.appendChild(bar);
+            return;
+        }
+
+        const fields = splitCharFields(model);
+        if (!fields.length) {
+            const note = document.createElement('div');
+            note.className = 'nt-quick-note';
+            note.textContent = '这个角色还没有档案。等模型在 ws_update 里写 chars，或者点下面的「编辑档案」自己填。';
+            right.appendChild(note);
+        } else {
+            const ordered = [...fields].sort((a, b) => {
+                const ia = CHAR_FIELD_ORDER.indexOf(a.key);
+                const ib = CHAR_FIELD_ORDER.indexOf(b.key);
+                return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+            });
+            for (const f of ordered) {
+                const row = document.createElement('div');
+                row.className = 'nt-quick-char-field';
+                if (f.key) {
+                    const k = document.createElement('div');
+                    k.className = 'nt-quick-char-field-key';
+                    k.textContent = f.key;
+                    row.appendChild(k);
+                }
+                const v = document.createElement('div');
+                v.className = 'nt-quick-char-field-value';
+                v.textContent = f.value;
+                row.appendChild(v);
+                right.appendChild(row);
+            }
+        }
+
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'nt-quick-btn-text';
+        edit.textContent = '编辑档案';
+        edit.addEventListener('click', () => { editing = true; renderDetail(); });
+        const bar = document.createElement('div');
+        bar.className = 'nt-quick-char-actions';
+        bar.appendChild(edit);
+        right.appendChild(bar);
+    }
+
+    await refresh();
+}
+
+// ========== 快捷行动 ==========
+
+async function sendUserText(text) {
+    const ctx = stBridge.getContext();
+    try {
+        if (ctx && typeof ctx.executeSlashCommandsWithOptions === 'function') {
+            await ctx.executeSlashCommandsWithOptions(`/send ${text}`, { showOutput: false });
+            return true;
+        }
+    } catch (e) {
+        console.warn('[nekotools] /send 失败，改用输入框', e);
+    }
+    const ta = document.getElementById('send_textarea');
+    const btn = document.getElementById('send_but');
+    if (!ta || !btn) return false;
+    ta.value = text;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    btn.click();
+    return true;
+}
+
+async function sendContinue() {
+    const ctx = stBridge.getContext();
+    try {
+        if (ctx && typeof ctx.executeSlashCommandsWithOptions === 'function') {
+            await ctx.executeSlashCommandsWithOptions('/continue', { showOutput: false });
+            return true;
+        }
+    } catch (e) {
+        console.warn('[nekotools] /continue 失败，改用按钮', e);
+    }
+    const btn = document.getElementById('mes_continue');
+    if (btn && !btn.classList.contains('displayNone')) {
+        btn.click();
+        return true;
+    }
+    return false;
+}
+
+function actionRow(label, control) {
+    const row = document.createElement('div');
+    row.className = 'nt-quick-form-row';
+    const l = document.createElement('span');
+    l.className = 'nt-quick-form-label';
+    l.textContent = label;
+    row.appendChild(l);
+    row.appendChild(control);
+    return row;
+}
+
+async function showActionModal() {
+    const book = stBridge.currentTrackerName();
+    const list = book ? await readRoster(book) : [];
+
+    const body = document.createElement('div');
+    body.className = 'nt-quick-action';
+
+    const target = document.createElement('select');
+    target.className = 'nt-quick-input';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = '（不指定）';
+    target.appendChild(none);
+    for (const item of list) {
+        const opt = document.createElement('option');
+        opt.value = item.name;
+        opt.textContent = item.name;
+        target.appendChild(opt);
+    }
+
+    const action = document.createElement('input');
+    action.className = 'nt-quick-input';
+    action.placeholder = '干什么（可留空）';
+
+    const place = document.createElement('input');
+    place.className = 'nt-quick-input';
+    place.placeholder = '去哪里（可留空）';
+
+    const jump = document.createElement('input');
+    jump.type = 'number';
+    jump.min = '0';
+    jump.className = 'nt-quick-input nt-quick-jump-num';
+    jump.placeholder = '0';
+
+    const unit = document.createElement('select');
+    unit.className = 'nt-quick-input nt-quick-jump-unit';
+    for (const u of ['小时', '天', '个月', '年']) {
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.textContent = u;
+        unit.appendChild(opt);
+    }
+
+    const jumpWrap = document.createElement('div');
+    jumpWrap.className = 'nt-quick-jump-wrap';
+    jumpWrap.appendChild(jump);
+    jumpWrap.appendChild(unit);
+
+    body.appendChild(actionRow('对象', target));
+    body.appendChild(actionRow('动作', action));
+    body.appendChild(actionRow('地点', place));
+    body.appendChild(actionRow('时间跳跃', jumpWrap));
+
+    const hint = document.createElement('div');
+    hint.className = 'nt-quick-note';
+    hint.textContent = '执行会把拼好的话直接发出去（一次正常请求）；续写等于点「继续」。';
+    body.appendChild(hint);
+
+    const compose = () => {
+        const parts = [];
+        const jv = Number(jump.value) || 0;
+        if (jv > 0) parts.push(`（时间跳到 ${jv} ${unit.value}后）`);
+        if (target.value) parts.push(`我去找${target.value}。`);
+        if (action.value.trim()) parts.push(`${action.value.trim()}。`);
+        if (place.value.trim()) parts.push(`前往${place.value.trim()}。`);
+        return parts.join(' ');
+    };
+
+    openModal({
+        title: '快捷行动',
+        body,
+        footer: [
+            {
+                label: '执行',
+                primary: true,
+                onClick: async () => {
+                    const text = compose();
+                    if (!text) {
+                        toast('至少填一项再执行', 'warning');
+                        return false;
+                    }
+                    const ok = await sendUserText(text);
+                    toast(ok ? '已发送' : '发送失败，检查酒馆输入框', ok ? 'success' : 'error');
+                    return ok;
+                },
+            },
+            {
+                label: '续写',
+                onClick: async () => {
+                    const ok = await sendContinue();
+                    toast(ok ? '已续写' : '当前没有可续写的内容', ok ? 'success' : 'warning');
+                    return ok;
+                },
+            },
+        ],
+    });
 }
 
 function buildPop() {
@@ -486,7 +898,8 @@ function buildPop() {
 
     const items = [
         { key: 'clock', label: '世界时钟', hint: '读状态栏', enabled: true },
-        { key: 'roster', label: '角色索引', hint: '由 AI 维护', enabled: true },
+        { key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
+        { key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪 / 跳时间', enabled: true },
         { key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
         { key: 'refresh', label: '请求更新', hint: '角色 / 世界 / 地图', enabled: false },
         { key: 'map', label: '地图', hint: '周边可交互节点', enabled: false },
@@ -514,6 +927,7 @@ function buildPop() {
             closePop();
             if (item.key === 'clock') showClockModal();
             else if (item.key === 'roster') showRosterModal();
+            else if (item.key === 'action') showActionModal();
             else if (item.key === 'slots') showSlotsModal();
             else showSoon(item.label);
         });

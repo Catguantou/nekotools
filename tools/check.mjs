@@ -173,6 +173,12 @@ try {
     assert(wf.parseGameDate('2026年4月31日') === null, '4 月 31 日应判非法');
     assert(wf.parseGameDate('2024年2月29日') !== null, '闰年 2 月 29 日应合法');
     assert(wf.parseGameDate('0026年1月1日') === null, '过小年份应判非法');
+
+    const rl = wf.parseRosterLine('- 阿猫｜T2｜北境｜在酒馆喝酒｜第 37 层');
+    assert(rl && rl.name === '阿猫' && rl.tier === 'T2' && rl.location === '北境' && rl.action === '在酒馆喝酒' && rl.layer === 37, '角色索引行解析失败');
+    assert(wf.parseRosterLine('') === null, '空行不应解析成角色');
+    assert(wf.formatRosterLine({ name: '阿猫', tier: 'T2', location: '北境', action: '喝酒', layer: 37 }) === '- 阿猫｜T2｜北境｜喝酒｜第 37 层', '角色索引行生成失败');
+    assert(wf.stripRosterLayer('T2｜北境｜喝酒｜第 37 层') === 'T2｜北境｜喝酒', '去掉层号失败');
 } catch (e) {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }

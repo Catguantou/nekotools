@@ -2,7 +2,8 @@ import { registry } from '../core/registry.js';
 import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
-import { parseStatusFields, parseGameDate, daysBetween } from '../core/worldfmt.js';
+import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
+import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer } from '../core/worldfmt.js';
 
 const defaultSettings = {
     enabled: true,
@@ -150,7 +151,7 @@ ${tagClose}
     return p;
 }
 
-function buildTrackingMessages() {
+function buildTrackingMessages(bookName = '') {
     const list = [];
     const anyEnabled = settings.enableChars || settings.enableItems || settings.enablePlot
         || settings.enableWorld || settings.enableForeshadow;
@@ -188,7 +189,7 @@ chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：c
     }
 
     // 角色索引：不依赖「角色追踪」开关，只要有追踪就维护
-    list.push({ role: 'system', content: buildRosterPrompt() });
+    list.push({ role: 'system', content: buildRosterPrompt(bookName) });
 
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
@@ -262,7 +263,7 @@ function buildBigSummaryPrompt() {
     return p;
 }
 
-function buildSystemMessages(needBig, includeTracking = true) {
+function buildSystemMessages(needBig, includeTracking = true, bookName = '') {
     const list = [{ role: 'system', content: DIRECTOR_PROMPT }];
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
@@ -270,7 +271,7 @@ function buildSystemMessages(needBig, includeTracking = true) {
 
     // 追踪书不存在时不要再要求模型输出追踪 JSON：写了也没地方存，白烧 token
     if (includeTracking) {
-        list.push(...buildTrackingMessages());
+        list.push(...buildTrackingMessages(bookName));
         if (settings.enableSummary) list.push({ role: 'system', content: buildSummaryPrompt() });
         if (needBig) list.push({ role: 'system', content: buildBigSummaryPrompt() });
     }
@@ -455,14 +456,25 @@ async function cleanupLegacyEntries(bookName) {
 }
 
 /** 角色索引的默认契约（可在设置里整段改写）；让模型自己增删，插件只负责收 */
-function buildRosterPrompt() {
+function buildRosterPrompt(bookName = '') {
     const tagOpen = '<nekotools:track.roster>';
     const tagClose = '</nekotools:track.roster>';
     let p = `${tagOpen}
-【角色索引】JSON 字段 "roster": {"add": {"角色名": "等级｜位置/备注"}, "del": ["角色名"]}
-要求：只写本轮变化——新角色出场就 add；角色死亡、离场、确定不再相关就 del。没有变化就写 "roster": {}。
-只记正文里真正出现过的人；不要写玩家/user，不要把地名、设定标题当角色。
+【角色索引】JSON 字段 "roster": {"add": {"角色名": "等级｜位置｜最近行动"}, "del": ["角色名"]}
+- 等级：T1 核心 / T2 重要 / T3 配角 / T4 背景
+- 位置：现在在哪
+- 最近行动：最近在做什么（一句话，别写成长篇）
+要求：新角色出场就 add；有变化就重新 add（整条覆盖）；角色死亡、离场、确定不再相关就 del。没有变化就写 "roster": {}。
+不要写玩家/user，不要把地名、设定标题当角色。更新时间由插件自动补，不要自己写层号。
 ${tagClose}`;
+
+    const cfg = getCachedConfig(bookName);
+    if (cfg.pinned.length) {
+        p += `\n【常驻关注】以下角色必须留在索引里，即使本轮没出场也不要删：\n${cfg.pinned.join('、')}`;
+    }
+    if (cfg.blocked.length) {
+        p += `\n【不记录】以下角色不要写进索引：\n${cfg.blocked.join('、')}`;
+    }
     const custom = (settings.customPrompts.roster || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
     return p;
@@ -498,6 +510,7 @@ registry.register({
                 if (book) {
                     // 清掉旧版本留在书里的「世界时钟」和自动扫描名册
                     cleanupLegacyEntries(name).catch(e => console.warn('[worldsim] 清理旧条目失败', e));
+                    await loadConfig(name);
                     await stBridge.deactivateStaleAutoBooks(name);
                     await stBridge.preloadActivatedLorebooks();
                 } else if (attempt < 10) {
@@ -511,6 +524,12 @@ registry.register({
 
         // 换角色/换会话时，追踪库要跟着换，并保证它处于全局激活状态
         const ctx = stBridge.getContext();
+
+        // 切档/新建档后重新载入世界配置（白名单/黑名单）
+        window.addEventListener('nekotool:slots-changed', () => {
+            const name = getLorebookName();
+            if (name) loadConfig(name).catch(e => console.warn('[worldsim] 世界配置加载失败', e));
+        });
 
         if (ctx.eventSource && ctx.eventTypes?.CHAT_CHANGED) {
             ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, () => {
@@ -528,6 +547,7 @@ registry.register({
                         }
                         lastChatId = chatId;
                         await stBridge.deactivateStaleAutoBooks(name);
+                        await loadConfig(name);
                         cleanupLegacyEntries(name).catch(e => console.warn('[worldsim] 清理旧条目失败', e));
                     } catch (e) {
                         console.warn('[worldsim] 切换会话同步世界书失败', e);
@@ -580,7 +600,7 @@ registry.register({
             console.warn('[worldsim] 追踪书不存在，本轮只注入世界规则与状态栏，跳过追踪契约:', bookName || '(无角色)');
         }
 
-        for (const msg of buildSystemMessages(needBig, includeTracking)) {
+        for (const msg of buildSystemMessages(needBig, includeTracking, bookName)) {
             ctx.__nt_pendingSystems.push(msg);
         }
     },
@@ -688,17 +708,39 @@ registry.register({
                 if (start === -1 || end === -1) throw new Error('no json brackets');
                 const data = JSON.parse(s.slice(start, end + 1));
 
+                const cfgNow = getCachedConfig(currentLorebook);
+                const blockedNow = new Set(cfgNow.blocked);
+                const pinnedNow = new Set(cfgNow.pinned);
+
                 if (data.chars && settings.enableChars) {
                     const focusArr = (settings.focusChars || '').split(/[,，\s]+/).map(n => n.trim()).filter(Boolean);
                     for (const [name, info] of Object.entries(data.chars)) {
                         const n = String(name).trim();
+                        if (!n || blockedNow.has(n)) continue;
                         if (focusArr.length > 0 && !focusArr.includes(n)) continue;
                         await stBridge.updateEntry(currentLorebook, `角色·${n}`, formatCharEntry(info), false, [n]);
                     }
                 }
                 if (data.roster) {
-                    // 索引由模型自己增删，插件只做 add/del 合并
-                    await applyAggregateOps(currentLorebook, '角色索引', data.roster, 998);
+                    // 索引由模型自己增删；插件补更新时间、过滤黑名单、保护钉住的人
+                    const raw = (data.roster && typeof data.roster === 'object') ? data.roster : {};
+                    const source = (raw.add && typeof raw.add === 'object') || Array.isArray(raw.del)
+                        ? raw
+                        : { add: raw, del: [] };
+                    const layer = (stBridge.getContext().chat || []).length;
+                    const add = {};
+                    for (const [name, value] of Object.entries(source.add || {})) {
+                        const n = String(name || '').trim();
+                        if (!n || blockedNow.has(n)) continue;
+                        const base = stripRosterLayer(String(value ?? '')) || 'T3';
+                        add[n] = `${base}｜第 ${layer} 层`;
+                    }
+                    const del = Array.isArray(source.del)
+                        ? source.del.map(String).filter(n => !blockedNow.has(n) && !pinnedNow.has(n))
+                        : [];
+                    if (Object.keys(add).length || del.length) {
+                        await applyAggregateOps(currentLorebook, '角色索引', { add, del }, 998);
+                    }
                 }
                 if (data.items && settings.enableItems) {
                     await applyAggregateOps(currentLorebook, '道具', data.items);
@@ -758,7 +800,7 @@ registry.register({
             lines.push(`条目正文合计：${chars} 字（约 ${Math.round(chars / 1.6)} tokens）`);
         }
 
-        const systems = buildSystemMessages(false, exists);
+        const systems = buildSystemMessages(false, exists, bookName);
         let sysChars = 0;
         lines.push(`\n注入契约：${systems.length} 段`);
         for (const s of systems) {
