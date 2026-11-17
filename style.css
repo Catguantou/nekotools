@@ -3869,6 +3869,49 @@ body {
     border-color: rgba(80, 115, 225, 0.8);
 }
 
+/* 世界日志 / 支线历史 */
+#nt-quick-modal .nt-world-log,
+#nt-quick-modal .nt-quest-history {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-left: 2px solid #2f5bd7;
+    background: rgba(255, 255, 255, 0.018);
+}
+#nt-quick-modal .nt-world-log-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+#nt-quick-modal .nt-world-log-row:last-child {
+    border-bottom: 0;
+}
+#nt-quick-modal .nt-world-log-meta {
+    color: #6f7a90;
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-size: 8px;
+    letter-spacing: 0.5px;
+}
+#nt-quick-modal .nt-world-log-text {
+    color: #d9dde6;
+    font-size: 10.5px;
+    line-height: 1.5;
+}
+#nt-quick-modal .nt-quest-history-row {
+    padding: 5px 9px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: #8d96a8;
+    font-size: 9.5px;
+    line-height: 1.5;
+}
+#nt-quick-modal .nt-quest-history-row:last-child {
+    border-bottom: 0;
+}
+
+
 /* TOOL 菜单状态条：TRACKING / ACTIVE BOOK / 收起 */
 #nt-quick-pop .nt-quick-status {
     position: relative;

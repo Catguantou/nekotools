@@ -5,6 +5,7 @@ import { parseGameDate, daysBetween } from './worldfmt.js';
 
 export const MAIN_TITLE = '主线';
 export const QUEST_TITLE = '支线';
+export const QUEST_HISTORY_TITLE = '支线历史';
 const MAIN_FIELDS = ['标题', '目标', '阶段', '进度', '失败代价', '下一步'];
 
 function findEntry(book, title) {
@@ -147,33 +148,95 @@ export function questFailed(value, todayText = '') {
     return daysBetween(today, deadline) < 0;
 }
 
+function isExplicitFail(status) {
+    return /^(已)?失败$|^已?过期$|^(已)?放弃$|^(已)?取消$|^已失效$/.test(String(status || '').trim());
+}
+
+function isDoneStatus(status) {
+    return /^(已)?完成$|^(已)?成功$|^已达成$|^已解决$/.test(String(status || '').trim());
+}
+
+function withQuestStatus(value, status) {
+    const q = parseQuestValue(value);
+    return [q.type || '支线', q.target || '', status, q.deadline || '无', q.fail || '', q.hook || '']
+        .join('｜');
+}
+
+/** 清理支线：明确失败直接删；超时未完成先标记「已过期」保留一轮，并写入支线历史 */
 function pruneQuestData(data, todayText) {
     const removed = [];
+    const marked = [];
+    const archived = [];
+    const today = parseGameDate(todayText);
     for (const [name, value] of Object.entries(data)) {
-        if (!questFailed(value, todayText)) continue;
-        delete data[name];
-        removed.push(name);
+        const q = parseQuestValue(value);
+        const status = String(q.status || '').trim();
+        if (isExplicitFail(status)) {
+            delete data[name];
+            removed.push(name);
+            // 「已过期」是插件上一轮写的标记，不再重复记历史
+            if (status !== '已过期') archived.push({ name, reason: `状态：${status}` });
+            continue;
+        }
+        if (isDoneStatus(status)) continue;
+        const deadline = parseGameDate(q.deadline);
+        if (today && deadline && daysBetween(today, deadline) < 0) {
+            data[name] = withQuestStatus(value, '已过期');
+            marked.push(name);
+            archived.push({ name, reason: `超时（期限 ${q.deadline}）` });
+        }
     }
-    if (removed.length) console.log(`[worldquest] 自动删除失败/过期支线：${removed.join('、')}`);
-    return removed;
+    if (removed.length) console.log(`[worldquest] 归档失败/过期支线：${removed.join('、')}`);
+    if (marked.length) console.log(`[worldquest] 支线超时，标记后下一轮归档：${marked.join('、')}`);
+    return { removed, marked, archived };
+}
+
+export async function readQuestHistory(bookName) {
+    if (!bookName) return [];
+    const book = await stBridge.loadWorldInfoAsync(bookName, true);
+    const entry = findEntry(book, QUEST_HISTORY_TITLE);
+    if (!entry) return [];
+    return String(entry.content || '').split('\n')
+        .map(line => line.trim())
+        .filter(line => line.startsWith('- '))
+        .map(line => line.slice(2));
+}
+
+async function appendQuestHistory(bookName, records, todayText = '') {
+    if (!bookName || !records.length) return;
+    const book = await stBridge.loadWorldInfoAsync(bookName, true);
+    if (!book || !book.entries) return;
+    const entry = findEntry(book, QUEST_HISTORY_TITLE);
+    const lines = entry
+        ? String(entry.content || '').split('\n').map(l => l.trim()).filter(l => l.startsWith('- '))
+        : [];
+    const date = parseGameDate(todayText) ? todayText : '未知日期';
+    for (const r of records) lines.push(`- ${date}｜${r.name}｜${r.reason}`);
+    const kept = lines.slice(-50);
+    stBridge.upsertEntryInBook(book, QUEST_HISTORY_TITLE, ['【支线历史】', ...kept].join('\n'), {
+        isConstant: false,
+        extra: { position: 0, depth: 0, order: 813, key: [] },
+    });
+    await stBridge.persistLorebook(bookName, book);
 }
 
 /** 每轮轻量清理：没有失败/过期支线时不写盘 */
 export async function pruneQuests(bookName, todayText = '') {
-    if (!bookName) return [];
+    if (!bookName) return { removed: [], marked: [], archived: [] };
     const book = await stBridge.loadWorldInfoAsync(bookName, true);
-    if (!book || !book.entries) return [];
+    if (!book || !book.entries) return { removed: [], marked: [], archived: [] };
     const entry = findEntry(book, QUEST_TITLE);
-    if (!entry) return [];
+    if (!entry) return { removed: [], marked: [], archived: [] };
     const data = parseQuests(entry.content);
-    const removed = pruneQuestData(data, todayText);
-    if (!removed.length) return [];
+    const result = pruneQuestData(data, todayText);
+    if (!result.removed.length && !result.marked.length) return result;
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: true,
         extra: { position: 0, depth: 0, order: 812, key: [] },
     });
     await stBridge.persistLorebook(bookName, book);
-    return removed;
+    if (result.archived.length) await appendQuestHistory(bookName, result.archived, todayText);
+    return result;
 }
 
 export function renderQuests(quests) {
@@ -214,7 +277,6 @@ export async function applyQuests(bookName, raw, { today = '' } = {}) {
         if (text) data[n] = text;
         else delete data[n];
     }
-    pruneQuestData(data, today);
 
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: true,

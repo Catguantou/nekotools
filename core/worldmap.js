@@ -40,6 +40,8 @@ function parseSiteDesc(desc) {
             out.interact = part.replace(/^可交互[：:]\s*/, '');
         } else if (part.startsWith('常驻')) {
             out.regulars = part.replace(/^常驻[：:]\s*/, '');
+        } else if (part.startsWith('路程') || part.startsWith('耗时')) {
+            out.travel = part.replace(/^(路程|耗时)[：:]\s*/, '');
         } else if (!out.type) {
             out.type = part;
         }
@@ -52,6 +54,17 @@ const safeMapName = (name) => {
     const n = String(name || '').trim();
     return n && !BAD_MAP_NAMES.has(n) ? n : '';
 };
+
+/** 解析「A=1天、B=10分钟」这类路程字段 */
+export function travelEntries(text) {
+    return String(text || '')
+        .split(/[、,，;；]/)
+        .map(part => {
+            const m = part.trim().match(/^(.+?)\s*[=:：]\s*(.+)$/);
+            return m ? { to: m[1].trim(), label: m[2].trim() } : null;
+        })
+        .filter(Boolean);
+}
 
 export function parseMap(content) {
     const data = { current: '', regions: {}, cities: {}, sites: {} };
@@ -133,6 +146,7 @@ export function renderMap(data) {
             if (s.direction) bits.push(`方位：${s.direction}`);
             if (s.type) bits.push(s.type);
             if (s.exits && s.exits.length) bits.push(`出口：${s.exits.join('、')}`);
+            if (s.travel) bits.push(`路程：${s.travel}`);
             if (s.interact) bits.push(`可交互：${s.interact}`);
             if (s.regulars) bits.push(`常驻：${s.regulars}`);
             lines.push(bits.join('｜'));

@@ -56,6 +56,23 @@ export function getSlotClock(bookName) {
     return clock && typeof clock === 'object' ? clock : null;
 }
 
+/** 读取这一档的世界变化日志（插件自动记录，零 token） */
+export function getSlotLog(bookName) {
+    if (!bookName) return [];
+    const log = readMeta()[bookName]?.worldLog;
+    return Array.isArray(log) ? log : [];
+}
+
+/** 追加一条世界变化日志，只留最近 40 条 */
+export function appendSlotLog(bookName, text, layer = 0) {
+    if (!bookName || !text) return;
+    const meta = readMeta();
+    const slot = meta[bookName] || {};
+    const log = Array.isArray(slot.worldLog) ? slot.worldLog.slice(-39) : [];
+    log.push({ at: Date.now(), layer, text: String(text).slice(0, 500) });
+    setSlotMeta(bookName, { worldLog: log });
+}
+
 /** 保存这一档的状态栏时钟；不往世界书里写任何东西 */
 export function setSlotClock(bookName, clock) {
     if (!bookName) return;

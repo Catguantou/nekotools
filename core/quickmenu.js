@@ -9,6 +9,7 @@ import {
     exportCurrent,
     importCurrent,
     getSlotClock,
+    getSlotLog,
     readRoster,
     readCharacterEntry,
     saveCharacterEntry,
@@ -18,9 +19,9 @@ import {
 } from './slots.js';
 import { slotLabel, parseStatusFields, parseCharacterYaml } from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
-import { readMap, findPath } from './worldmap.js';
+import { readMap, findPath, travelEntries } from './worldmap.js';
 import { refreshChar } from './worldindex.js';
-import { readMain, readQuests, clampProgress, saveMain, saveQuests } from './worldquest.js';
+import { readMain, readQuests, readQuestHistory, clampProgress, saveMain, saveQuests } from './worldquest.js';
 import { generateQuiet } from './st_api.js';
 import { applyRefreshData } from '../modules/worldsim.js';
 import { settings } from './settings.js';
@@ -440,6 +441,39 @@ function updateClockUi() {
     hint.textContent = clock && (clock.time || clock.place)
         ? `${clock.time || '—'} · ${clock.place || '—'}`
         : '还没有时钟';
+}
+
+// ========== 世界日志 ==========
+
+function showWorldLogModal() {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+    const body = document.createElement('div');
+    body.className = 'nt-world-log';
+    const rows = getSlotLog(book);
+    if (!rows.length) {
+        body.textContent = '还没有世界变化记录。发一轮消息后，插件会把角色/国家/支线变化记在这里。';
+        openModal({ title: '世界日志', body });
+        return;
+    }
+    for (const row of rows.slice().reverse()) {
+        const line = document.createElement('div');
+        line.className = 'nt-world-log-row';
+        const time = new Date(row.at || Date.now()).toLocaleString('zh-CN', { hour12: false });
+        const meta = document.createElement('span');
+        meta.className = 'nt-world-log-meta';
+        meta.textContent = `${time} · 第 ${row.layer || '?'} 层`;
+        const text = document.createElement('span');
+        text.className = 'nt-world-log-text';
+        text.textContent = row.text;
+        line.appendChild(meta);
+        line.appendChild(text);
+        body.appendChild(line);
+    }
+    openModal({ title: '世界日志', body });
 }
 
 // ========== 角色管理 ==========
@@ -1300,6 +1334,7 @@ async function showMapModal(opts = {}) {
             };
             addFact('可交互', site.interact);
             addFact('常驻', site.regulars);
+            addFact('路程', site.travel || '未记录（下一次地图更新补）');
             addFact('方位', normalizeDirection(site.direction) || mapInferDirection(site));
             detail.appendChild(facts);
 
@@ -1308,10 +1343,12 @@ async function showMapModal(opts = {}) {
             exits.className = 'nt-map-exits';
             for (const exit of site.exits || []) {
                 const target = data.sites[exit];
+                const travel = travelEntries(site.travel).find(t => t.to === exit
+                    || t.to.includes(exit) || exit.includes(t.to));
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'nt-map-exit';
-                b.textContent = `➜ ${exit}`;
+                b.textContent = `➜ ${exit}${travel ? ` · ${travel.label}` : ''}`;
                 if (target) b.addEventListener('click', () => jumpTo(exit));
                 else { b.disabled = true; b.className += ' disabled'; }
                 exits.appendChild(b);
@@ -1628,6 +1665,7 @@ async function showQuestsModal() {
     }
     const main = await readMain(book);
     const quests = await readQuests(book);
+    const questHistory = await readQuestHistory(book);
 
     const body = document.createElement('div');
     body.className = 'nt-quests';
@@ -1713,6 +1751,22 @@ async function showQuestsModal() {
     addBtn.textContent = '＋ 新增支线';
     addBtn.addEventListener('click', () => addQuestRow());
     body.appendChild(addBtn);
+
+    if (questHistory.length) {
+        const historyHead = document.createElement('div');
+        historyHead.className = 'nt-quest-section';
+        historyHead.textContent = '支线历史（最近失败 / 过期）';
+        body.appendChild(historyHead);
+        const historyBox = document.createElement('div');
+        historyBox.className = 'nt-quest-history';
+        for (const line of questHistory.slice(-8).reverse()) {
+            const row = document.createElement('div');
+            row.className = 'nt-quest-history-row';
+            row.textContent = line;
+            historyBox.appendChild(row);
+        }
+        body.appendChild(historyBox);
+    }
 
     const save = async () => {
         const nextMain = {};
@@ -1972,7 +2026,7 @@ async function showRefreshModal() {
         const recordUserChar = settings.recordUserCharacter === true;
         if (selected.includes('chars')) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`);
         if (selected.includes('world')) schema.push('"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}');
-        if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜可交互：...｜常驻：..."}}}');
+        if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}');
         if (selected.includes('quests')) {
             schema.push('"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}');
             schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}');
@@ -2187,6 +2241,7 @@ function buildPop() {
     const items = [
         { group: '世界', icon: '🕰', key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气', enabled: true },
         { group: '世界', icon: '🗺', key: 'map', label: '地图', hint: '区域 / 城市 / 小地点', enabled: true },
+        { group: '世界', icon: '📜', key: 'log', label: '世界日志', hint: '最近的角色 / 世界 / 支线变化', enabled: true },
         { group: '角色', icon: '👥', key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
         { group: '角色', icon: '📋', key: 'quests', label: '可办事项', hint: '主线 / 支线，可编辑', enabled: true },
         { group: '行动', icon: '🎯', key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪', enabled: true },
@@ -2225,6 +2280,7 @@ function buildPop() {
         row.addEventListener('click', () => {
             closePop();
             if (item.key === 'clock') showClockModal();
+            else if (item.key === 'log') showWorldLogModal();
             else if (item.key === 'roster') showRosterModal();
             else if (item.key === 'action') showActionModal();
             else if (item.key === 'map') showMapModal();

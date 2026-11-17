@@ -1,10 +1,10 @@
 import { registry } from '../core/registry.js';
 import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
-import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
+import { touchSlot, getSlotClock, setSlotClock, appendSlotLog } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
-import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
+import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, findPath, MAP_TITLE } from '../core/worldmap.js';
 import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent } from '../core/worldquest.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
@@ -53,6 +53,7 @@ const questTries = new Map();
 // 每轮只读快照（不写回、不持久化）：用于「在场候选」和 T1 名单
 const presenceCache = new Map();
 const rosterCache = new Map();
+const mapCache = new Map();
 // 连续在场轮数：用于“5 轮内一直在场”的角色自动按 T2 调度；不改索引，AI 仍可改写等级
 const presenceStreak = new Map();
 
@@ -186,6 +187,8 @@ function refreshSnapshots(bookName, book) {
 
     const idx = Object.values(book.entries).find(e => e && e.comment === INDEX_TITLE);
     rosterCache.set(bookName, idx ? parseIndex(idx.content).chars : []);
+    const mapEntry = Object.values(book.entries).find(e => e && e.comment === MAP_TITLE);
+    mapCache.set(bookName, mapEntry ? parseMap(mapEntry.content) : null);
 }
 
 /** 连续在场轮数：5 轮内一直在当前地点的角色，调度时按 T2 处理（不写索引，AI 仍有等级决定权） */
@@ -217,10 +220,12 @@ function buildMapGenesisPrompt(bookName = '') {
 {
   "regions": {"区域/国家名": "方位：西｜类型：王国｜一句话描述"},
   "cities": {"区域名": {"城市名": "方位：中｜类型：都城｜一句话描述"}},
-  "sites": {"城市名": {"地点名": "方位：南｜类型：街区｜出口：A、B｜可交互：...｜常驻：..."}}
+  "sites": {"城市名": {"地点名": "方位：南｜类型：街区｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}
 }
 - 2–3 个大地图区域（国家/地区），每个区域 1–2 个中地图城市，每个城市 3–5 个小地点。
 - 方位用 北/南/东/西/中/东北/西北/东南/西南；同一层的地点要分散开，不要全挤在中间。
+- **地点之间必须写路程**：出口：A、B｜路程：A=1天、B=10分钟；时间从当前地点出发计算；没有路程的出口视为不可靠。
+- 路程用「分钟 / 小时 / 天」，必须符合世界观（步行、马车、船等）；同一段路不要来回不一致。
 - 必须包含主角当前地点，且它在某个城市下；地点之间用出口互相连接。
 - **地点名全局唯一，不要重名**；不同城市的同名地点请用“城市·地点”区分。
 - 先复用世界书里出现过的地名，不要造与设定冲突的地方。
@@ -237,10 +242,11 @@ function buildMapPrompt() {
 {
   "regions": {"区域/国家名": "方位：西｜类型｜一句话"},
   "cities": {"区域名": {"城市名": "方位：中｜类型｜一句话"}},
-  "sites": {"城市名": {"地点名": "方位：南｜类型｜出口：A、B｜可交互：...｜常驻：..."}},
+  "sites": {"城市名": {"地点名": "方位：南｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}},
   "del": {"regions": ["..."], "cities": ["..."], "sites": ["..."]}
 }
 只写本轮新出现/变化的地点；当前地点由插件自动写。方位用 北/南/东/西/中/东北/西北/东南/西南，同层要分散。地点名**全局唯一**，不要重名；重名用“城市·地点”区分。地点名要能在正文里出现，且位置必须使用这里的小地点名。
+**每个出口都要有路程**：出口：A、B｜路程：A=1天、B=10分钟；时间从本地出发；角色移动、NPC 赶来、支线赶期限都以这个为准。
 </nekotools:track.map>`;
     return p;
 }
@@ -282,6 +288,7 @@ function buildQuestPrompt() {
 【支线】JSON 字段 "quests": {"add": {"支线名":"类型｜目标｜状态｜期限｜失败条件｜钩子"}, "del": ["支线名"]}
 只写新增/完成/失败/删除的支线；这里只维护支线状态，不写本轮短期走向；支线是**可执行的目标/钩子**，已经发生的公开事件写进世界局势的社会新闻，不要重复。可以自然生成新的支线钩子，但不要围着玩家转。
 「期限」写绝对日期（如 2009年11月05日），没有期限写“无”；「失败条件」一句话写清怎样算失败。期限已过且状态未完成、或状态写失败的支线，插件会自动删除。
+支线期限要和地图路程一致：如果从当前地点赶过去需要的时间已经超过期限，就不能写成“来得及”。
 </nekotools:track.quest>`;
 }
 
@@ -430,6 +437,7 @@ function buildPresencePrompt(bookName) {
     const placeText = clock && clock.place ? String(clock.place) : '';
     const place = placeText ? `当前地点：${placeText}。` : '';
     let candidates = '';
+    let travel = '';
     if (placeText) {
         const chars = presenceCache.get(bookName) || [];
         const here = chars
@@ -439,9 +447,17 @@ function buildPresencePrompt(bookName) {
         if (here.length) {
             candidates = `按当前档案/日程，此刻在「${placeText}」的候选：${here.join('、')}。只能让这些人在场；其他角色要出场必须写明怎么赶来。`;
         }
+        const map = mapCache.get(bookName);
+        const path = map ? findPath(map, placeText) : null;
+        const site = path && path.site && map.sites ? map.sites[path.site] : null;
+        if (site && site.travel) {
+            travel = `当前地点到各地点的路程：${site.travel}。角色从别处赶来时必须写清路上花了多久，不能瞬移。`;
+        } else if (site) {
+            travel = '当前地点还没有记录路程；角色从别处赶来时必须自己写清路上时间，不能瞬移。';
+        }
     }
     let p = `<nekotools:presence>
-【在场与日程】${place}${candidates}
+【在场与日程】${place}${candidates}${travel}
 - 角色出场必须满足：索引里的位置就是当前地点，或按他的日程/当前行动确实在此地。
 - 不在场的角色不能凭空出现；若要出场，必须先写清他如何赶到（路程、时间、理由）。
 - 每次让角色出场前先检查：他真的会在这里吗？不确定就让他不在。
@@ -1147,6 +1163,49 @@ ${tagClose}`;
  * 「请求更新」按钮的写回入口：只处理静默生成返回的 JSON。
  * 普通回合仍走 onResponse，不经过这里。
  */
+function worldChangeText(data, questPrune = null) {
+    const bits = [];
+    const names = (obj) => Object.keys(obj && typeof obj === 'object' ? obj : {})
+        .filter(Boolean).slice(0, 6).join('、');
+    if (data && data.chars) {
+        const n = names(data.chars);
+        if (n) bits.push(`角色 ${n}`);
+    }
+    if (data && data.world) {
+        const countries = names(data.world['国家']);
+        const factions = names(data.world['势力']);
+        const news = names(data.world['社会新闻']);
+        if (countries) bits.push(`国家 ${countries}`);
+        if (factions) bits.push(`势力 ${factions}`);
+        if (news) bits.push(`新闻 ${news}`);
+    }
+    if (data && data.map) {
+        const sites = names(data.map.sites);
+        if (sites) bits.push(`地点 ${sites}`);
+    }
+    if (data && data.main) {
+        const p = data.main['进度'];
+        if (p !== undefined) bits.push(`主线 ${p}%`);
+    }
+    if (data && data.quests) {
+        const add = names(data.quests.add || {});
+        const del = Array.isArray(data.quests.del) ? data.quests.del.slice(0, 4).join('、') : '';
+        if (add) bits.push(`支线 +${add}`);
+        if (del) bits.push(`支线 -${del}`);
+    }
+    if (questPrune) {
+        if (questPrune.marked && questPrune.marked.length) bits.push(`支线超时 ${questPrune.marked.join('、')}`);
+        if (questPrune.removed && questPrune.removed.length) bits.push(`支线归档 ${questPrune.removed.join('、')}`);
+    }
+    return bits.join(' / ');
+}
+
+function recordWorldChange(bookName, data, layer = 0, questPrune = null) {
+    const text = worldChangeText(data, questPrune);
+    if (!text) return;
+    try { appendSlotLog(bookName, text, layer); } catch (e) { console.warn('[worldsim] 世界日志写入失败', e); }
+}
+
 export async function applyRefreshData(bookName, data, layer = 0) {
     const summary = { chars: 0, world: 0, map: 0, main: 0, quests: 0, items: 0, foreshadow: 0, plot: 0 };
     if (!bookName || !data || typeof data !== 'object') return summary;
@@ -1184,6 +1243,7 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     if (data.map) {
         const map = await applyMapOps(bookName, data.map);
         summary.map = map ? Object.keys(map.sites || {}).length : 0;
+        if (map) appliedMap = map;
     }
     if (data.main) {
         const main = await applyMain(bookName, data.main);
@@ -1193,10 +1253,12 @@ export async function applyRefreshData(bookName, data, layer = 0) {
             questReady.set(bookName, mainHasContent(main));
         }
     }
+    let questPrune = null;
+    let appliedMap = null;
     if (data.quests && settings.enableQuests) {
         const quests = await applyQuests(bookName, data.quests, { today: (getSlotClock(bookName) || {}).time || '' });
         summary.quests = quests ? Object.keys(quests).length : 0;
-        await pruneQuests(bookName, (getSlotClock(bookName) || {}).time || '');
+        questPrune = await pruneQuests(bookName, (getSlotClock(bookName) || {}).time || '');
     }
     if (data.items) {
         const map = await applyAggregateOps(bookName, '道具', data.items, 900, { keyword: true });
@@ -1217,6 +1279,8 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         summary.plot = map ? Object.keys(map).length : 0;
     }
     refreshSnapshots(bookName, book);
+    if (appliedMap) mapCache.set(bookName, appliedMap);
+    recordWorldChange(bookName, data, layer, questPrune);
     return summary;
 }
 
@@ -1591,7 +1655,10 @@ registry.register({
                 }
                 if (data.map && settings.enableMap) {
                     const mapData = await applyMapOps(currentLorebook, data.map);
-                    if (mapData) mapReady.set(currentLorebook, mapHasStructure(mapData));
+                    if (mapData) {
+                        mapReady.set(currentLorebook, mapHasStructure(mapData));
+                        mapCache.set(currentLorebook, mapData);
+                    }
                 }
                 if (data.main && settings.enableQuests) {
                     const mainData = await applyMain(currentLorebook, data.main);
@@ -1602,14 +1669,16 @@ registry.register({
                         if (ready) questTries.delete(currentLorebook);
                     }
                 }
+                let questPrune = null;
                 if (data.quests && settings.enableQuests) {
                     await applyQuests(currentLorebook, data.quests, { today: (getSlotClock(currentLorebook) || {}).time || '' });
                 }
-                if (settings.enableQuests) await pruneQuests(currentLorebook, (getSlotClock(currentLorebook) || {}).time || '');
+                if (settings.enableQuests) questPrune = await pruneQuests(currentLorebook, (getSlotClock(currentLorebook) || {}).time || '');
                 if (data.foreshadow && settings.enableForeshadow) {
                     const foreMap = await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow, 920, { keyword: true });
                     if (foreMap) await syncNames(currentLorebook, 'foreshadows', Object.keys(foreMap));
                 }
+                recordWorldChange(currentLorebook, data, replyLayer, questPrune);
             } catch (e) {
                 console.warn('[worldsim] JSON 解析失败', e, captured.ws_update);
             }
