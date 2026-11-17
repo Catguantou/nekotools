@@ -44,7 +44,6 @@ export const stBridge = {
             // 连坐删角色时是否连聊天记录一起删（默认否，只删卡）
             deleteChatsWithChar: cfg.deleteChatsWithChar === true,
             autoActivateCharBook: cfg.autoActivateCharBook !== false,
-            independentInject: cfg.independentInject !== false,
         };
     },
 
@@ -526,75 +525,6 @@ export const stBridge = {
         return true;
     },
 
-    async syncFromCharacterCard(charId, silent = false) {
-        const ctx = this.getContext();
-        const targetChar = charId !== null && charId !== undefined ? ctx.characters?.[charId] : this.getCurrentCharacter();
-        if (!targetChar) return false;
-        
-        const charName = targetChar.name || '未命名角色';
-        const book = targetChar.data?.character_book;
-        const existingWorld = targetChar.data?.extensions?.world;
-        
-        if (existingWorld && this.getWorldNames().includes(existingWorld)) {
-            return existingWorld;
-        }
-        
-        if (!book || !book.entries || !book.entries.length) return false;
-        
-        const targetName = this.sanitizeWorldName(`【角色卡内嵌】${charName}`);
-        const exists = this.getWorldNames().includes(targetName);
-        if (exists && silent) return targetName;
-        
-        const initData = { entries: {} };
-        book.entries.forEach((e, index) => {
-            const uid = (Date.now() + index).toString();
-            initData.entries[uid] = {
-                uid: uid,
-                key: e.keys || [],
-                keysecondary: e.secondary_keys || [],
-                comment: e.comment || e.name || `条目_${index}`,
-                content: e.content || '',
-                constant: e.constant || false,
-                selective: e.selective || false,
-                order: e.insertion_order || 100,
-                position: e.position === 'before_char' ? 0 : 4,
-                disable: e.enabled === false,
-                excludeRecursion: true,
-                preventRecursion: true
-            };
-        });
-        
-        try {
-            const headers = {
-                ...(typeof ctx.getRequestHeaders === 'function' ? ctx.getRequestHeaders() : {}),
-                'Content-Type': 'application/json'
-            };
-            const res = await fetch('/api/worldinfo/edit', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({ name: targetName, data: initData })
-            });
-            if (!res.ok) return false;
-
-            const wInfo = ctx.world_info || ctx.worldInfo;
-            if (wInfo) wInfo[targetName] = initData;
-
-            await refreshWorldList();
-
-            const charIndex = Array.isArray(ctx.characters) ? ctx.characters.indexOf(targetChar) : -1;
-            if (charIndex >= 0) {
-                await writeCharWorld(charIndex, targetName);
-            } else {
-                if (!targetChar.data) targetChar.data = {};
-                if (!targetChar.data.extensions) targetChar.data.extensions = {};
-                targetChar.data.extensions.world = targetName;
-            }
-            return targetName;
-        } catch (e) {
-            console.error('[nekotools] 角色卡同步失败', e);
-            return false;
-        }
-    },
 
     async cleanupCharacterWorldbooks(payload) {
         const char = payload?.character || payload;
@@ -662,6 +592,38 @@ export const stBridge = {
         }
         if (removed) await this.persistLorebook(bookName, book);
         return removed;
+    },
+
+    /** 在已加载的 book 对象上就地插入/更新条目，返回条目对象（不再额外读盘） */
+    upsertEntryInBook(book, title, content, { isConstant = false, keywords = [], extra = {} } = {}) {
+        if (!book.entries) book.entries = {};
+        let entry = Object.values(book.entries).find(e => e && e.comment === title);
+        if (!entry) {
+            const uid = Date.now().toString() + Math.floor(Math.random() * 1000);
+            entry = {
+                uid,
+                key: isConstant ? [] : (keywords.length ? keywords : [title]),
+                keysecondary: [],
+                comment: title,
+                content,
+                constant: isConstant,
+                selective: !isConstant,
+                order: 100,
+                position: 0,
+                disable: false,
+                excludeRecursion: true,
+                preventRecursion: true,
+                ...extra,
+            };
+            book.entries[uid] = entry;
+        } else {
+            entry.content = content;
+            entry.constant = isConstant;
+            entry.selective = !isConstant;
+            if (!isConstant && keywords.length) entry.key = keywords;
+            Object.assign(entry, extra);
+        }
+        return entry;
     },
 
     async updateEntry(bookName, title, content, isConstant = false, keywords = [], extra = {}) {

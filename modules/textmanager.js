@@ -8,7 +8,6 @@ const DEFAULT_SLOP_RULES = [
 ];
 
 const tmSettings = {
-    autoCleanOnReceive: false,
     hideSlopVisual: true,
     exportIncludeNames: true,
     exportSkipHidden: false,
@@ -57,8 +56,11 @@ function buildStatusBar(raw) {
     return bar;
 }
 
-export function upgradeStatusBars() {
-    document.querySelectorAll('#chat .mes_text').forEach(textEl => {
+export function upgradeStatusBars(root = document) {
+    const textEls = root === document
+        ? document.querySelectorAll('#chat .mes_text')
+        : (root.matches?.('.mes_text') ? [root] : (root.querySelectorAll ? [...root.querySelectorAll('.mes_text')] : []));
+    textEls.forEach(textEl => {
         // 旧消息可能已经是渲染好的 HTML，直接置顶即可
         const existing = textEl.querySelector('.ws-status-bar');
         if (existing) {
@@ -539,16 +541,18 @@ registry.register({
                 header.appendChild(starBtn);
             });
 
-            // 状态栏：模型把内容输出在正文末尾，这里把它升级成样式条并置顶
-            upgradeStatusBars();
-
-            // 数据层已标记 hidden 的楼层，重载后重新套上视觉屏蔽
+            // 状态栏：只处理本次变动到的消息（全量留给初次加载）
             const ctx = stBridge.getContext();
-            document.querySelectorAll('#chat .mes[mesid]').forEach(el => {
-                if (el.classList.contains('nt-visual-hidden')) return;
-                const msg = ctx.chat?.[Number(el.getAttribute('mesid'))];
-                if (msg?.extra?.hidden) el.classList.add('nt-visual-hidden');
-            });
+            if (touched.size) {
+                touched.forEach(mesEl => upgradeStatusBars(mesEl));
+                touched.forEach(el => {
+                    if (el.classList.contains('nt-visual-hidden')) return;
+                    const mid = el.getAttribute('mesid');
+                    if (mid === null) return;
+                    const msg = ctx.chat?.[Number(mid)];
+                    if (msg?.extra?.hidden) el.classList.add('nt-visual-hidden');
+                });
+            }
             }, 100);
         });
 
@@ -559,5 +563,16 @@ registry.register({
                 subtree: true
             });
         }
+
+        // 初次加载：把已渲染好的旧楼层补处理一遍
+        setTimeout(() => {
+            upgradeStatusBars();
+            applySlopVisualAll();
+            document.querySelectorAll('#chat .mes[mesid]').forEach(el => {
+                if (el.classList.contains('nt-visual-hidden')) return;
+                const msg = stBridge.getContext().chat?.[Number(el.getAttribute('mesid'))];
+                if (msg?.extra?.hidden) el.classList.add('nt-visual-hidden');
+            });
+        }, 600);
     }
 });

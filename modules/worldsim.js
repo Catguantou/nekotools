@@ -286,10 +286,43 @@ async function applyAggregateOps(bookName, title, raw, order = 900) {
         map[key] = text;
     }
 
-    await stBridge.updateEntry(bookName, title, formatAggregate(map), true, [], {
-        position: 4, depth: 999, order
+    // 就地改这一条，再整本存一次；避免 updateEntry 再读一遍盘
+    stBridge.upsertEntryInBook(book, title, formatAggregate(map), {
+        isConstant: true,
+        extra: { position: 4, depth: 999, order },
     });
+    await stBridge.persistLorebook(bookName, book);
     return true;
+}
+
+/** 兜底：模型没按契约包标签时，把漏到正文的未闭合 tag / 推演块切掉 */
+function sanitizeLastMessage() {
+    const ctx = stBridge.getContext();
+    const chat = ctx.chat || [];
+    let idx = -1;
+    for (let i = chat.length - 1; i >= 0; i--) {
+        if (chat[i] && !chat[i].is_user) { idx = i; break; }
+    }
+    if (idx < 0) return;
+
+    const msg = chat[idx];
+    const before = String(msg.mes || '');
+    let text = before;
+
+    // 未闭合的 <ws_xxx> 标签及其后内容
+    text = text.replace(/\n*\s*<(ws_[a-z_]+)>[\s\S]*$/i, '');
+    // 漏出标签的剧情推演块（同时命中「走向1」才判定，避免误伤正文）
+    if (/走向\s*1/.test(text) && /(剧情推演|行为推演)/.test(text)) {
+        text = text.replace(/\n*\s*(?:【剧情推演[^\n]*|##\s*1[.、]?\s*行为推演)[\s\S]*$/, '');
+    }
+
+    text = text.trim();
+    if (text === before) return;
+
+    msg.mes = text;
+    try { ctx.updateMessageBlock?.(idx, msg); } catch (_) {}
+    try { ctx.saveChat?.(); } catch (_) {}
+    console.warn('[worldsim] 已拦截漏出正文的标签/推演内容');
 }
 
 registry.register({
@@ -397,6 +430,9 @@ registry.register({
 
         const currentLorebook = getLorebookName();
         if (!currentLorebook) return;
+
+        // 先收拾模型漏到正文的标签/推演块
+        sanitizeLastMessage();
 
         // 强制从磁盘读，避免书被删后仍从旧缓存写回去（导致「已删除的追踪书复活」）
         let book = await stBridge.loadWorldInfoAsync(currentLorebook, true);
