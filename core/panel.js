@@ -384,15 +384,19 @@ export function mountPanel() {
                             </div>
                         </div>
                         <div class="nt-slop-add">
-                            <select id="nt-slop-type" class="nt-data-select" style="width:96px;">
+                            <select id="nt-slop-type" class="nt-data-select" style="width:92px;">
                                 <option value="literal">字面删除</option>
                                 <option value="regex">正则 /…/</option>
-                                <option value="replace">替换 A=>B</option>
+                                <option value="replace">替换</option>
                             </select>
-                            <input id="nt-slop-input" class="nt-data-input" style="flex:1; width:auto;" placeholder="输入词 / /正则/gm / 旧=>新">
+                            <select id="nt-slop-preset" class="nt-data-select" style="width:132px;">
+                                <option value="">常见规则…</option>
+                            </select>
+                            <input id="nt-slop-a" class="nt-data-input" style="flex:1; width:auto;" placeholder="词 / 正则">
+                            <input id="nt-slop-b" class="nt-data-input" style="flex:1; width:auto; display:none;" placeholder="替换为">
                             <button id="nt-slop-add" class="nt-btn-text">[添加]</button>
                         </div>
-                        <div class="nt-hint" style="margin:4px 0 6px;">快捷语法：直接填词=按字面删除；<code>/正则/gm</code>；<code>旧=>新</code> 替换；点左侧圆点可停用某条</div>
+                        <div class="nt-hint" style="margin:4px 0 6px;">快捷语法：字面=直接删；正则选 <code>/…/</code>、常见规则可从下拉直接选；替换填 A、B 两个框；点左侧圆点可停用</div>
                         <div id="nt-slop-list" class="nt-slop-list"></div>
                         <details class="nt-slop-raw">
                             <summary class="nt-summary">高级：直接编辑原始词库</summary>
@@ -969,34 +973,89 @@ export function mountPanel() {
         renderSlopList();
     });
 
+    // 常见八股正则，选中即填入输入框
+    const SLOP_PRESETS = [
+        { label: '不是…而是…', value: '不是([^，。\\n]+)，而是' },
+        { label: '不是…是…', value: '不是([^，。\\n]+)，是' },
+        { label: '没有…也没有…', value: '没有([^，。\\n]+)，也没有' },
+        { label: '一丝/微微/缓缓', value: '一丝|微微|缓缓|轻轻' },
+        { label: '眼中闪过', value: '(?:眼中|眼底|眸中)(?:闪过|掠过)' },
+        { label: '嘴角勾起', value: '嘴角[^。\\n]{0,6}(?:勾起|扬起|上扬)' },
+        { label: '仿佛/宛如', value: '仿佛|宛如|好似' },
+        { label: '不禁/不由得', value: '不禁|不由得' },
+        { label: '空气凝固', value: '空气(?:仿佛|似乎)?凝固' },
+        { label: '指节泛白', value: '(?:指节|关节)(?:微微)?泛白' },
+        { label: '生理性/本能', value: '生理性|本能地' },
+        { label: '语气', value: '语气' },
+        { label: '引用行', value: '/^[>＞].*$/gm' },
+    ];
+
+    const slopTypeSel = wrap.querySelector('#nt-slop-type');
+    const slopPresetSel = wrap.querySelector('#nt-slop-preset');
+    const slopA = wrap.querySelector('#nt-slop-a');
+    const slopB = wrap.querySelector('#nt-slop-b');
     const slopAddBtn = wrap.querySelector('#nt-slop-add');
+
+    if (slopPresetSel) {
+        SLOP_PRESETS.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.value;
+            opt.textContent = p.label;
+            slopPresetSel.appendChild(opt);
+        });
+        slopPresetSel.onchange = () => {
+            if (!slopPresetSel.value) return;
+            slopTypeSel.value = 'regex';
+            slopB.style.display = 'none';
+            slopA.value = slopPresetSel.value;
+            slopPresetSel.value = '';
+            slopA.focus();
+        };
+    }
+
+    if (slopTypeSel) {
+        slopTypeSel.onchange = () => {
+            slopB.style.display = slopTypeSel.value === 'replace' ? '' : 'none';
+            if (slopTypeSel.value === 'replace') slopB.focus();
+        };
+    }
+
     if (slopAddBtn) {
         slopAddBtn.onclick = () => {
-            const type = wrap.querySelector('#nt-slop-type').value;
-            let val = wrap.querySelector('#nt-slop-input').value.trim();
-            if (!val) return;
+            const type = slopTypeSel.value;
+            let a = slopA.value.trim();
+            const b = slopB.value.trim();
+            if (!a) return;
 
-            if (type === 'replace' && !val.includes('=>')) {
-                if (window.toastr) toastr.warning('替换规则需要「旧=>新」格式');
-                return;
-            }
-            if (type === 'regex') {
-                if (!/^\/.+\/[gimuy]*$/.test(val)) {
-                    val = '/' + val.replace(/^\//, '').replace(/\/$/, '') + '/gm';
+            let val;
+            if (type === 'replace') {
+                if (!b) {
+                    if (window.toastr) toastr.warning('替换模式需要填写右侧「替换为」');
+                    return;
                 }
-                const m = val.match(/^\/(.+)\/([gimuy]*)$/);
+                val = `${a}=>${b}`;
+            } else if (type === 'regex') {
+                let src = a;
+                if (!/^\/.+\/[gimuy]*$/.test(src)) {
+                    src = '/' + src.replace(/^\//, '').replace(/\/$/, '') + '/gm';
+                }
+                const m = src.match(/^\/(.+)\/([gimuy]*)$/);
                 try {
                     new RegExp(m[1], m[2]);
                 } catch (e) {
                     if (window.toastr) toastr.error('正则语法无效');
                     return;
                 }
+                val = src;
+            } else {
+                val = a;
             }
 
             const lines = getSlopLines().filter(l => l.trim() !== '');
             lines.push(val);
             setSlopLines(lines);
-            wrap.querySelector('#nt-slop-input').value = '';
+            slopA.value = '';
+            slopB.value = '';
             if (window.toastr) toastr.success('已添加规则');
         };
     }

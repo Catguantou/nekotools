@@ -1264,3 +1264,31 @@ body {
     padding: 0 12px 0 22px !important;
     background: transparent !important;
 }
+
+/* 再降一档：低饱和描边 + 灰白字 */
+#nt-ws-panel .nt-btn-text,
+#nt-ws-panel .nt-btn-action {
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    color: #d2d5dd !important;
+}
+#nt-ws-panel .nt-btn-text::before,
+#nt-ws-panel .nt-btn-action::before { background: #6a6f7d; }
+#nt-ws-panel .nt-btn-text:hover,
+#nt-ws-panel .nt-btn-action:hover {
+    border-color: rgba(110, 128, 190, 0.7) !important;
+    color: #eef0f5 !important;
+}
+#nt-ws-panel .nt-btn-action.primary {
+    border-color: rgba(100, 120, 185, 0.55) !important;
+    color: #e2e5ee !important;
+}
+#nt-ws-panel .nt-btn-action.primary::before { background: #5d6fae; }
+#nt-ws-panel .nt-btn-action.primary:hover {
+    background: rgba(100, 120, 185, 0.14) !important;
+    border-color: rgba(120, 140, 205, 0.8) !important;
+    color: #fff !important;
+}
+#nt-ws-panel .nt-btn-action.danger {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    color: #c9ccd4 !important;
+}
