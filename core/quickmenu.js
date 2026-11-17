@@ -353,6 +353,22 @@ function placePop() {
     const btn = $(BTN_ID);
     const pop = $(POP_ID);
     if (!btn || !pop) return;
+    const mobile = window.matchMedia('(max-width: 640px)').matches;
+    if (mobile) {
+        pop.style.left = '8px';
+        pop.style.right = '8px';
+        pop.style.width = 'auto';
+        pop.style.maxWidth = 'none';
+        pop.style.bottom = 'calc(140px + env(safe-area-inset-bottom, 0px))';
+        pop.style.maxHeight = 'calc(100vh - 230px)';
+        pop.style.overflowY = 'auto';
+        return;
+    }
+    pop.style.right = '';
+    pop.style.width = '';
+    pop.style.maxWidth = '';
+    pop.style.maxHeight = '';
+    pop.style.overflowY = '';
     const rect = btn.getBoundingClientRect();
     const width = pop.offsetWidth || 230;
     const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
@@ -363,6 +379,9 @@ function placePop() {
 function openPop() {
     const pop = $(POP_ID);
     if (!pop) return;
+    if (window.matchMedia('(max-width: 640px)').matches) {
+        try { document.activeElement?.blur(); } catch (_) {}
+    }
     updateJumpUi();
     updateClockUi();
     updateQuickStatus();
