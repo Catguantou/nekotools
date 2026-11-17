@@ -992,11 +992,48 @@ body {
 }
 #nt-ws-panel .nt-prompt-textarea:focus { border-color: var(--ntk-blue); }
 
-/* 鎻愮ず璇嶄袱鍒楁帓甯冿紝鍘嬬缉椤甸暱 */
-#nt-ws-panel .nt-sec-body:has(.nt-prompt-block) {
+/* 八股词库管理器 */
+#nt-ws-panel .nt-slop-add { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+#nt-ws-panel .nt-slop-add .nt-data-input { height: 30px; font-size: 11px; }
+#nt-ws-panel .nt-slop-add .nt-data-select { height: 30px; font-size: 10px; }
+#nt-ws-panel .nt-slop-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--ntk-line);
+    background: var(--ntk-bg);
+    margin: 4px 0 8px;
+}
+#nt-ws-panel .nt-slop-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px 10px;
+    grid-template-columns: 18px 38px 1fr 20px;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-bottom: 1px dashed var(--ntk-line);
+    font-size: 11px;
+}
+#nt-ws-panel .nt-slop-row:last-child { border-bottom: 0; }
+#nt-ws-panel .nt-slop-row.is-off { opacity: .42; }
+#nt-ws-panel .nt-slop-toggle {
+    background: none; border: 0; padding: 0;
+    color: var(--ntk-blue2); cursor: pointer; font-size: 11px;
+}
+#nt-ws-panel .nt-slop-type { font-size: 8.5px; color: var(--ntk-faint); letter-spacing: .1em; }
+#nt-ws-panel .nt-slop-text {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 10px; color: var(--ntk-dim);
+}
+#nt-ws-panel .nt-slop-del {
+    background: none; border: 0; padding: 0;
+    color: var(--ntk-faint); cursor: pointer; font-size: 13px; line-height: 1;
+}
+#nt-ws-panel .nt-slop-del:hover { color: #e06c6c; }
+#nt-ws-panel .nt-slop-raw .nt-summary { font-size: 10.5px; color: var(--ntk-dim); padding: 4px 0; }
+
+/* 提示词单列，避免与删除范围等表单挤在一起 */
+#nt-ws-panel .nt-sec-body:has(.nt-prompt-block) {
+    display: block;
 }
 
 /* 涓栫晫涔﹀垪琛?*/
@@ -1049,13 +1086,13 @@ body {
     position: relative;
     display: grid;
     grid-template-columns: 42px 1fr 76px;
-    background-color: var(--ntk-plate);
-    -webkit-backdrop-filter: blur(14px) saturate(1.1);
-    backdrop-filter: blur(14px) saturate(1.1);
+    background-color: rgba(10, 10, 13, 0.94);
+    -webkit-backdrop-filter: blur(6px) saturate(1.05);
+    backdrop-filter: blur(6px) saturate(1.05);
     background-image:
-        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.026) 0 1px, transparent 1px 22px),
-        repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.026) 0 1px, transparent 1px 22px);
-    border: 1px solid var(--ntk-line);
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 22px),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 22px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-left: 2px solid var(--ntk-blue);
     clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
     margin: 0 0 16px 0;

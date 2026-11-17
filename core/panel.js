@@ -383,13 +383,26 @@ export function mountPanel() {
                                 <span class="nt-hint">空=全部</span>
                             </div>
                         </div>
-                        <div class="nt-prompt-block">
-                            <div class="nt-prompt-head" style="justify-content:space-between;">
-                                <span class="nt-prompt-name">自定义八股词库（一行一条；直接填词=按字面删除；<code>旧词=>新词</code> 替换；支持 <code>/正则/gm</code>；<code>#</code> 开头为注释）</span>
-                                <button id="nt-tm-reset-rules" class="nt-btn-text">[恢复默认词库]</button>
-                            </div>
-                            <textarea id="nt-tm-slop-rules" class="nt-prompt-textarea" style="min-height:110px;">${escapeHtml(tm.slopRulesText || '')}</textarea>
+                        <div class="nt-slop-add">
+                            <select id="nt-slop-type" class="nt-data-select" style="width:96px;">
+                                <option value="literal">字面删除</option>
+                                <option value="regex">正则 /…/</option>
+                                <option value="replace">替换 A=>B</option>
+                            </select>
+                            <input id="nt-slop-input" class="nt-data-input" style="flex:1; width:auto;" placeholder="输入词 / /正则/gm / 旧=>新">
+                            <button id="nt-slop-add" class="nt-btn-text">[添加]</button>
                         </div>
+                        <div class="nt-hint" style="margin:4px 0 6px;">快捷语法：直接填词=按字面删除；<code>/正则/gm</code>；<code>旧=>新</code> 替换；点左侧圆点可停用某条</div>
+                        <div id="nt-slop-list" class="nt-slop-list"></div>
+                        <details class="nt-slop-raw">
+                            <summary class="nt-summary">高级：直接编辑原始词库</summary>
+                            <div class="nt-sec-body">
+                                <div class="nt-data-row" style="justify-content:flex-end; padding-bottom:4px;">
+                                    <button id="nt-tm-reset-rules" class="nt-btn-text">[恢复默认词库]</button>
+                                </div>
+                                <textarea id="nt-tm-slop-rules" class="nt-prompt-textarea" style="min-height:90px;">${escapeHtml(tm.slopRulesText || '')}</textarea>
+                            </div>
+                        </details>
                         <div class="nt-data-row" style="justify-content:flex-start; gap:12px;">
                             <button id="nt-tm-run-clean" class="nt-btn-action primary">[立即一键清除八股]</button>
                             <button id="nt-tm-undo-clean" class="nt-btn-text" style="color:#ffcc00;">[撤销上次清理]</button>
@@ -887,11 +900,113 @@ export function mountPanel() {
         exportPureStoryTxt({ favoritesOnly: true, from, to });
     };
 
+    // ---------- 八股词库：可视化管理 ----------
+    const slopListEl = wrap.querySelector('#nt-slop-list');
+    const slopTextEl = wrap.querySelector('#nt-tm-slop-rules');
+
+    function getSlopLines() {
+        return (slopTextEl.value || '').split('\n');
+    }
+
+    function setSlopLines(lines) {
+        slopTextEl.value = lines.join('\n');
+        syncTextManagerInputs();
+        renderSlopList();
+    }
+
+    function slopTypeOf(line) {
+        const t = line.trim();
+        if (!t) return 'empty';
+        if (t.startsWith('#')) return 'off';
+        if (/^\/.+\/[gimuy]*$/.test(t)) return 'regex';
+        if (t.includes('=>')) return 'replace';
+        return 'literal';
+    }
+
+    function renderSlopList() {
+        if (!slopListEl) return;
+        const rows = [];
+        getSlopLines().forEach((line, i) => {
+            const t = line.trim();
+            if (!t) return;
+            const type = slopTypeOf(t);
+            const label = { literal: '字面', regex: '正则', replace: '替换', off: '停用' }[type] || '字面';
+            rows.push(`
+                <div class="nt-slop-row ${type === 'off' ? 'is-off' : ''}">
+                    <button class="nt-slop-toggle" data-i="${i}" title="启用/停用">${type === 'off' ? '○' : '●'}</button>
+                    <span class="nt-slop-type">${label}</span>
+                    <span class="nt-slop-text" title="${escapeHtml(t.replace(/^#\s*/, ''))}">${escapeHtml(t.replace(/^#\s*/, ''))}</span>
+                    <button class="nt-slop-del" data-i="${i}" title="删除">×</button>
+                </div>`);
+        });
+        slopListEl.innerHTML = rows.length
+            ? rows.join('')
+            : '<div class="nt-hint" style="padding:6px;">词库为空</div>';
+
+        slopListEl.querySelectorAll('.nt-slop-del').forEach(btn => {
+            btn.onclick = () => {
+                const lines = getSlopLines();
+                lines.splice(Number(btn.dataset.i), 1);
+                setSlopLines(lines);
+            };
+        });
+        slopListEl.querySelectorAll('.nt-slop-toggle').forEach(btn => {
+            btn.onclick = () => {
+                const lines = getSlopLines();
+                const i = Number(btn.dataset.i);
+                const raw = lines[i] || '';
+                lines[i] = raw.trim().startsWith('#')
+                    ? raw.replace(/^(\s*)#\s*/, '$1')
+                    : '# ' + raw;
+                setSlopLines(lines);
+            };
+        });
+    }
+
+    renderSlopList();
+    slopTextEl.addEventListener('input', () => {
+        syncTextManagerInputs();
+        renderSlopList();
+    });
+
+    const slopAddBtn = wrap.querySelector('#nt-slop-add');
+    if (slopAddBtn) {
+        slopAddBtn.onclick = () => {
+            const type = wrap.querySelector('#nt-slop-type').value;
+            let val = wrap.querySelector('#nt-slop-input').value.trim();
+            if (!val) return;
+
+            if (type === 'replace' && !val.includes('=>')) {
+                if (window.toastr) toastr.warning('替换规则需要「旧=>新」格式');
+                return;
+            }
+            if (type === 'regex') {
+                if (!/^\/.+\/[gimuy]*$/.test(val)) {
+                    val = '/' + val.replace(/^\//, '').replace(/\/$/, '') + '/gm';
+                }
+                const m = val.match(/^\/(.+)\/([gimuy]*)$/);
+                try {
+                    new RegExp(m[1], m[2]);
+                } catch (e) {
+                    if (window.toastr) toastr.error('正则语法无效');
+                    return;
+                }
+            }
+
+            const lines = getSlopLines().filter(l => l.trim() !== '');
+            lines.push(val);
+            setSlopLines(lines);
+            wrap.querySelector('#nt-slop-input').value = '';
+            if (window.toastr) toastr.success('已添加规则');
+        };
+    }
+
     wrap.querySelector('#nt-tm-reset-rules').onclick = () => {
         if (!tmMod || !confirm('确定恢复默认八股词库吗？')) return;
         const defText = tmMod.DEFAULT_SLOP_RULES.join('\n');
         wrap.querySelector('#nt-tm-slop-rules').value = defText;
         syncTextManagerInputs();
+        renderSlopList();
         if (window.toastr) toastr.info('已恢复默认八股词库');
     };
 
