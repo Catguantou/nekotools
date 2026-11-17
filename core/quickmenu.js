@@ -2105,7 +2105,7 @@ function buildPop() {
 
     const head = document.createElement('div');
     head.className = 'nt-quick-pop-head';
-    head.innerHTML = '<span class="nt-quick-dot"></span><span class="nt-quick-pop-title">NEKOTOOL</span><span class="nt-quick-pop-tag">QUICK</span>';
+    head.innerHTML = '<span class="nt-quick-dot"></span><div class="nt-quick-pop-titles"><span class="nt-quick-pop-title">NEKOTOOL</span><span class="nt-quick-pop-sub">WORLD SIMULATION / QUICK ACCESS</span></div><span class="nt-quick-pop-tag">QUICK</span>';
 
     const banner = document.createElement('div');
     banner.id = 'nt-quick-jump';
@@ -2140,12 +2140,14 @@ function buildPop() {
     ];
 
     let lastGroup = '';
+    let groupNo = 0;
     for (const item of items) {
         if (item.group !== lastGroup) {
             lastGroup = item.group;
+            groupNo++;
             const groupEl = document.createElement('div');
             groupEl.className = 'nt-quick-group';
-            groupEl.textContent = item.group;
+            groupEl.textContent = `${String(groupNo).padStart(2, '0')} / ${item.group}`;
             list.appendChild(groupEl);
         }
         const row = document.createElement('button');
@@ -2182,6 +2184,10 @@ function buildPop() {
     pop.appendChild(head);
     pop.appendChild(banner);
     pop.appendChild(list);
+    const foot = document.createElement('div');
+    foot.className = 'nt-quick-pop-foot';
+    foot.innerHTML = '<span class="nt-quick-foot-line"></span><span>NEKOTOOL // WORLD SIM</span><span class="nt-quick-foot-dots"></span>';
+    pop.appendChild(foot);
     document.body.appendChild(pop);
 
     document.addEventListener('click', (e) => {

@@ -3251,5 +3251,233 @@ body {
     color: #9aa0a9 !important;
 }
 
+/* 勾选框：直接色块，不画勾 */
+#nt-ws-panel input[type="checkbox"]:not(.nt-hidden-cb):checked::after,
+#nt-quick-modal input[type="checkbox"]:checked::after,
+#nt-quick-pop input[type="checkbox"]:checked::after {
+    content: none !important;
+}
+#nt-ws-panel input[type="checkbox"]:not(.nt-hidden-cb):checked,
+#nt-quick-modal input[type="checkbox"]:checked,
+#nt-quick-pop input[type="checkbox"]:checked {
+    background: #5d6fae;
+    border-color: #8293cc;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* ============================================================
+   TOOL 按钮 / 菜单：明日方舟式平面海报
+   ============================================================ */
+#leftSendForm > #nt-quick-btn {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 50% !important;
+    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    background: radial-gradient(circle at 35% 25%, #242a3a, #0a0c12) !important;
+    color: #d9dde6;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    font-size: 7px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(93, 111, 174, 0.22);
+}
+#leftSendForm > #nt-quick-btn::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border: 1px solid rgba(216, 161, 58, 0.45);
+    border-radius: 50%;
+    pointer-events: none;
+}
+#leftSendForm > #nt-quick-btn:hover {
+    border-color: #d8a13a !important;
+    color: #fff;
+    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(216, 161, 58, 0.55), 0 0 16px rgba(216, 161, 58, 0.2) !important;
+}
+
+#nt-quick-pop {
+    position: fixed;
+    z-index: 10000;
+    width: 286px;
+    max-width: calc(100vw - 16px);
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-left: 2px solid #d8a13a;
+    border-radius: 2px;
+    background:
+        linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px) 0 0 / 100% 18px,
+        linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px) 0 0 / 18px 100%,
+        #0b0d11;
+    box-shadow: 0 22px 56px rgba(0, 0, 0, 0.66);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+#nt-quick-pop::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 14px;
+    height: 14px;
+    border-top: 1px solid rgba(216, 161, 58, 0.45);
+    border-right: 1px solid rgba(216, 161, 58, 0.45);
+    pointer-events: none;
+}
+#nt-quick-pop::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 150px;
+    height: 130px;
+    background-image: radial-gradient(circle, #d8a13a 1px, transparent 1.2px);
+    background-size: 9px 9px;
+    opacity: 0.16;
+    -webkit-mask-image: linear-gradient(135deg, #000 0%, transparent 68%);
+    mask-image: linear-gradient(135deg, #000 0%, transparent 68%);
+    pointer-events: none;
+}
+#nt-quick-pop .nt-quick-pop-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+#nt-quick-pop .nt-quick-dot {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    background: #d8a13a;
+    box-shadow: 0 0 0 1px rgba(216, 161, 58, 0.25);
+    transform: rotate(45deg);
+}
+#nt-quick-pop .nt-quick-pop-titles {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+#nt-quick-pop .nt-quick-pop-title {
+    color: #f2f4f8;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2.4px;
+}
+#nt-quick-pop .nt-quick-pop-sub {
+    color: #6d737e;
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-size: 7px;
+    letter-spacing: 1.1px;
+}
+#nt-quick-pop .nt-quick-pop-tag {
+    margin-left: auto;
+    padding: 2px 5px;
+    border: 1px solid rgba(216, 161, 58, 0.45);
+    color: #d8a13a;
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-size: 7px;
+    letter-spacing: 1.4px;
+}
+#nt-quick-pop .nt-quick-pop-list {
+    padding: 4px 10px 6px;
+}
+#nt-quick-pop .nt-quick-group {
+    margin: 10px 4px 3px;
+    padding: 0 0 4px;
+    border-top: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    color: #7a808b;
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-size: 8px;
+    letter-spacing: 2px;
+}
+#nt-quick-pop .nt-quick-group:first-child {
+    margin-top: 1px;
+}
+#nt-quick-pop .nt-quick-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: 100%;
+    padding: 7px 18px 7px 16px;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+    border-radius: 0;
+    background: transparent;
+    text-align: left;
+    transition: background 0.12s;
+}
+#nt-quick-pop .nt-quick-item:last-child {
+    border-bottom: 0;
+}
+#nt-quick-pop .nt-quick-item::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 14px;
+    width: 3px;
+    height: 3px;
+    background: rgba(93, 111, 174, 0.9);
+    transition: background 0.12s;
+}
+#nt-quick-pop .nt-quick-item::after {
+    content: '›';
+    position: absolute;
+    right: 7px;
+    top: 50%;
+    color: rgba(255, 255, 255, 0.18);
+    font-size: 12px;
+    transform: translateY(-50%);
+}
+#nt-quick-pop .nt-quick-item:hover {
+    background: rgba(255, 255, 255, 0.035);
+    border-color: rgba(255, 255, 255, 0.035);
+}
+#nt-quick-pop .nt-quick-item:hover::before {
+    background: #d8a13a;
+}
+#nt-quick-pop .nt-quick-item:hover::after {
+    color: #d8a13a;
+}
+#nt-quick-pop .nt-quick-item-label {
+    color: #e8ebf1;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+}
+#nt-quick-pop .nt-quick-item-hint {
+    color: #737984;
+    font-size: 8.5px;
+}
+#nt-quick-pop .nt-quick-pop-foot {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    color: #5f6570;
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-size: 7px;
+    letter-spacing: 1px;
+}
+#nt-quick-pop .nt-quick-foot-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(216, 161, 58, 0.35), transparent);
+}
+#nt-quick-pop .nt-quick-foot-dots {
+    width: 26px;
+    height: 5px;
+    background-image: radial-gradient(circle, rgba(216, 161, 58, 0.6) 0.8px, transparent 1px);
+    background-size: 6px 5px;
+}
+
+
 
 
