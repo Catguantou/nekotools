@@ -4486,3 +4486,25 @@ body {
     width: 100vw !important;
     height: 100vh !important;
 }
+
+/* 手机弹窗按动态视口收缩，避免底部/顶部跑到屏幕外 */
+#nt-quick-modal {
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    padding: 10px !important;
+    box-sizing: border-box;
+    overflow: auto;
+}
+#nt-quick-modal .nt-quick-modal {
+    width: min(440px, 100%) !important;
+    max-height: calc(100vh - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+    overflow: hidden;
+}
+#nt-quick-modal .nt-quick-modal.wide {
+    width: min(880px, 100%) !important;
+}
+#nt-quick-modal .nt-quick-modal-body {
+    overflow: auto;
+}
