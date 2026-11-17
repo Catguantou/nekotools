@@ -31,6 +31,29 @@ function cleanAndDedupeList(arr) {
 }
 
 export const stBridge = {
+    // 批量写入：一轮结算只读一次、写一次
+    _batch: null,
+
+    beginBatch(name, book) {
+        this._batch = { name, book, dirty: false };
+    },
+
+    batchBook(name) {
+        return (this._batch && this._batch.name === name) ? this._batch.book : null;
+    },
+
+    async commitBatch() {
+        const b = this._batch;
+        this._batch = null;
+        if (b && b.dirty) {
+            try {
+                await this._writeBook(b.name, b.book);
+            } catch (e) {
+                console.warn('[nekotools] 批量写盘失败', e);
+            }
+        }
+    },
+
     getContext() {
         return window.SillyTavern?.getContext?.() || window.getContext?.() || {};
     },
@@ -194,6 +217,8 @@ export const stBridge = {
      */
     async loadWorldInfoAsync(name) {
         if (!name) return null;
+        const batched = this.batchBook(name);
+        if (batched) return batched;
         const ctx = this.getContext();
 
         // 先走 /api/worldinfo/get：服务端每次都读盘
@@ -669,6 +694,15 @@ export const stBridge = {
     },
 
     async persistLorebook(bookName, bookData) {
+        if (this.batchBook(bookName)) {
+            this._batch.book = bookData;
+            this._batch.dirty = true;
+            return;
+        }
+        await this._writeBook(bookName, bookData);
+    },
+
+    async _writeBook(bookName, bookData) {
         const ctx = this.getContext();
         try {
             if (ctx && typeof ctx.saveWorldInfo === 'function' && bookData) {

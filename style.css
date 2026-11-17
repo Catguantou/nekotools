@@ -1031,6 +1031,22 @@ body {
 #nt-ws-panel .nt-slop-del:hover { color: #e06c6c; }
 #nt-ws-panel .nt-slop-raw .nt-summary { font-size: 10.5px; color: var(--ntk-dim); padding: 4px 0; }
 
+/* 注入预览输出 */
+#nt-ws-panel .nt-diag-out {
+    margin: 6px 0 0;
+    padding: 8px;
+    max-height: 240px;
+    overflow: auto;
+    background: var(--ntk-bg);
+    border: 1px solid var(--ntk-line);
+    color: var(--ntk-dim);
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 10px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 /* 提示词单列，避免与删除范围等表单挤在一起 */
 #nt-ws-panel .nt-sec-body:has(.nt-prompt-block) {
     display: block;

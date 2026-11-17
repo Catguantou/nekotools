@@ -426,6 +426,11 @@ export function mountPanel() {
                             <button id="nt-ws-export" class="nt-btn-action">[导出]</button>
                             <button id="nt-ws-reset" class="nt-btn-action">[重置]</button>
                         </div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">本轮注入预览 <span class="nt-hint">/ 看看到底发了什么</span></span>
+                            <button id="nt-diag-preview" class="nt-btn-action">[生成预览]</button>
+                        </div>
+                        <pre id="nt-diag-out" class="nt-diag-out">点「生成预览」查看当前追踪书条目与注入契约。</pre>
                     </div>
                 </div>
 
@@ -1119,6 +1124,24 @@ export function mountPanel() {
         renderLoreList();
         renderFavoriteList();
     }, 500);
+
+    const diagBtn = wrap.querySelector('#nt-diag-preview');
+    if (diagBtn) {
+        diagBtn.onclick = async () => {
+            const out = wrap.querySelector('#nt-diag-out');
+            const ws = registry.get('worldsim');
+            if (!ws || typeof ws.getInjectionPreview !== 'function') {
+                out.textContent = 'worldsim 未注册';
+                return;
+            }
+            out.textContent = '生成中…';
+            try {
+                out.textContent = (await ws.getInjectionPreview()) || '(空)';
+            } catch (e) {
+                out.textContent = '生成失败：' + (e && e.message ? e.message : e);
+            }
+        };
+    }
 
     wrap.querySelector('#nt-ws-reset').onclick = async () => {
         if (!confirm('确定清除本会话的剧情推演记录吗？（世界书里的「剧情推演」条目会被删除）')) return;

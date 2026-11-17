@@ -420,9 +420,13 @@ registry.register({
         loadSettings();
         if (!settings.enabled) return;
 
-        // 快速重 roll 时两次结算会并发：各自读整本、各自整本覆盖，后写会吞掉前写
+        // 快速重 roll 时排队等待上一次结算写完，而不是直接丢弃本轮内容
+        const waitStart = Date.now();
+        while (this._settling && Date.now() - waitStart < 8000) {
+            await new Promise(r => setTimeout(r, 120));
+        }
         if (this._settling) {
-            console.warn('[worldsim] 上一次结算尚未写完，跳过本次');
+            console.warn('[worldsim] 上一次结算超过 8 秒仍未完成，本次跳过');
             return;
         }
         this._settling = true;
@@ -447,6 +451,9 @@ registry.register({
         if (!stBridge.isGloballyActivated(currentLorebook)) {
             await stBridge.mountGlobalWorldbook(currentLorebook, true);
         }
+
+        // 本轮所有写入先进内存，结束时一次落盘
+        stBridge.beginBatch(currentLorebook, book);
 
         // 迁移：旧版按对象拆分的条目清掉，统一改成「道具/计划/伏笔」单条目
         await stBridge.pruneLegacySplitEntries(currentLorebook);
@@ -534,7 +541,49 @@ registry.register({
 
         setTimeout(() => { stBridge.hideOldMessages(settings.hideKeepCount, settings.visualHideKeep); }, 1000);
         } finally {
+            // 一轮结束统一落盘（只写一次）
+            await stBridge.commitBatch();
             this._settling = false;
         }
+    },
+
+    /** 诊断：列出本轮实际会注入的东西（世界书条目 + 契约提示词） */
+    async getInjectionPreview() {
+        loadSettings();
+        const lines = [];
+        const bookName = getLorebookName();
+        lines.push(`追踪书：${bookName || '(未选中角色)'}`);
+        if (!bookName) return lines.join('\n');
+
+        const exists = await stBridge.bookExists(bookName);
+        const active = stBridge.isGloballyActivated(bookName);
+        lines.push(`文件存在：${exists ? '是' : '否'}｜全局激活：${active ? '是' : '否'}`);
+
+        if (exists) {
+            const book = await stBridge.loadWorldInfoAsync(bookName);
+            const entries = Object.values(book?.entries || {});
+            let chars = 0;
+            lines.push(`条目数：${entries.length}`);
+            for (const e of entries) {
+                const kind = e.disable ? '停用' : (e.constant ? '常驻' : '关键词');
+                const len = (e.content || '').length;
+                chars += len;
+                const head = (e.content || '').replace(/\s+/g, ' ').slice(0, 36);
+                lines.push(`· [${kind}] ${e.comment || '(无标题)'} — ${len} 字 — ${head}`);
+            }
+            lines.push(`条目正文合计：${chars} 字（约 ${Math.round(chars / 1.6)} tokens）`);
+        }
+
+        const systems = buildSystemMessages(false, exists);
+        let sysChars = 0;
+        lines.push(`\n注入契约：${systems.length} 段`);
+        for (const s of systems) {
+            const c = s.content || '';
+            sysChars += c.length;
+            const first = (c.split('\n')[0] || '').slice(0, 28);
+            lines.push(`· ${first} — ${c.length} 字`);
+        }
+        lines.push(`契约合计：${sysChars} 字（约 ${Math.round(sysChars / 1.6)} tokens）`);
+        return lines.join('\n');
     }
 });
