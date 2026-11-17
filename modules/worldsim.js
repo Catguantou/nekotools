@@ -16,7 +16,7 @@ const defaultSettings = {
     lorebookName: '',
     bigSummaryLimit: 100,
     hideKeepCount: 2,
-    visualHide: true,
+    visualHideKeep: 0,
     focusChars: '',
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
@@ -39,11 +39,8 @@ function saveSettings() {
 }
 
 function getLorebookName() {
-    // 每张角色卡一本专属追踪书。以前允许 settings.lorebookName 全局覆盖，
-    // 结果所有角色共用一本书，切卡时旧书永远关不掉。
-    const charName = stBridge.getCharacterName();
-    if (!charName) return '';
-    return stBridge.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`);
+    // 每张角色卡一本专属追踪书，命名规则集中在 stBridge.trackerBookName()
+    return stBridge.trackerBookName();
 }
 
 const DIRECTOR_PROMPT = `<nekotools:director>
@@ -223,19 +220,28 @@ registry.register({
     init() {
         loadSettings();
 
-        // 首次运行：自动建库 + 挂到全局，而不是等用户手动去面板里建
-        setTimeout(async () => {
+        // 角色可能比扩展晚就绪：带重试地确保追踪书存在并挂到全局
+        const tryEnsure = async (attempt) => {
+            if (!settings.enabled) return;
+            const name = getLorebookName();
+            if (!name) {
+                if (attempt < 10) setTimeout(() => tryEnsure(attempt + 1), 3000);
+                return;
+            }
             try {
-                if (!settings.enabled || !stBridge.getCharacterName()) return;
-                const name = getLorebookName();
-                await stBridge.ensureWorldbook(name);
-                // 切角色后把上个角色自动挂上的追踪库关掉，别让旧角色的总结污染新角色
-                await stBridge.deactivateStaleAutoBooks(name);
-                await stBridge.preloadActivatedLorebooks();
+                const book = await stBridge.ensureWorldbook(name);
+                console.log(`[worldsim] 追踪书检查 #${attempt}:`, name, book ? 'OK' : 'FAILED');
+                if (book) {
+                    await stBridge.deactivateStaleAutoBooks(name);
+                    await stBridge.preloadActivatedLorebooks();
+                } else if (attempt < 10) {
+                    setTimeout(() => tryEnsure(attempt + 1), 3000);
+                }
             } catch (e) {
                 console.warn('[worldsim] 初始化世界书失败', e);
             }
-        }, 1200);
+        };
+        setTimeout(() => tryEnsure(1), 1200);
 
         // 换角色/换会话时，追踪库要跟着换，并保证它处于全局激活状态
         const ctx = stBridge.getContext();
@@ -243,8 +249,9 @@ registry.register({
             ctx.eventSource.on(ctx.eventTypes.CHAT_CHANGED, () => {
                 setTimeout(async () => {
                     try {
-                        if (!settings.enabled || !stBridge.getCharacterName()) return;
+                        if (!settings.enabled) return;
                         const name = getLorebookName();
+                        if (!name) return;
                         await stBridge.ensureWorldbook(name);
                         await stBridge.deactivateStaleAutoBooks(name);
                     } catch (e) {
@@ -385,7 +392,7 @@ registry.register({
             }
         }
 
-        setTimeout(() => { stBridge.hideOldMessages(settings.hideKeepCount, { visual: settings.visualHide !== false }); }, 1000);
+        setTimeout(() => { stBridge.hideOldMessages(settings.hideKeepCount, settings.visualHideKeep); }, 1000);
         } finally {
             this._settling = false;
         }

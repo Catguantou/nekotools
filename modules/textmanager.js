@@ -19,6 +19,54 @@ const tmSettings = {
     slopRulesText: DEFAULT_SLOP_RULES.join('\n')
 };
 
+// ========== 状态栏升级（纯文本标记 → 样式条） ==========
+const NT_STATUS_MARKER = '[[NT_STATUS]]';
+
+function buildStatusBar(raw) {
+    const parts = String(raw).split(/[|｜]/).map(s => s.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    const bar = document.createElement('div');
+    bar.className = 'ws-status-bar';
+    for (const p of parts) {
+        const span = document.createElement('span');
+        span.className = 'ws-status-item';
+        const m = p.match(/^([^:：]+)[:：](.*)$/);
+        if (m) {
+            const b = document.createElement('b');
+            b.textContent = m[1].trim();
+            span.appendChild(b);
+            span.appendChild(document.createTextNode(' ' + m[2].trim()));
+        } else {
+            span.textContent = p;
+        }
+        bar.appendChild(span);
+    }
+    return bar;
+}
+
+export function upgradeStatusBars() {
+    document.querySelectorAll('#chat .mes_text').forEach(textEl => {
+        // 旧消息可能已经是渲染好的 HTML，直接置顶即可
+        const existing = textEl.querySelector('.ws-status-bar');
+        if (existing) {
+            if (textEl.firstElementChild !== existing) textEl.prepend(existing);
+            return;
+        }
+        const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+            const idx = node.nodeValue.indexOf(NT_STATUS_MARKER);
+            if (idx === -1) continue;
+            const after = node.nodeValue.slice(idx + NT_STATUS_MARKER.length);
+            const line = after.split('\n')[0];
+            node.nodeValue = node.nodeValue.slice(0, idx).replace(/\s+$/, '');
+            const bar = buildStatusBar(line);
+            if (bar) textEl.prepend(bar);
+            break;
+        }
+    });
+}
+
 // ========== 楼层收藏功能 ==========
 export function getFavoriteFloors() {
     const ctx = stBridge.getContext();
@@ -88,6 +136,7 @@ export function exportPureStoryTxt({ favoritesOnly = false } = {}) {
         let text = msg.mes
             .replace(/<ws_[^>]*>[\s\S]*?<\/ws_[^>]*>/gi, '')
             .replace(/<nekotools:[^>]*>[\s\S]*?<\/nekotools:[^>]*>/gi, '')
+            .replace(/\[\[NT_STATUS\]\][^\n]*/g, '')
             .replace(/<[^>]+>/g, '')
             .trim();
 
@@ -258,14 +307,8 @@ registry.register({
                 header.appendChild(starBtn);
             });
 
-            // 状态栏视觉置顶：模型把 <ws_status> 输出在正文末尾，
-            // StreamGate 就地渲染，所以这里把它搬到消息文本最前面。
-            document.querySelectorAll('#chat .mes_text .ws-status-bar').forEach(bar => {
-                const holder = bar.closest('.mes_text');
-                if (holder && holder.firstElementChild !== bar) {
-                    holder.prepend(bar);
-                }
-            });
+            // 状态栏：模型把内容输出在正文末尾，这里把它升级成样式条并置顶
+            upgradeStatusBars();
 
             // 数据层已标记 hidden 的楼层，重载后重新套上视觉屏蔽
             const ctx = stBridge.getContext();

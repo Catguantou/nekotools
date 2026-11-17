@@ -60,6 +60,18 @@ export const stBridge = {
             .slice(0, 120);
     },
 
+    /** 当前角色对应的追踪书名；没有选中角色时返回空串 */
+    trackerBookName() {
+        const charName = this.getCharacterName();
+        if (!charName) return '';
+        return this.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`);
+    },
+
+    /** 判断一本书是不是本插件自动建的追踪书 */
+    isTrackerBook(name) {
+        return typeof name === 'string' && name.startsWith('【NEKOTOOL世界加载器·');
+    },
+
     getAutoActiveBooks() {
         const cfg = settings.get('loremanager');
         return Array.isArray(cfg.autoActiveBooks) ? cfg.autoActiveBooks : [];
@@ -102,9 +114,21 @@ export const stBridge = {
 
     getCurrentCharacter() {
         const ctx = this.getContext();
-        const charId = ctx.characterId;
-        if (charId !== undefined && charId !== null && ctx.characters && ctx.characters[charId]) {
-            return ctx.characters[charId];
+        const list = Array.isArray(ctx.characters) ? ctx.characters : [];
+        const id = ctx.characterId;
+
+        // this_chid 可能是字符串索引，也可能是数字，两种都试
+        let char = null;
+        if (id !== undefined && id !== null) {
+            char = list[id] || list[Number(id)] || null;
+        }
+        if (char) return char;
+
+        // 兜底：用界面上显示的角色名反查（群聊/特殊加载路径下 characterId 可能缺失）
+        const pole = document.querySelector('#character_name_pole')?.textContent?.trim();
+        if (pole) {
+            const byName = list.find(c => c?.name === pole);
+            if (byName) return byName;
         }
         return null;
     },
@@ -282,14 +306,23 @@ export const stBridge = {
 
         let book = await this.loadWorldInfoAsync(name, true);
         if (!book) {
+            console.log('[nekotools] 追踪书不存在，开始创建:', name);
             const created = await this.createWorldbook(name, initContent);
-            if (!created) return null;
+            if (!created) {
+                console.error('[nekotools] 追踪书创建失败:', name);
+                return null;
+            }
             book = await this.loadWorldInfoAsync(name, true);
-            if (!book) return null;
+            if (!book) {
+                console.error('[nekotools] 创建成功但读不回来:', name);
+                return null;
+            }
+            console.log('[nekotools] 追踪书已创建:', name);
         }
 
         if (!this.isGloballyActivated(name)) {
             const activated = await this.mountGlobalWorldbook(name, true);
+            console.log('[nekotools] 追踪书挂载全局:', name, activated);
             if (activated) this.rememberAutoActive(name);
         }
         return book;
@@ -298,7 +331,10 @@ export const stBridge = {
     async deleteWorldbook(name, { syncUnbindChar = true, deleteLinkedChar = false } = {}) {
         const ctx = this.getContext();
         try {
-            if (syncUnbindChar && Array.isArray(ctx.characters)) {
+            if (deleteLinkedChar && !this.isTrackerBook(name)) {
+                // 删书 → 连带删除绑定了它的角色卡（追踪书永远不走这条路）
+                await this.deleteBoundCharacters(name);
+            } else if (syncUnbindChar && Array.isArray(ctx.characters)) {
                 for (let i = 0; i < ctx.characters.length; i++) {
                     const char = ctx.characters[i];
                     if (char?.data?.extensions?.world === name) {
@@ -342,8 +378,32 @@ export const stBridge = {
         }
     },
 
-    async deleteEntries(bookName, uids) {
-        const book = await this.loadWorldInfoAsync(bookName, true);
+    /** 删除所有绑定了这本书的角色卡（走官方 /api/characters/delete，保留聊天记录） */
+    async deleteBoundCharacters(bookName) {
+        const ctx = this.getContext();
+        const chars = Array.isArray(ctx.characters) ? ctx.characters : [];
+        const targets = chars.filter(c => c?.data?.extensions?.world === bookName);
+        let deleted = 0;
+        for (const c of targets) {
+            try {
+                const res = await fetch('/api/characters/delete', {
+                    method: 'POST',
+                    headers: {
+                        ...(typeof ctx.getRequestHeaders === 'function' ? ctx.getRequestHeaders() : {}),
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ avatar_url: c.avatar, delete_chats: false }),
+                });
+                if (res.ok) deleted++;
+                else console.warn('[nekotools] 删除角色卡失败', c?.name, res.status);
+            } catch (e) {
+                console.warn('[nekotools] 删除角色卡异常', c?.name, e);
+            }
+        }
+        return deleted;
+    },
+
+    async deleteEntries(bookName, uids) {        const book = await this.loadWorldInfoAsync(bookName, true);
         if (!book || !book.entries) return false;
         for (const uid of uids) {
             delete book.entries[uid];
@@ -484,10 +544,11 @@ export const stBridge = {
         const charName = char.name;
         if (!charName) return;
         
-        // 只删本插件自己建的追踪书；角色卡绑定的原生世界书属于用户资产，删卡时不动它
-        const booksToDelete = [
-            this.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`),
-        ];
+        // 删角色卡 → 同步删它绑定的世界书（追踪书除外），但不动 NEKOTOOL 的追踪库规则
+        const booksToDelete = [];
+        const bound = char.data?.extensions?.world;
+        if (bound && !this.isTrackerBook(bound)) booksToDelete.push(bound);
+        booksToDelete.push(this.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`));
         
         for (const book of booksToDelete) {
             const worldNames = this.getWorldNames();
@@ -561,33 +622,43 @@ export const stBridge = {
         }
     },
 
-    hideOldMessages(keepCount = 2, { visual = true } = {}) {
+    /** 从末尾往前数，第 keep+1 条 AI 消息的下标（即"保留最新 keep 条"的切点） */
+    cutoffIndexForKeep(keepCount) {
         const ctx = this.getContext();
-        if (!ctx || !ctx.chat) return;
+        if (!ctx || !ctx.chat) return -1;
         let aiCount = 0;
-        let cutoffIndex = -1;
         for (let i = ctx.chat.length - 1; i >= 0; i--) {
             const msg = ctx.chat[i];
             if (!msg.is_user && !msg.is_system) {
                 aiCount++;
-                if (aiCount === keepCount + 1) {
-                    cutoffIndex = i;
-                    break;
-                }
+                if (aiCount === Number(keepCount) + 1) return i;
             }
         }
-        if (cutoffIndex >= 0) {
-            for (let i = 0; i < cutoffIndex; i++) {
+        return -1;
+    },
+
+    /**
+     * 数据层隐藏：给 extra.hidden 打标并落盘，影响导出过滤，不可见地改变数据。
+     * 视觉层隐藏由 visualKeep 单独控制，两者互不影响。
+     */
+    hideOldMessages(dataKeep = 2, visualKeep = 0) {
+        const ctx = this.getContext();
+        if (!ctx || !ctx.chat) return;
+
+        const dataCut = Number(dataKeep) > 0 ? this.cutoffIndexForKeep(dataKeep) : -1;
+        if (dataCut >= 0) {
+            for (let i = 0; i < dataCut; i++) {
                 const msg = ctx.chat[i];
                 if (msg.extra && msg.extra.nekotool_favorite) continue;
                 msg.extra = { ...(msg.extra || {}), hidden: true };
             }
             if (typeof ctx.saveChat === 'function') {
-                // 数据层隐藏：只落盘，供导出过滤与下次重新加载使用
                 ctx.saveChat();
             }
-            // 视觉层隐藏：和上面是两回事，随时可一键恢复，不改任何数据
-            if (visual) this.applyVisualHide(cutoffIndex);
+        }
+
+        if (Number(visualKeep) > 0) {
+            this.applyVisualHide(this.cutoffIndexForKeep(visualKeep));
         }
     },
 

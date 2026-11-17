@@ -162,16 +162,12 @@ export function mountPanel() {
                             <div class="nt-sec-line"></div>
                         </div>
                         <div class="nt-data-row">
-                            <span class="nt-data-label">保留楼层数 <span class="nt-hint">/ 最新 N 条之外隐藏(收藏除外)</span></span>
-                            <input type="number" id="nt-ws-keep" class="nt-data-input" value="${s.hideKeepCount}" min="1" max="50">
+                            <span class="nt-data-label">数据隐藏保留 <span class="nt-hint">/ 最新 N 条之外打 hidden 标记(影响导出)</span></span>
+                            <input type="number" id="nt-ws-keep" class="nt-data-input" value="${s.hideKeepCount}" min="0" max="50">
                         </div>
                         <div class="nt-data-row">
-                            <span class="nt-data-label">视觉屏蔽 <span class="nt-hint">/ 只是看不见，数据不删，随时可恢复</span></span>
-                            <label class="nt-grid-item" style="border:0; padding:0; min-width:0;">
-                                <input type="checkbox" id="nt-ws-visual-hide" class="nt-hidden-cb" ${s.visualHide !== false ? 'checked' : ''}>
-                                <span class="nt-box"></span>
-                                <span class="nt-text">跟随隐藏</span>
-                            </label>
+                            <span class="nt-data-label">视觉屏蔽保留 <span class="nt-hint">/ 最新 M 条之外只在界面上隐藏，0=关闭</span></span>
+                            <input type="number" id="nt-ws-visual-keep" class="nt-data-input" value="${s.visualHideKeep || 0}" min="0" max="200">
                         </div>
                         <div class="nt-data-row">
                             <button id="nt-ws-visual-restore" class="nt-btn-text" style="color:#00ffcc;">[恢复视觉显示]</button>
@@ -214,6 +210,7 @@ export function mountPanel() {
                                 <button id="nt-ws-refresh" class="nt-btn-text">[刷新]</button>
                                 <button id="nt-ws-select-all-books" class="nt-btn-text">[全选]</button>
                                 <button id="nt-ws-new" class="nt-btn-text" style="color: var(--nt-blue);">[+ 新建]</button>
+                                <button id="nt-ws-ensure-tracker" class="nt-btn-text" style="color: #00ffcc;">[确保当前角色追踪书]</button>
                                 <button id="nt-ws-del-book" class="nt-btn-text" style="color: #ff3333;">[多选删除]</button>
                             </div>
                             <div class="nt-data-row" style="display:flex; gap: 8px; margin-bottom: 8px; align-items:center; flex-wrap: wrap;">
@@ -584,16 +581,43 @@ export function mountPanel() {
         }
     };
 
+    wrap.querySelector('#nt-ws-ensure-tracker').onclick = async () => {
+        const name = stBridge.trackerBookName();
+        if (!name) {
+            if (window.toastr) toastr.warning('请先选择一个角色卡');
+            return;
+        }
+        const book = await stBridge.ensureWorldbook(name);
+        await renderLoreList();
+        if (window.toastr) {
+            if (book) toastr.success(`追踪书已就绪：${name}`);
+            else toastr.error('创建失败，按 F12 看 [nekotools] 日志');
+        }
+    };
+
     wrap.querySelector('#nt-ws-del-book').onclick = async () => {
         const selected = Array.from(listEl.querySelectorAll('.nt-book-select:checked')).map(cb => cb.dataset.name);
         if (!selected.length) {
             if (window.toastr) toastr.warning('请先勾选要删除的世界书');
             return;
         }
-        if (!confirm(`确定要彻底删除选中的 ${selected.length} 本世界书吗？此操作不可恢复！\n（绑定它的角色卡会被解绑，但不会删除角色卡）`)) return;
+        if (!confirm(`确定要彻底删除选中的 ${selected.length} 本世界书吗？此操作不可恢复！`)) return;
+
+        // 书 → 角色卡：删书时询问是否连绑定角色一起删（追踪书不参与）
+        const ctx = stBridge.getContext();
+        const boundChars = (Array.isArray(ctx.characters) ? ctx.characters : []).filter(
+            c => selected.includes(c?.data?.extensions?.world) && !stBridge.isTrackerBook(c?.data?.extensions?.world)
+        );
+        let deleteLinkedChar = false;
+        if (boundChars.length) {
+            deleteLinkedChar = confirm(
+                `检测到 ${boundChars.length} 张角色卡绑定了所选世界书。\n\n` +
+                `点【确定】：连同角色卡一起删除\n点【取消】：只删世界书并解绑角色卡`
+            );
+        }
 
         for (const name of selected) {
-            await stBridge.deleteWorldbook(name, { syncUnbindChar: true });
+            await stBridge.deleteWorldbook(name, { syncUnbindChar: true, deleteLinkedChar });
         }
         await renderLoreList();
         if (window.toastr) toastr.success(`已删除 ${selected.length} 本世界书`);
@@ -770,8 +794,8 @@ export function mountPanel() {
         s.enableForeshadow = wrap.querySelector('#nt-ws-foreshadow').checked;
         s.enableSummary = wrap.querySelector('#nt-ws-summary').checked;
         s.enableBigSummary = wrap.querySelector('#nt-ws-bigsummary').checked;
-        s.hideKeepCount = parseInt(wrap.querySelector('#nt-ws-keep').value) || 2;
-        s.visualHide = wrap.querySelector('#nt-ws-visual-hide').checked;
+        s.hideKeepCount = parseInt(wrap.querySelector('#nt-ws-keep').value) || 0;
+        s.visualHideKeep = parseInt(wrap.querySelector('#nt-ws-visual-keep').value) || 0;
         s.bigSummaryLimit = parseInt(wrap.querySelector('#nt-ws-biglimit').value) || 100;
         s.focusChars = wrap.querySelector('#nt-ws-focuschars').value;
 

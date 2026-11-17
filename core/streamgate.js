@@ -103,16 +103,9 @@ export class StreamGate {
     renderStatus(text) {
         const parts = text.split(/[|｜\n]/).map(s => s.trim()).filter(Boolean);
         if (!parts.length) return '';
-        let html = '<div class="ws-status-bar">';
-        parts.forEach(p => {
-            const match = p.match(/^([^:：]+)[:：](.*)$/);
-            if (match) {
-                html += `<span class="ws-status-item"><b>${escapeHtml(match[1].trim())}</b>${escapeHtml(match[2].trim())}</span>`;
-            } else {
-                html += `<span class="ws-status-item">${escapeHtml(p)}</span>`;
-            }
-        });
-        html += '</div>\n\n';
-        return html;
+        // 只输出纯文本标记，由前端脚本升级成样式条。
+        // 直接把 HTML 塞进正文会被酒馆的清洗流程剥掉 class/style，
+        // 表现就是"没美化、标签还漏出来"。
+        return `\n\n[[NT_STATUS]]${parts.join(' | ')}\n\n`;
     }
 }
