@@ -109,6 +109,7 @@ export function mountPanel() {
             ['bigSummary', 'P_09', '大总结'],
             ['roster', 'P_10', '角色索引'],
             ['genesis', 'P_11', '开局世界生成'],
+            ['tick', 'P_12', '后台 tick'],
         ];
         return map.map(([key, code, name]) => {
             const val = (s.customPrompts && s.customPrompts[key]) || '';
@@ -187,6 +188,31 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row">
                             <input type="text" id="nt-ws-focuschars" class="nt-data-input" style="width:100%; text-align:left;" value="${escapeHtml(s.focusChars || '')}" placeholder="例如: 张三,李四">
+                        </div>
+                        <div class="nt-data-row" style="margin-top: 16px;">
+                            <span class="nt-data-label">后台 tick <span class="nt-hint">/ 角色与世界的离屏推进</span></span>
+                            <label style="display:flex;align-items:center;gap:6px;">
+                                <input type="checkbox" id="nt-ws-tick-enable" ${s.enableTicks ? 'checked' : ''}> 启用
+                            </label>
+                        </div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">角色 tick 间隔 <span class="nt-hint">/ 每 N 条 AI 回复结算一批，0=关</span></span>
+                            <input type="number" id="nt-ws-char-tick" class="nt-data-input" value="${s.charTickEvery}" min="0" max="50">
+                        </div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">世界 tick 间隔 <span class="nt-hint">/ 每 N 条 AI 回复结算一次，0=关</span></span>
+                            <input type="number" id="nt-ws-world-tick" class="nt-data-input" value="${s.worldTickEvery}" min="0" max="50">
+                        </div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">每轮最多结算角色 <span class="nt-hint">/ 控制 token</span></span>
+                            <input type="number" id="nt-ws-tick-max" class="nt-data-input" value="${s.tickMaxChars}" min="1" max="10">
+                        </div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">反偷懒阈值 <span class="nt-hint">/ 超过 N 层没更新就强制结算</span></span>
+                            <input type="number" id="nt-ws-stale-after" class="nt-data-input" value="${s.staleAfter}" min="0" max="200">
+                            <label style="display:flex;align-items:center;gap:6px;margin-left:8px;">
+                                <input type="checkbox" id="nt-ws-antilazy" ${s.enableAntiLazy ? 'checked' : ''}> 启用
+                            </label>
                         </div>
                     </div>
 
@@ -1113,6 +1139,12 @@ export function mountPanel() {
         s.visualHideKeep = parseInt(wrap.querySelector('#nt-ws-visual-keep').value) || 0;
         s.bigSummaryLimit = parseInt(wrap.querySelector('#nt-ws-biglimit').value) || 100;
         s.focusChars = wrap.querySelector('#nt-ws-focuschars').value;
+        s.enableTicks = wrap.querySelector('#nt-ws-tick-enable').checked;
+        s.charTickEvery = parseInt(wrap.querySelector('#nt-ws-char-tick').value) || 0;
+        s.worldTickEvery = parseInt(wrap.querySelector('#nt-ws-world-tick').value) || 0;
+        s.tickMaxChars = parseInt(wrap.querySelector('#nt-ws-tick-max').value) || 2;
+        s.staleAfter = parseInt(wrap.querySelector('#nt-ws-stale-after').value) || 0;
+        s.enableAntiLazy = wrap.querySelector('#nt-ws-antilazy').checked;
 
         wrap.querySelectorAll('.nt-prompt-textarea[data-prompt-key]').forEach(ta => {
             const key = ta.dataset.promptKey;

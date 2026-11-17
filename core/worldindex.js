@@ -2,7 +2,7 @@
 // 详情仍走绿灯条目。这样模型永远知道"有什么"，又不为详情付常驻 token。
 
 import { stBridge } from './st_bridge.js';
-import { parseRosterLine } from './worldfmt.js';
+import { parseRosterLine, formatRosterLine } from './worldfmt.js';
 
 export const INDEX_TITLE = '索引';
 const SEC_CHARS = '【角色】';
@@ -121,6 +121,21 @@ export async function addChar(bookName, name, value = 'T3') {
 
 export async function removeChar(bookName, name) {
     return syncChars(bookName, {}, [name]);
+}
+
+/** 只刷新某个角色在索引里的位置/行动/更新时间，不动等级 */
+export async function refreshChar(bookName, name, patch = {}) {
+    if (!bookName || !name) return false;
+    const sections = await readIndex(bookName);
+    let found = false;
+    sections.chars = sections.chars.map(c => {
+        if (c.name !== name) return c;
+        found = true;
+        return { ...c, ...patch };
+    });
+    if (!found) sections.chars.push({ name, tier: 'T3', ...patch });
+    sections.chars = sections.chars.map(c => ({ ...c, raw: formatRosterLine(c) }));
+    return writeIndex(bookName, sections);
 }
 
 /** 同步道具/伏笔段：只存名字 */

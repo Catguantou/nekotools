@@ -212,6 +212,17 @@ try {
     assert(parsed2.性别 === '女' && parsed2.外貌.includes('短发'), '性别/外貌 YAML 往返失败');
     assert(parsed2.人际关系 && parsed2.人际关系['<user>'].includes('好感 40'), '人际关系 YAML 往返失败');
     assert(wf.normalizeRelationships({ a: '好感 1', b: '' }).a === '好感 1', '人际关系归一化失败');
+
+    const yaml3 = wf.formatCharacterYaml('艾达', {
+        位置: '市场街', 心情: '警惕', 日程: { 早晨: '中央广场｜摆摊' },
+        当前行动: '整理凛果', 下一步: '去酒馆', 已知: ['王选仪式快开始了'],
+        秘密: '认识扒手头目', 更新于: '第 37 层',
+    });
+    const parsed3 = wf.parseCharacterYaml(yaml3);
+    assert(parsed3.位置 === '市场街' && parsed3.心情 === '警惕', '位置/心情 YAML 往返失败');
+    assert(parsed3.日程 && parsed3.日程.早晨.includes('摆摊'), '日程 YAML 往返失败');
+    assert(parsed3.已知 && parsed3.已知[0].includes('王选'), '已知 YAML 往返失败');
+    assert(parsed3.秘密 === '认识扒手头目' && parsed3.更新于 === '第 37 层', '秘密/更新于 YAML 往返失败');
 } catch (e) {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }

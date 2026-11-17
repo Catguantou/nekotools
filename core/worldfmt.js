@@ -179,7 +179,12 @@ export function stripRosterLayer(value) {
 
 // ========== 角色档案（YAML 子集） ==========
 
-const CHAR_BASE_FIELDS = ['姓名', '性别', '外貌', '身份', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化', '人际关系'];
+const CHAR_BASE_FIELDS = [
+    '姓名', '性别', '外貌', '身份', '位置', '心情',
+    '日程', '当前行动', '下一步', '长期目标', '近期打算',
+    '状态', '后台运行', '关键记忆', '特殊变化',
+    '人际关系', '已知', '秘密', '更新于',
+];
 
 function yamlQuote(value) {
     return JSON.stringify(String(value ?? ''));
@@ -234,21 +239,32 @@ export function formatCharacterYaml(name, info = {}) {
     for (const key of CHAR_BASE_FIELDS) {
         if (key === '姓名') continue;
         const v = src[key];
-        if (key === '关键记忆') {
-            const list = normalizeMemories(v);
-            if (!list.length) continue;
-            lines.push('关键记忆:');
-            for (const item of list) lines.push(`  - ${yamlQuote(item)}`);
-            used.add(key);
-            continue;
-        }
-        if (key === '人际关系') {
+        if (key === '人际关系' || key === '日程') {
             const rel = normalizeRelationships(v);
             used.add(key);
             const keys = Object.keys(rel);
             if (!keys.length) continue;
-            lines.push('人际关系:');
+            lines.push(`${key}:`);
             for (const person of keys) lines.push(`  ${yamlQuote(person)}: ${yamlQuote(rel[person])}`);
+            continue;
+        }
+        if (key === '关键记忆' || key === '已知') {
+            const list = normalizeMemories(v);
+            used.add(key);
+            if (!list.length) continue;
+            lines.push(`${key}:`);
+            for (const item of list) lines.push(`  - ${yamlQuote(item)}`);
+            continue;
+        }
+        if (key === '秘密') {
+            used.add(key);
+            const list = normalizeMemories(v);
+            if (!list.length) continue;
+            if (list.length === 1) lines.push(`秘密: ${yamlQuote(list[0])}`);
+            else {
+                lines.push('秘密:');
+                for (const item of list) lines.push(`  - ${yamlQuote(item)}`);
+            }
             continue;
         }
         if (v === undefined || v === null || !String(v).trim()) continue;
@@ -308,7 +324,7 @@ export function parseCharacterYaml(content) {
         const key = kv[1].trim();
         const value = kv[2].trim();
         current = key;
-        if (!value) out[key] = key === '人际关系' ? {} : [];
+        if (!value) out[key] = (key === '人际关系' || key === '日程') ? {} : [];
         else out[key] = yamlUnquote(value);
     }
     return out;

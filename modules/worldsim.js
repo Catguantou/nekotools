@@ -3,7 +3,7 @@ import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
-import { migrateIndex, syncChars, syncNames, INDEX_TITLE } from '../core/worldindex.js';
+import { migrateIndex, syncChars, syncNames, refreshChar, INDEX_TITLE } from '../core/worldindex.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -23,9 +23,15 @@ const defaultSettings = {
     hideKeepCount: 2,
     visualHideKeep: 0,
     focusChars: '',
+    enableTicks: true,
+    worldTickEvery: 3,
+    charTickEvery: 2,
+    tickMaxChars: 2,
+    staleAfter: 5,
+    enableAntiLazy: true,
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '',
     }
 };
 
@@ -50,6 +56,34 @@ function buildGenesisPrompt() {
 沿用已有设定，不要另起炉灶；不要只写当前文本里已经出现的东西。
 ${tagClose}`;
     const custom = (settings.customPrompts.genesis || '').trim();
+    if (custom) p += `\n【附加要求】\n${custom}`;
+    return p;
+}
+
+/** 后台 tick：角色轮值 + 世界轮值，频率由设置控制 */
+function buildTickPrompt({ needCharTick, needWorldTick }) {
+    const maxChars = Math.max(1, Number(settings.tickMaxChars) || 2);
+    const staleAfter = Number(settings.staleAfter) || 0;
+    const antiLazy = settings.enableAntiLazy && staleAfter > 0;
+
+    const lines = ['<nekotools:tick>', '【本轮后台结算】'];
+    lines.push('- 所有内容都写在本轮 ws_update 的 JSON 里，tick / world 只是其中的字段。');
+    if (needCharTick) {
+        lines.push(`- 从「索引」里挑最多 ${maxChars} 个最久没更新的角色（优先钉住/T1，其次 T2），在 "tick" 里写他们这轮在后台做了什么：`);
+        lines.push('  "tick": {"角色名": {"位置":"...","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
+        lines.push('- 只写这些人；玩家不在场也要推进他们自己的计划，不要等玩家。');
+    }
+    if (needWorldTick) {
+        lines.push('- 本轮同时做世界 tick：只更新国家/势力/社会新闻里发生的变化，输出 world。');
+    }
+    if (antiLazy) {
+        lines.push(`- 索引里超过 ${staleAfter} 层没更新的角色，本轮必须至少结算 1 个。`);
+    }
+    lines.push('- 若有角色本轮出场/相遇，必须结合他的日程或当前行动解释“为什么在这里”，不能凭空出现。');
+    lines.push('</nekotools:tick>');
+
+    let p = lines.join('\n');
+    const custom = (settings.customPrompts.tick || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
     return p;
 }
@@ -198,7 +232,7 @@ function buildTrackingMessages(bookName = '') {
         role: 'system',
         content: `<nekotools:update>
 【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略，标签内含合法 JSON（不要代码块包裹，标签外不加任何其它字符）。
-chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：chars 写有变化的角色；其余分类只写增量（add/del），绝不重复输出未变化的内容。
+chars / tick / items / plot / world / foreshadow / roster 都只写**本轮变化**：chars 写有变化的角色；tick 写离屏角色的后台行动；其余分类只写增量（add/del），绝不重复输出未变化的内容。
 </nekotools:update>`
     });
 
@@ -328,39 +362,52 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
 }
 
 /** 角色条目：YAML 格式，姓名写进正文；关键记忆追加不覆盖 */
-async function updateCharacterEntry(bookName, name, info, book) {
+async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) {
     const target = book || await stBridge.loadWorldInfoAsync(bookName);
     if (!target || !target.entries) return;
 
     const oldEntry = Object.values(target.entries).find(e => e && e.comment === `角色·${name}`);
     const old = oldEntry ? parseCharacterYaml(oldEntry.content) : {};
 
-    const oldMemories = normalizeMemories(old['关键记忆']);
-    const newMemories = normalizeMemories(info && info['关键记忆']);
-    const merged = [...oldMemories];
-    const seen = new Set(oldMemories);
-    for (const m of newMemories) {
-        if (!seen.has(m)) {
-            merged.push(m);
-            seen.add(m);
+    const mergeList = (a, b) => {
+        const out = [...a];
+        const seen = new Set(out);
+        for (const item of b) {
+            if (!seen.has(item)) {
+                out.push(item);
+                seen.add(item);
+            }
         }
-    }
+        return out;
+    };
 
-    // 人际关系按人合并：本轮没写到的人保留旧状态
+    const merged = mergeList(normalizeMemories(old['关键记忆']), normalizeMemories(info && info['关键记忆']));
+    const mergedKnown = mergeList(normalizeMemories(old['已知']), normalizeMemories(info && info['已知']));
+
+    // 人际关系/日程按 key 合并：本轮没写到的人保留旧状态
     const mergedRel = {
         ...normalizeRelationships(old['人际关系']),
         ...normalizeRelationships(info && info['人际关系']),
+    };
+    const mergedSchedule = {
+        ...normalizeRelationships(old['日程']),
+        ...normalizeRelationships(info && info['日程']),
     };
 
     const finalInfo = { ...(info && typeof info === 'object' ? info : {}) };
     // 旧的可选基本信息（性别/外貌/身份等）本轮没写就保留
     for (const [k, v] of Object.entries(old)) {
-        if (k === '姓名' || k === '关键记忆' || k === '人际关系') continue;
+        if (['姓名', '关键记忆', '人际关系', '已知', '日程'].includes(k)) continue;
         if (!(k in finalInfo) || !String(finalInfo[k] ?? '').trim()) finalInfo[k] = v;
     }
     finalInfo['关键记忆'] = merged;
+    if (mergedKnown.length) finalInfo['已知'] = mergedKnown;
+    else delete finalInfo['已知'];
     if (Object.keys(mergedRel).length) finalInfo['人际关系'] = mergedRel;
     else delete finalInfo['人际关系'];
+    if (Object.keys(mergedSchedule).length) finalInfo['日程'] = mergedSchedule;
+    else delete finalInfo['日程'];
+    if (replyLayer > 0) finalInfo['更新于'] = `第 ${replyLayer} 层`;
 
     const content = formatCharacterYaml(name, finalInfo);
     stBridge.upsertEntryInBook(target, `角色·${name}`, content, {
@@ -934,6 +981,19 @@ registry.register({
         for (const msg of buildSystemMessages(needBig, includeTracking, bookName, needGenesis)) {
             ctx.__nt_pendingSystems.push(msg);
         }
+
+        // 后台 tick：角色/世界按设置的频率轮值
+        const charEvery = Number(settings.charTickEvery) || 0;
+        const worldEvery = Number(settings.worldTickEvery) || 0;
+        const needCharTick = settings.enableTicks && charEvery > 0 && aiCount > 0 && aiCount % charEvery === 0;
+        const needWorldTick = settings.enableTicks && worldEvery > 0 && aiCount > 0 && aiCount % worldEvery === 0;
+        if (needCharTick || needWorldTick) {
+            ctx.__nt_pendingSystems.push({
+                role: 'system',
+                content: buildTickPrompt({ needCharTick, needWorldTick }),
+            });
+            console.log(`[worldsim] 后台 tick：角色=${needCharTick} 世界=${needWorldTick}`);
+        }
     },
 
     async onResponse({ captured }) {
@@ -1050,16 +1110,37 @@ registry.register({
                 const blockedNow = new Set(cfgNow.blocked);
                 const pinnedNow = new Set(cfgNow.pinned);
 
+                const charsBook = await stBridge.loadWorldInfoAsync(currentLorebook);
+                const touchedChars = [];
+
                 if (data.chars && settings.enableChars) {
                     const focusArr = (settings.focusChars || '').split(/[,，\s]+/).map(n => n.trim()).filter(Boolean);
                     const allow = focusArr.length ? new Set([...focusArr, ...pinnedNow]) : null;
-                    const charsBook = await stBridge.loadWorldInfoAsync(currentLorebook);
                     for (const [name, info] of Object.entries(data.chars)) {
                         const n = String(name).trim();
                         if (!n || blockedNow.has(n)) continue;
                         if (allow && !allow.has(n)) continue;
-                        await updateCharacterEntry(currentLorebook, n, info, charsBook);
+                        await updateCharacterEntry(currentLorebook, n, info, charsBook, replyLayer);
+                        touchedChars.push({ name: n, info });
                     }
+                }
+
+                // 后台 tick：模型写的离屏角色，合并进角色档案
+                if (data.tick && typeof data.tick === 'object' && !Array.isArray(data.tick)) {
+                    for (const [name, info] of Object.entries(data.tick)) {
+                        const n = String(name).trim();
+                        if (!n || blockedNow.has(n) || !info || typeof info !== 'object') continue;
+                        await updateCharacterEntry(currentLorebook, n, info, charsBook, replyLayer);
+                        touchedChars.push({ name: n, info });
+                    }
+                }
+
+                // 刷新索引里这些角色的位置/行动/更新时间
+                for (const { name, info } of touchedChars) {
+                    const patch = { layer: replyLayer };
+                    if (info['位置']) patch.location = String(info['位置']).trim();
+                    if (info['当前行动']) patch.action = String(info['当前行动']).trim();
+                    await refreshChar(currentLorebook, name, patch);
                 }
                 if (data.roster) {
                     // 索引由模型自己增删；插件补更新时间、过滤黑名单、保护钉住的人

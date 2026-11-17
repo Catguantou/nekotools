@@ -427,7 +427,7 @@ function updateClockUi() {
 
 // ========== 角色管理 ==========
 
-const CHAR_FIELD_ORDER = ['姓名', '性别', '外貌', '身份', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化', '人际关系'];
+const CHAR_FIELD_ORDER = ['姓名', '性别', '外貌', '身份', '位置', '心情', '日程', '当前行动', '下一步', '长期目标', '近期打算', '状态', '后台运行', '关键记忆', '特殊变化', '人际关系', '已知', '秘密', '更新于'];
 
 function currentLayerNo() {
     const chat = stBridge.getContext().chat || [];
