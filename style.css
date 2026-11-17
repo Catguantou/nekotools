@@ -466,9 +466,9 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* ── 状态栏：与 NEKOTOOL 面板同一套视觉语言 ───────────────
-   近黑底 + 蓝图网格 + 电光蓝细节 + 无衬线字，
-   与面板的 01/02 编号区块、蓝色描边、切角按钮保持一致。 */
+/* 鈹€鈹€ 鐘舵€佹爮锛氫笌 NEKOTOOL 闈㈡澘鍚屼竴濂楄瑙夎瑷€ 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+   杩戦粦搴?+ 钃濆浘缃戞牸 + 鐢靛厜钃濈粏鑺?+ 鏃犺‖绾垮瓧锛?
+   涓庨潰鏉跨殑 01/02 缂栧彿鍖哄潡銆佽摑鑹叉弿杈广€佸垏瑙掓寜閽繚鎸佷竴鑷淬€?*/
 .ws-status-bar {
     position: relative;
     display: flex;
@@ -516,7 +516,7 @@
     white-space: nowrap;
 }
 
-/* 首个条目前的蓝色方块标记（面板里的小方块语言） */
+/* 棣栦釜鏉＄洰鍓嶇殑钃濊壊鏂瑰潡鏍囪锛堥潰鏉块噷鐨勫皬鏂瑰潡璇█锛?*/
 .ws-status-item:first-child::before {
     content: "";
     flex: none;
@@ -551,12 +551,12 @@
     .ws-status-bar::after { display: none; }
 }
 
-/* 视觉屏蔽：只是看不见，数据没动，可一键恢复 */
+/* 瑙嗚灞忚斀锛氬彧鏄湅涓嶈锛屾暟鎹病鍔紝鍙竴閿仮澶?*/
 #chat .mes.nt-visual-hidden {
     display: none !important;
 }
 
-/* 八股视觉隐藏：只藏词，不改存档 */
+/* 鍏偂瑙嗚闅愯棌锛氬彧钘忚瘝锛屼笉鏀瑰瓨妗?*/
 #chat .nt-slop-hidden {
     display: none !important;
 }
@@ -623,7 +623,7 @@
     color: #fff;
 }
 /* =========================================
-   NEKOTOOL文本管理器样式
+   NEKOTOOL鏂囨湰绠＄悊鍣ㄦ牱寮?
    ========================================= */
 .nt-fav-star-btn {
     cursor: pointer;
@@ -659,13 +659,13 @@
 }
 
 /* ============================================================
-   v2 皮肤：战术面板 / 白天·夜晚
+   v2 鐨偆锛氭垬鏈潰鏉?/ 鐧藉ぉ路澶滄櫄
    ============================================================ */
 
 body {
-    --ntk-blue: #2f54ff;
-    --ntk-blue2: #6b86ff;
-    --ntk-blue-soft: rgba(47, 84, 255, 0.14);
+    --ntk-blue: #2b3fae;
+    --ntk-blue2: #7b8ad6;
+    --ntk-blue-soft: rgba(43, 63, 174, 0.16);
     --ntk-bg: #0a0a0f;
     --ntk-plate: rgba(22, 22, 30, 0.55);
     --ntk-glass: rgba(12, 12, 17, 0.62);
@@ -674,21 +674,10 @@ body {
     --ntk-fg: #eef0f5;
     --ntk-dim: #9195a3;
     --ntk-faint: #565a68;
-    --ntk-grid: rgba(255, 255, 255, 0.035);
-}
-body.nt-ui-day {
-    --ntk-bg: #e5e1d4;
-    --ntk-plate: rgba(250, 248, 240, 0.74);
-    --ntk-glass: rgba(249, 247, 240, 0.62);
-    --ntk-line: rgba(20, 20, 26, 0.14);
-    --ntk-line2: rgba(20, 20, 26, 0.22);
-    --ntk-fg: #141419;
-    --ntk-dim: #5b584e;
-    --ntk-faint: #938d7b;
-    --ntk-grid: rgba(18, 18, 26, 0.05);
+    --ntk-grid: rgba(255, 255, 255, 0.025);
 }
 
-/* ---------- 外框 ---------- */
+/* ---------- 澶栨 ---------- */
 #nt-ws-panel {
     position: relative;
     background-color: var(--ntk-glass);
@@ -711,7 +700,7 @@ body.nt-ui-day {
     z-index: 3;
 }
 
-/* 内容层：大网格 + 玻璃 */
+/* 鍐呭灞傦細澶х綉鏍?+ 鐜荤拑 */
 #nt-ws-panel .nt-content {
     position: relative;
     padding: 0;
@@ -722,8 +711,8 @@ body.nt-ui-day {
     position: absolute;
     inset: 0;
     background-image:
-        repeating-linear-gradient(0deg, var(--ntk-grid) 0 1px, transparent 1px 44px),
-        repeating-linear-gradient(90deg, var(--ntk-grid) 0 1px, transparent 1px 44px);
+        repeating-linear-gradient(0deg, var(--ntk-grid) 0 1px, transparent 1px 32px),
+        repeating-linear-gradient(90deg, var(--ntk-grid) 0 1px, transparent 1px 32px);
     pointer-events: none;
     z-index: 0;
 }
@@ -735,13 +724,13 @@ body.nt-ui-day {
 #nt-ws-panel .nt-tab-pane,
 #nt-ws-panel .nt-footer { position: relative; z-index: 1; }
 
-/* ---------- 头部 ---------- */
+/* ---------- 澶撮儴 ---------- */
 #nt-ws-panel .nt-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 62px;
-    padding: 0 16px;
+    height: 52px;
+    padding: 0 14px;
     border-bottom: 1px solid var(--ntk-line);
     cursor: pointer;
 }
@@ -764,17 +753,6 @@ body.nt-ui-day {
     color: var(--ntk-blue);
 }
 #nt-ws-panel .nt-coords { display: flex; align-items: center; gap: 10px; }
-#nt-ws-panel .nt-theme-btn {
-    height: 26px;
-    padding: 0 10px;
-    background: transparent;
-    border: 1px solid var(--ntk-line2);
-    color: var(--ntk-dim);
-    font-size: 10px;
-    letter-spacing: .16em;
-    cursor: pointer;
-}
-#nt-ws-panel .nt-theme-btn:hover { color: var(--ntk-blue); border-color: var(--ntk-blue); }
 
 /* ---------- Tabs ---------- */
 #nt-ws-panel .nt-tabs {
@@ -783,7 +761,7 @@ body.nt-ui-day {
 }
 #nt-ws-panel .nt-tab {
     flex: 1;
-    height: 44px;
+    height: 40px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -812,16 +790,16 @@ body.nt-ui-day {
 }
 #nt-ws-panel .nt-tab.active .nt-tnum { color: var(--ntk-blue); }
 
-/* ---------- 面板内容 ---------- */
-#nt-ws-panel .nt-tab-pane { display: none; padding: 14px; }
+/* ---------- 闈㈡澘鍐呭 ---------- */
+#nt-ws-panel .nt-tab-pane { display: none; padding: 10px; }
 #nt-ws-panel .nt-tab-pane.active { display: block; }
 
 #nt-ws-panel .nt-section {
     position: relative;
     background: var(--ntk-plate);
     border: 1px solid var(--ntk-line);
-    padding: 14px;
-    margin-bottom: 12px;
+    padding: 10px;
+    margin-bottom: 8px;
     clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
 }
 #nt-ws-panel .nt-section::before {
@@ -834,8 +812,8 @@ body.nt-ui-day {
 #nt-ws-panel .nt-sec-head {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 12px;
+    gap: 8px;
+    margin-bottom: 8px;
 }
 #nt-ws-panel .nt-index {
     font-family: "Bahnschrift", "DIN Alternate", sans-serif;
@@ -853,14 +831,14 @@ body.nt-ui-day {
 #nt-ws-panel .nt-sec-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--ntk-line2), transparent); }
 #nt-ws-panel .nt-hint { font-size: 10px; color: var(--ntk-faint); letter-spacing: .04em; }
 
-/* 模块格 */
-#nt-ws-panel .nt-grid-layout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+/* 妯″潡鏍?*/
+#nt-ws-panel .nt-grid-layout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 #nt-ws-panel .nt-grid-item {
     position: relative;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px;
+    gap: 7px;
+    padding: 7px 8px;
     border: 1px solid var(--ntk-line);
     color: var(--ntk-fg);
     font-size: 12px;
@@ -891,13 +869,13 @@ body.nt-ui-day {
     color: var(--ntk-faint);
 }
 
-/* 数据行 */
+/* 鏁版嵁琛?*/
 #nt-ws-panel .nt-data-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 8px 0;
+    padding: 5px 0;
     border-bottom: 1px dashed var(--ntk-line);
 }
 #nt-ws-panel .nt-data-row:last-child { border-bottom: 0; }
@@ -918,7 +896,7 @@ body.nt-ui-day {
 #nt-ws-panel .nt-data-input:focus,
 #nt-ws-panel .nt-data-select:focus { border-color: var(--ntk-blue); }
 
-/* 按钮 */
+/* 鎸夐挳 */
 #nt-ws-panel .nt-btn-text,
 #nt-ws-panel .nt-btn-action {
     position: relative;
@@ -942,39 +920,47 @@ body.nt-ui-day {
     color: #fff;
 }
 #nt-ws-panel .nt-btn-action.primary:hover { background: #2446e6; color: #fff; }
-/* 清掉旧版内联霓虹色 */
+/* 娓呮帀鏃х増鍐呰仈闇撹櫣鑹?*/
 #nt-ws-panel .nt-btn-text[style*="color"],
 #nt-ws-panel .nt-btn-action[style*="color"] { color: var(--ntk-dim) !important; }
 #nt-ws-panel .nt-btn-action.primary[style] { color: #fff !important; }
 
-/* 提示词块 */
-#nt-ws-panel .nt-prompt-block { margin-bottom: 10px; }
+/* 鎻愮ず璇嶅潡 */
+#nt-ws-panel .nt-prompt-block { margin-bottom: 6px; }
 #nt-ws-panel .nt-prompt-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 6px;
+    gap: 8px;
+    margin-bottom: 4px;
 }
-#nt-ws-panel .nt-prompt-code { color: var(--ntk-blue); font-size: 9px; letter-spacing: .16em; }
+#nt-ws-panel .nt-prompt-code { color: var(--ntk-blue2); font-size: 9px; letter-spacing: .16em; }
 #nt-ws-panel .nt-prompt-name { font-size: 11px; color: var(--ntk-dim); }
 #nt-ws-panel .nt-prompt-textarea {
     width: 100%;
-    min-height: 88px;
-    padding: 10px;
+    min-height: 52px;
+    padding: 8px;
     background: var(--ntk-bg);
     border: 1px solid var(--ntk-line2);
     color: var(--ntk-fg);
     font-family: inherit;
     font-size: 12px;
-    line-height: 1.7;
+    line-height: 1.6;
     resize: vertical;
     outline: none;
 }
 #nt-ws-panel .nt-prompt-textarea:focus { border-color: var(--ntk-blue); }
 
-/* 世界书列表 */
-#nt-ws-panel .nt-ws-booklist { border: 1px solid var(--ntk-line); padding: 6px; background: var(--ntk-bg); }
+/* 鎻愮ず璇嶄袱鍒楁帓甯冿紝鍘嬬缉椤甸暱 */
+#nt-ws-panel .nt-section:has(.nt-prompt-block) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 10px;
+}
+#nt-ws-panel .nt-section:has(.nt-prompt-block) > .nt-sec-head { grid-column: 1 / -1; }
+
+/* 涓栫晫涔﹀垪琛?*/
+#nt-ws-panel .nt-ws-booklist { border: 1px solid var(--ntk-line); padding: 6px; background: var(--ntk-bg); max-height: 300px !important; overflow-y: auto; }
 #nt-ws-panel .nt-book-row {
     background: transparent !important;
     border: 1px solid transparent;
@@ -987,21 +973,38 @@ body.nt-ui-day {
     background: var(--ntk-blue-soft) !important;
 }
 
-/* 底部 */
+/* 搴曢儴锛氬惛搴?+ 杞婚噺搴旂敤鎸夐挳 */
 #nt-ws-panel .nt-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
-    padding: 12px 14px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
     border-top: 1px solid var(--ntk-line);
+    background: var(--ntk-glass);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+}
+#nt-ws-panel .nt-footer .nt-btn-action.primary {
+    height: 26px;
+    padding: 0 14px;
+    background: transparent;
+    border: 1px solid var(--ntk-blue);
+    color: var(--ntk-blue2);
+    font-size: 10px;
+    letter-spacing: .18em;
+}
+#nt-ws-panel .nt-footer .nt-btn-action.primary:hover {
+    background: var(--ntk-blue);
+    color: #fff;
 }
 
-/* 白天 */
-#nt-ws-panel.nt-day {
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 20px 50px rgba(60, 50, 20, 0.16);
-}
+/* 鐧藉ぉ涓婚宸茬Щ闄わ細浠呬繚鐣欐繁鑹?*/
 
-/* ---------- 消息内状态栏 ---------- */
+/* ---------- 娑堟伅鍐呯姸鎬佹爮 ---------- */
 .ws-status-bar {
     position: relative;
     display: grid;
@@ -1036,12 +1039,12 @@ body.nt-ui-day {
 }
 .ws-status-bar .pt-sq { width: 10px; height: 10px; background: var(--ntk-blue); }
 .ws-status-bar .plate-tag .mono { font-size: 7.5px; letter-spacing: .2em; color: var(--ntk-dim); }
-.ws-status-bar .plate-fields { display: flex; flex-wrap: wrap; align-items: stretch; padding: 9px 12px; }
+.ws-status-bar .plate-fields { display: flex; flex-wrap: wrap; align-items: stretch; padding: 7px 10px; }
 .ws-status-bar .ws-status-item {
     display: flex; flex-direction: column; justify-content: center; gap: 1px;
-    padding: 2px 16px 2px 14px;
+    padding: 2px 12px 2px 10px;
     border-right: 1px solid var(--ntk-line);
-    min-width: 88px;
+    min-width: 76px;
 }
 .ws-status-bar .ws-status-item:last-child { border-right: 0; }
 .ws-status-bar .ws-status-item i {
@@ -1068,7 +1071,7 @@ body.nt-ui-day {
 }
 .ws-status-bar .plate-mark .mono { font-size: 6.5px; letter-spacing: .14em; color: var(--ntk-faint); }
 
-/* 旧消息兼容：<b> 作标签 */
+/* 鏃ф秷鎭吋瀹癸細<b> 浣滄爣绛?*/
 .ws-status-bar > .ws-status-item > b:first-child {
     font-size: 8px;
     letter-spacing: .2em;
@@ -1077,8 +1080,54 @@ body.nt-ui-day {
     margin-right: 6px;
 }
 
-body.nt-ui-day .ws-status-bar {
-    background-image:
-        repeating-linear-gradient(0deg, rgba(18, 18, 26, 0.05) 0 1px, transparent 1px 22px),
-        repeating-linear-gradient(90deg, rgba(18, 18, 26, 0.05) 0 1px, transparent 1px 22px);
+
+/* ---------- 绉诲姩绔€傞厤 ---------- */
+@media (max-width: 640px) {
+    #nt-ws-panel .nt-header { height: 46px; padding: 0 10px; }
+    #nt-ws-panel .nt-logo { font-size: 15px; letter-spacing: .14em; }
+    #nt-ws-panel .nt-sub { font-size: 9px; }
+
+    #nt-ws-panel .nt-tabs { overflow-x: auto; }
+    #nt-ws-panel .nt-tab {
+        flex: 0 0 auto;
+        min-width: 74px;
+        height: 38px;
+        padding: 0 10px;
+        font-size: 10.5px;
+        gap: 5px;
+    }
+
+    #nt-ws-panel .nt-tab-pane { padding: 8px; }
+    #nt-ws-panel .nt-section { padding: 8px; margin-bottom: 6px; }
+
+    #nt-ws-panel .nt-grid-layout { grid-template-columns: 1fr 1fr; gap: 5px; }
+    #nt-ws-panel .nt-grid-item { padding: 6px; font-size: 11px; }
+    #nt-ws-panel .nt-code { display: none; }
+
+    #nt-ws-panel .nt-section:has(.nt-prompt-block) { grid-template-columns: 1fr; }
+
+    #nt-ws-panel .nt-data-row { flex-wrap: wrap; gap: 6px; padding: 4px 0; }
+    #nt-ws-panel .nt-data-label { font-size: 11px; }
+    #nt-ws-panel .nt-data-input,
+    #nt-ws-panel .nt-data-select { width: 72px; height: 30px; font-size: 13px; }
+
+    #nt-ws-panel .nt-btn-text,
+    #nt-ws-panel .nt-btn-action { height: 28px; padding: 0 10px; font-size: 10px; }
+    #nt-ws-panel .nt-footer { padding: 6px 8px; }
+
+    /* 鐘舵€佹爮锛氭暣琛岄摵婊★紝闅愯棌鏉″舰鐮?*/
+    .ws-status-bar { grid-template-columns: 1fr; }
+    .ws-status-bar .plate-tag {
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 8px;
+        padding: 5px 10px;
+        border-right: 0;
+        border-bottom: 1px solid var(--ntk-line);
+    }
+    .ws-status-bar .plate-tag .mono { font-size: 8px; }
+    .ws-status-bar .plate-fields { padding: 6px 8px; }
+    .ws-status-bar .ws-status-item { min-width: 45%; padding: 2px 10px 2px 8px; }
+    .ws-status-bar .plate-mark { display: none; }
+    .ws-status-bar::after { display: none; }
 }

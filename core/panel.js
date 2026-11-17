@@ -130,7 +130,6 @@ export function mountPanel() {
                     <span class="nt-sub">系统面板</span>
                 </div>
                 <div class="nt-coords">
-                    <button id="nt-theme-toggle" class="nt-theme-btn" type="button">夜晚</button>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
             </div>
@@ -410,10 +409,6 @@ export function mountPanel() {
                             <button id="nt-ws-export" class="nt-btn-action">[导出]</button>
                             <button id="nt-ws-reset" class="nt-btn-action">[重置]</button>
                         </div>
-                        <div class="nt-data-row">
-                            <span class="nt-data-label">界面主题 <span class="nt-hint">/ 白天或夜晚</span></span>
-                            <button id="nt-theme-toggle-2" class="nt-btn-text">[切换]</button>
-                        </div>
                     </div>
                 </div>
 
@@ -425,29 +420,6 @@ export function mountPanel() {
     `;
 
     container.appendChild(wrap);
-
-    // ---------- 界面主题：白天 / 夜晚 ----------
-    function applyUiTheme(theme) {
-        const day = theme === 'day';
-        wrap.classList.toggle('nt-day', day);
-        wrap.classList.toggle('nt-night', !day);
-        document.body.classList.toggle('nt-ui-day', day);
-        const b1 = wrap.querySelector('#nt-theme-toggle');
-        if (b1) b1.textContent = day ? '白天' : '夜晚';
-    }
-    let uiTheme = (settings.get('ui') || {}).theme === 'day' ? 'day' : 'night';
-    applyUiTheme(uiTheme);
-
-    function toggleUiTheme() {
-        uiTheme = uiTheme === 'day' ? 'night' : 'day';
-        settings.set('ui', { theme: uiTheme });
-        applyUiTheme(uiTheme);
-        if (window.toastr) toastr.info(uiTheme === 'day' ? '已切换：白天' : '已切换：夜晚');
-    }
-    const themeBtn = wrap.querySelector('#nt-theme-toggle');
-    if (themeBtn) themeBtn.onclick = toggleUiTheme;
-    const themeBtn2 = wrap.querySelector('#nt-theme-toggle-2');
-    if (themeBtn2) themeBtn2.onclick = toggleUiTheme;
 
     // 快捷跳转
     wrap.querySelectorAll('[data-goto]').forEach(btn => {
