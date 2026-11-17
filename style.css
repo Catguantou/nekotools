@@ -4423,14 +4423,14 @@ body {
     display: none;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 76px;
+    width: 32px;
+    height: 82px;
     border-radius: 10px;
     background: #101116;
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: #e7ebf7;
     font-family: "Bahnschrift", "Segoe UI", sans-serif;
-    font-size: 8.5px;
+    font-size: 10.5px;
     letter-spacing: 1px;
     writing-mode: vertical-rl;
     text-orientation: upright;
