@@ -1888,7 +1888,9 @@ async function showRefreshModal() {
 
         const schema = [];
         const userName = stBridge.getUserName() || '用户';
-        if (selected.includes('chars')) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`);
+        const recordUser = settings.recordUserRelation !== false;
+        const relSchema = recordUser ? `{"${userName}":"好感 X｜信任 Y｜标签：..."}` : '{}';
+        if (selected.includes('chars')) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":${relSchema},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`);
         if (selected.includes('world')) schema.push('"world": {"国家":{"名称":"方位｜类型｜描述"},"势力":{"名称":"目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}');
         if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜可交互：...｜常驻：..."}}}');
         if (selected.includes('quests')) {
@@ -1902,9 +1904,13 @@ async function showRefreshModal() {
         const charLine = selected.includes('chars')
             ? `本轮只更新这些角色：${selectedChars.join('、')}；不要输出其他人。`
             : '';
+        const userLine = recordUser
+            ? `用户角色叫「${userName}」，人际关系里用真实名字。`
+            : `人际关系不要记录用户角色「${userName}」。`;
         const prompt = `你是 NEKOTOOL 的后台世界更新器。只输出一个 JSON 对象，不要正文、不要 markdown 代码块、不要解释。
 方式：${mode.value === 'advance' ? '推进到下一阶段（让时间/事件往前走，可新增支线与人物变化）' : '补全当前状态（把缺的细节补全，不主动推进时间）'}。
 ${charLine}
+${userLine}
 当前数据：
 ${blocks.join('\n\n')}
 
@@ -1924,6 +1930,13 @@ ${schema.join('\n')}
                 const filtered = {};
                 for (const name of selectedChars) {
                     if (data.chars[name]) filtered[name] = data.chars[name];
+                }
+                if (!recordUser) {
+                    for (const info of Object.values(filtered)) {
+                        if (info && info['人际关系'] && typeof info['人际关系'] === 'object') {
+                            delete info['人际关系'][userName];
+                        }
+                    }
                 }
                 data.chars = filtered;
             }

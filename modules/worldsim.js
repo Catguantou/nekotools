@@ -27,6 +27,7 @@ const defaultSettings = {
     hideKeepCount: 2,
     visualHideKeep: 0,
     focusChars: '',
+    recordUserRelation: true,
     enableTicks: true,
     worldTickEvery: 3,
     charTickEvery: 2,
@@ -348,8 +349,10 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
 
     if (settings.enableChars) {
         const userName = stBridge.getUserName() || '用户';
+        const recordUser = settings.recordUserRelation !== false;
+        const relSchema = recordUser ? `{"${userName}":"好感 50｜信任 50｜中性：..."}` : '{}';
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","人际关系":${relSchema},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
 要求：记录活跃 NPC（不要记录用户角色${userName}本身）。六个字段全部必填，每个字段写完整的句子，不要合并成一句话：
 - 位置：优先使用「地图」里的小地点名；没有就写当前地点
 - 日程：早晨/白天/夜晚 各写「地点｜做什么」，地点同样用地图小地点名
@@ -361,7 +364,7 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
 可选：身份。
 必填基础：性别 / 外貌（简单一句）/ 人际关系。
-人际关系是对象，键写对方真实名字。用户角色就叫「${userName}」；第一次正式遇见之后才写，没遇见就不要写。
+${recordUser ? `人际关系是对象，键写对方真实名字。用户角色就叫「${userName}」；第一次正式遇见之后才写，没遇见就不要写。` : `人际关系是对象，键写 NPC 的真实名字；不要记录用户角色「${userName}」。`}
 值的格式："好感 X｜信任 Y｜标签：一句原因"。
 好感/信任都是 0-100：好感 0-20 敌意 / 21-40 冷淡 / 41-60 中性 / 61-80 亲近 / 81-100 信赖或爱慕；
 信任 0-20 提防 / 21-40 保留 / 41-60 一般 / 61-80 信任 / 81-100 生死托付。
@@ -507,6 +510,10 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
         ...normalizeRelationships(old['人际关系']),
         ...normalizeRelationships(info && info['人际关系']),
     };
+    if (settings.recordUserRelation === false) {
+        const userName = stBridge.getUserName();
+        if (userName) delete mergedRel[userName];
+    }
     const mergedSchedule = {
         ...normalizeRelationships(old['日程']),
         ...normalizeRelationships(info && info['日程']),

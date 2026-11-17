@@ -191,6 +191,12 @@ export function mountPanel() {
                         <div class="nt-data-row">
                             <input type="text" id="nt-ws-focuschars" class="nt-data-input" style="width:100%; text-align:left;" value="${escapeHtml(s.focusChars || '')}" placeholder="例如: 张三,李四">
                         </div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">记录用户角色关系 <span class="nt-hint">/ 关掉后 NPC 关系里不写你</span></span>
+                            <label style="display:flex;align-items:center;gap:6px;">
+                                <input type="checkbox" id="nt-ws-record-user" ${s.recordUserRelation !== false ? 'checked' : ''}> 开启
+                            </label>
+                        </div>
                         <div class="nt-data-row" style="margin-top: 16px;">
                             <span class="nt-data-label">后台 tick <span class="nt-hint">/ 角色与世界的离屏推进</span></span>
                             <label style="display:flex;align-items:center;gap:6px;">
@@ -1143,6 +1149,7 @@ export function mountPanel() {
         s.visualHideKeep = parseInt(wrap.querySelector('#nt-ws-visual-keep').value) || 0;
         s.bigSummaryLimit = parseInt(wrap.querySelector('#nt-ws-biglimit').value) || 100;
         s.focusChars = wrap.querySelector('#nt-ws-focuschars').value;
+        s.recordUserRelation = wrap.querySelector('#nt-ws-record-user').checked;
         s.enableTicks = wrap.querySelector('#nt-ws-tick-enable').checked;
         s.charTickEvery = parseInt(wrap.querySelector('#nt-ws-char-tick').value) || 0;
         s.worldTickEvery = parseInt(wrap.querySelector('#nt-ws-world-tick').value) || 0;
