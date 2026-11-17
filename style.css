@@ -556,6 +556,11 @@
     display: none !important;
 }
 
+/* 八股视觉隐藏：只藏词，不改存档 */
+#chat .nt-slop-hidden {
+    display: none !important;
+}
+
 #nt-ws-panel .nt-ws-booklist {
     display: flex;
     flex-wrap: wrap;

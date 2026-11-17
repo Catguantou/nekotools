@@ -2,18 +2,14 @@ import { registry } from '../core/registry.js';
 import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
 
-// 默认八股词库
+// 默认八股词库（用户定制版：单条大正则）
 const DEFAULT_SLOP_RULES = [
-    '空气仿佛凝固了',
-    '眼神中',
-    '嘴角勾起一抹玩味的弧度',
-    '心中五味杂陈',
-    '/\\*\\*[^*]*\\*\\*/g',  // 移除 /**思维链**/
-    '/^[>＞].*$/gm'  // 移除引用行
+    '/不存在的|仪式|地、|毁灭性|重复了一遍|闪过|溺水者|崇拜|极端|虔诚|膜拜三分|七分|不是比喻。|共犯|[小幼野]兽|(?:(?:手指节|指节|指关节|手关节|关节)(?:微微|略微|稍微)?|(?:微微|略微|稍微))泛白|[吞拆]吃入腹|精准地|的、|溺水的人|浮木|一丝|生理性|不容(?:置疑|拒绝|置喙)(?:的|地)?|(?:自己|连他(?:自己)?|连她(?:自己)?)?(?:都没察觉到?(?:的)?|都未曾察觉)|不[可易]察觉[地的]|[微几]不可[察查]地|极[度其]|不是([^，。\\n]+)，而是|不是([^，。\\n]+)，不是([^，。\\n]+)，|没有([^，。\\n]+)，也没有([^，。\\n]+)，|不是([^，。\\n]+)，是|不是([^，。\\n]+)。也不是([^，。\\n]+)。|，指节([^，。\\n]+)泛白|语气|，像([^，。…… :\\n]+)/gm'
 ];
 
 const tmSettings = {
     autoCleanOnReceive: false,
+    hideSlopVisual: true,
     exportIncludeNames: true,
     exportSkipHidden: false,
     exportSkipSystem: true,
@@ -127,6 +123,23 @@ export async function toggleFavoriteFloor(index) {
     return msg.extra.nekotool_favorite;
 }
 
+/** 批量收藏/取消某个楼层区间（0 基，含端点） */
+export function setFavoriteRange(from, to, value = true) {
+    const ctx = stBridge.getContext();
+    const chat = ctx.chat || [];
+    const lo = Math.max(0, Math.min(from, to ?? from));
+    const hi = Math.min(chat.length - 1, Math.max(from, to ?? from));
+    let count = 0;
+    for (let i = lo; i <= hi; i++) {
+        if (!chat[i]) continue;
+        chat[i].extra = { ...(chat[i].extra || {}), nekotool_favorite: Boolean(value) };
+        count++;
+    }
+    if (count && typeof ctx.saveChat === 'function') ctx.saveChat();
+    window.dispatchEvent(new CustomEvent('nekotool:favorites-updated'));
+    return count;
+}
+
 export function jumpToFloor(index) {
     const mesEl = document.querySelector(`#chat .mes[mesid="${index}"]`);
     if (!mesEl) return false;
@@ -138,14 +151,21 @@ export function jumpToFloor(index) {
 }
 
 // ========== 纯文字导出 ==========
-export function exportPureStoryTxt({ favoritesOnly = false } = {}) {
+export function exportPureStoryTxt({ favoritesOnly = false, from = 0, to = null } = {}) {
     const ctx = stBridge.getContext();
     const includeNames = tmSettings.exportIncludeNames !== false;
     const skipHidden = tmSettings.exportSkipHidden === true;
     const skipSystem = tmSettings.exportSkipSystem !== false;
 
+    const chat = ctx.chat || [];
+    const start = Math.max(0, Number(from) || 0);
+    const end = (to === null || to === undefined)
+        ? chat.length - 1
+        : Math.min(chat.length - 1, Math.max(0, Number(to)));
+
     const blocks = [];
-    (ctx.chat || []).forEach((msg, idx) => {
+    chat.forEach((msg, idx) => {
+        if (idx < start || idx > end) return;
         if (favoritesOnly && !msg.extra?.nekotool_favorite) return;
         // 系统消息不是剧情；隐藏楼层按「数据层 hidden」判断，不再只看系统消息
         if (skipSystem && msg.is_system) return;
@@ -238,7 +258,7 @@ function parseSlopRules(rulesText) {
     return rules;
 }
 
-export async function cleanChatSlop({ rangeCount = 0, includeUser = false } = {}) {
+export async function cleanChatSlop({ rangeCount = 0, includeUser = false, from = null, to = null } = {}) {
     const ctx = stBridge.getContext();
     const chat = ctx.chat || [];
     const rules = parseSlopRules(tmSettings.slopRulesText || DEFAULT_SLOP_RULES.join('\n'));
@@ -246,9 +266,14 @@ export async function cleanChatSlop({ rangeCount = 0, includeUser = false } = {}
     let msgChanged = 0;
     let totalHits = 0;
     const backup = [];
-    const startIdx = rangeCount > 0 ? Math.max(0, chat.length - rangeCount) : 0;
+    const startIdx = (from !== null && from !== undefined)
+        ? Math.max(0, Number(from))
+        : (rangeCount > 0 ? Math.max(0, chat.length - rangeCount) : 0);
+    const endIdx = (to !== null && to !== undefined)
+        ? Math.min(chat.length - 1, Math.max(0, Number(to)))
+        : chat.length - 1;
 
-    for (let i = startIdx; i < chat.length; i++) {
+    for (let i = startIdx; i <= endIdx; i++) {
         const msg = chat[i];
         if (!msg.mes || (msg.is_user && !includeUser)) continue;
 
@@ -310,6 +335,93 @@ export function canUndoClean() {
     return Boolean(lastCleanBackup && lastCleanBackup.length);
 }
 
+// ========== 视觉隐藏八股（只藏，不改数据） ==========
+const SLOP_HIDDEN_CLASS = 'nt-slop-hidden';
+let slopRegexCache = { text: null, re: null };
+
+function getSlopRegex() {
+    const text = tmSettings.slopRulesText || DEFAULT_SLOP_RULES.join('\n');
+    if (slopRegexCache.text === text) return slopRegexCache.re;
+
+    const parts = parseSlopRules(text).map(r => `(?:${r.re.source})`);
+    let re = null;
+    if (parts.length) {
+        try {
+            re = new RegExp(parts.join('|'), 'g');
+        } catch (e) {
+            console.warn('[nekotools] 合并八股正则失败，视觉隐藏停用', e);
+            re = null;
+        }
+    }
+    slopRegexCache = { text, re };
+    return re;
+}
+
+function hideSlopInTextEl(textEl) {
+    const re = getSlopRegex();
+    if (!re) return;
+    const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+            if (!node.nodeValue || node.nodeValue.length < 2) return NodeFilter.FILTER_REJECT;
+            if (node.parentElement && node.parentElement.closest('.' + SLOP_HIDDEN_CLASS)) {
+                return NodeFilter.FILTER_REJECT;
+            }
+            return NodeFilter.FILTER_ACCEPT;
+        }
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+
+    for (const node of nodes) {
+        const text = node.nodeValue;
+        re.lastIndex = 0;
+        if (!re.test(text)) continue;
+
+        const frag = document.createDocumentFragment();
+        let last = 0;
+        let m;
+        re.lastIndex = 0;
+        while ((m = re.exec(text)) !== null) {
+            if (m[0] === '') { re.lastIndex++; continue; }
+            if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+            const span = document.createElement('span');
+            span.className = SLOP_HIDDEN_CLASS;
+            span.textContent = m[0];
+            frag.appendChild(span);
+            last = m.index + m[0].length;
+        }
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        node.parentNode.replaceChild(frag, node);
+    }
+}
+
+/** 对所有已渲染楼层做视觉隐藏；内容没变就跳过，避免反复重排 */
+export function hideSlopEverywhere() {
+    if (tmSettings.hideSlopVisual !== true) return 0;
+    let count = 0;
+    document.querySelectorAll('#chat .mes .mes_text').forEach(textEl => {
+        const len = String(textEl.textContent.length);
+        if (textEl.dataset.ntSlopLen === len) return;
+        hideSlopInTextEl(textEl);
+        textEl.dataset.ntSlopLen = String(textEl.textContent.length);
+        count++;
+    });
+    return count;
+}
+
+/** 把视觉隐藏还原成普通文本（只处理当前 DOM，不改存档） */
+export function restoreSlopVisual() {
+    document.querySelectorAll('#chat .' + SLOP_HIDDEN_CLASS).forEach(span => {
+        const parent = span.parentNode;
+        if (!parent) return;
+        parent.replaceChild(document.createTextNode(span.textContent), span);
+        parent.normalize();
+    });
+    document.querySelectorAll('#chat .mes .mes_text').forEach(textEl => {
+        delete textEl.dataset.ntSlopLen;
+    });
+}
+
 // ========== 注册模块 ==========
 registry.register({
     id: 'textmanager',
@@ -330,22 +442,15 @@ registry.register({
     init() {
         this.loadSettings();
 
-        // 自动清除八股（如果开启）
+        // 八股默认只做视觉隐藏（见 hideSlopEverywhere），不再自动改动正文
         const ctx = stBridge.getContext();
-        if (ctx.eventSource && ctx.eventTypes?.MESSAGE_RECEIVED) {
-            ctx.eventSource.on(ctx.eventTypes.MESSAGE_RECEIVED, async () => {
-                if (tmSettings.autoCleanOnReceive) {
-                    await cleanChatSlop({ rangeCount: 1, includeUser: false });
-                }
-            });
-        }
 
         // 注入楼层收藏星标按钮
         const observer = new MutationObserver(() => {
-            // 长聊天里 DOM 变动很频繁，节流一下，避免每次变动都全量扫描
-            const now = Date.now();
-            if (now - (observer._lastScan || 0) < 120) return;
-            observer._lastScan = now;
+            // 尾部节流：合并高频变动，但保证最后一次一定执行
+            //（之前用「丢弃」式节流，会把消息渲染的最后一帧吞掉，导致状态栏不渲染）
+            clearTimeout(observer._timer);
+            observer._timer = setTimeout(() => {
             document.querySelectorAll('#chat .mes:not([data-nt-star])').forEach(mesEl => {
                 const mesId = mesEl.getAttribute('mesid');
                 if (!mesId) return;
@@ -379,6 +484,9 @@ registry.register({
             // 状态栏：模型把内容输出在正文末尾，这里把它升级成样式条并置顶
             upgradeStatusBars();
 
+            // 视觉隐藏八股：只藏不改，开关关闭时不动
+            hideSlopEverywhere();
+
             // 数据层已标记 hidden 的楼层，重载后重新套上视觉屏蔽
             const ctx = stBridge.getContext();
             document.querySelectorAll('#chat .mes[mesid]').forEach(el => {
@@ -386,6 +494,7 @@ registry.register({
                 const msg = ctx.chat?.[Number(el.getAttribute('mesid'))];
                 if (msg?.extra?.hidden) el.classList.add('nt-visual-hidden');
             });
+            }, 100);
         });
 
         const chatEl = document.getElementById('chat');

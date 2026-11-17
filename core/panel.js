@@ -7,7 +7,10 @@ import {
     getFavoriteFloors,
     jumpToFloor,
     toggleFavoriteFloor,
-    undoLastClean
+    undoLastClean,
+    setFavoriteRange,
+    hideSlopEverywhere,
+    restoreSlopVisual
 } from '../modules/textmanager.js';
 
 function escapeHtml(s) {
@@ -296,9 +299,13 @@ export function mountPanel() {
                             <span class="nt-title">楼层收藏夹 <span class="nt-hint">/ 聊天框每层右上角点击 ☆ 即可收藏</span></span>
                             <div class="nt-sec-line"></div>
                         </div>
-                        <div class="nt-data-row" style="gap:8px;">
-                            <input type="number" id="nt-tm-fav-input" class="nt-data-input" style="width:90px; text-align:left;" placeholder="输入楼层号#" min="0">
-                            <button id="nt-tm-fav-add" class="nt-btn-text" style="color:var(--nt-blue);">[收藏/取消该层]</button>
+                        <div class="nt-data-row" style="gap:8px; flex-wrap:wrap;">
+                            <span class="nt-hint">楼层范围</span>
+                            <input type="number" id="nt-tm-fav-from" class="nt-data-input" style="width:80px; text-align:left;" placeholder="起" min="1">
+                            <span class="nt-hint">~</span>
+                            <input type="number" id="nt-tm-fav-to" class="nt-data-input" style="width:80px; text-align:left;" placeholder="止" min="1">
+                            <button id="nt-tm-fav-on" class="nt-btn-text" style="color:#ffcc00;">[批量收藏]</button>
+                            <button id="nt-tm-fav-off" class="nt-btn-text" style="color:#ff4d4d;">[批量取消]</button>
                             <button id="nt-tm-fav-refresh" class="nt-btn-text">[刷新列表]</button>
                         </div>
                         <div id="nt-tm-fav-list" class="nt-ws-booklist" style="max-height:180px; display:block;"></div>
@@ -330,6 +337,13 @@ export function mountPanel() {
                                 <span class="nt-code">E_03</span>
                             </label>
                         </div>
+                        <div class="nt-data-row" style="gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                            <span class="nt-hint">导出范围</span>
+                            <input type="number" id="nt-tm-exp-from" class="nt-data-input" style="width:80px; text-align:left;" placeholder="起(可空)" min="1">
+                            <span class="nt-hint">~</span>
+                            <input type="number" id="nt-tm-exp-to" class="nt-data-input" style="width:80px; text-align:left;" placeholder="止(可空)" min="1">
+                            <span class="nt-hint">留空=全部</span>
+                        </div>
                         <div class="nt-data-row" style="justify-content:flex-start; gap:12px;">
                             <button id="nt-tm-export-txt" class="nt-btn-action primary">[一键导出纯剧情 TXT]</button>
                             <button id="nt-tm-export-fav" class="nt-btn-action danger">[仅导出收藏楼层 TXT]</button>
@@ -344,19 +358,22 @@ export function mountPanel() {
                         </div>
                         <div class="nt-grid-layout" style="margin-bottom:10px;">
                             <label class="nt-grid-item">
-                                <input type="checkbox" id="nt-tm-auto-clean" class="nt-hidden-cb" ${tm.autoCleanOnReceive ? 'checked' : ''}>
+                                <input type="checkbox" id="nt-tm-hide-slop" class="nt-hidden-cb" ${tm.hideSlopVisual !== false ? 'checked' : ''}>
                                 <span class="nt-box"></span>
-                                <span class="nt-text">AI回复后自动去八股</span>
+                                <span class="nt-text">自动视觉隐藏八股</span>
                                 <span class="nt-code">C_01</span>
                             </label>
-                            <div class="nt-data-row" style="margin:0; padding:0 6px;">
-                                <span class="nt-hint">扫描层数(0=全部):</span>
-                                <input type="number" id="nt-tm-clean-range" class="nt-data-input" value="0" min="0" max="9999">
+                            <div class="nt-data-row" style="margin:0; padding:0 6px; gap:6px;">
+                                <span class="nt-hint">真正删除范围</span>
+                                <input type="number" id="nt-tm-clean-from" class="nt-data-input" style="width:70px; text-align:left;" placeholder="起" min="1">
+                                <span class="nt-hint">~</span>
+                                <input type="number" id="nt-tm-clean-to" class="nt-data-input" style="width:70px; text-align:left;" placeholder="止" min="1">
+                                <span class="nt-hint">空=全部</span>
                             </div>
                         </div>
                         <div class="nt-prompt-block">
                             <div class="nt-prompt-head" style="justify-content:space-between;">
-                                <span class="nt-prompt-name">自定义八股词库（一行一条，直接填词删除；或写 <code>旧词=>新词</code> 替换；支持 <code>/正则/g</code>）</span>
+                                <span class="nt-prompt-name">自定义八股词库（一行一条；直接填词=按字面删除；<code>旧词=>新词</code> 替换；支持 <code>/正则/gm</code>；<code>#</code> 开头为注释）</span>
                                 <button id="nt-tm-reset-rules" class="nt-btn-text">[恢复默认词库]</button>
                             </div>
                             <textarea id="nt-tm-slop-rules" class="nt-prompt-textarea" style="min-height:110px;">${escapeHtml(tm.slopRulesText || '')}</textarea>
@@ -759,14 +776,27 @@ export function mountPanel() {
 
     wrap.querySelector('#nt-tm-fav-refresh').onclick = renderFavoriteList;
 
-    wrap.querySelector('#nt-tm-fav-add').onclick = async () => {
-        const val = wrap.querySelector('#nt-tm-fav-input').value;
-        if (val === '') return;
-        const idx = parseInt(val, 10);
-        if (Number.isNaN(idx)) return;
-        const nowFav = await toggleFavoriteFloor(idx);
+    // 楼层范围输入：界面 1 基，内部 0 基
+    function readRange(fromSel, toSel) {
+        const f = parseInt(wrap.querySelector(fromSel).value, 10);
+        const t = parseInt(wrap.querySelector(toSel).value, 10);
+        const from = Number.isFinite(f) ? Math.max(0, f - 1) : 0;
+        const to = Number.isFinite(t) ? Math.max(0, t - 1) : null;
+        return { from, to };
+    }
+
+    wrap.querySelector('#nt-tm-fav-on').onclick = () => {
+        const { from, to } = readRange('#nt-tm-fav-from', '#nt-tm-fav-to');
+        const n = setFavoriteRange(from, to, true);
         renderFavoriteList();
-        if (window.toastr) toastr.info(nowFav ? `已收藏 #${idx} 层` : `已取消收藏 #${idx} 层`);
+        if (window.toastr) toastr.success(`已收藏 ${n} 个楼层`);
+    };
+
+    wrap.querySelector('#nt-tm-fav-off').onclick = () => {
+        const { from, to } = readRange('#nt-tm-fav-from', '#nt-tm-fav-to');
+        const n = setFavoriteRange(from, to, false);
+        renderFavoriteList();
+        if (window.toastr) toastr.success(`已取消收藏 ${n} 个楼层`);
     };
 
     function syncTextManagerInputs() {
@@ -774,19 +804,21 @@ export function mountPanel() {
         tmMod.settings.exportIncludeNames = wrap.querySelector('#nt-tm-exp-names').checked;
         tmMod.settings.exportSkipHidden = wrap.querySelector('#nt-tm-exp-skip-hide').checked;
         tmMod.settings.exportSkipSystem = wrap.querySelector('#nt-tm-exp-skip-sys').checked;
-        tmMod.settings.autoCleanOnReceive = wrap.querySelector('#nt-tm-auto-clean').checked;
+        tmMod.settings.hideSlopVisual = wrap.querySelector('#nt-tm-hide-slop').checked;
         tmMod.settings.slopRulesText = wrap.querySelector('#nt-tm-slop-rules').value;
         tmMod.saveSettings();
     }
 
     wrap.querySelector('#nt-tm-export-txt').onclick = () => {
         syncTextManagerInputs();
-        exportPureStoryTxt({ favoritesOnly: false });
+        const { from, to } = readRange('#nt-tm-exp-from', '#nt-tm-exp-to');
+        exportPureStoryTxt({ favoritesOnly: false, from, to });
     };
 
     wrap.querySelector('#nt-tm-export-fav').onclick = () => {
         syncTextManagerInputs();
-        exportPureStoryTxt({ favoritesOnly: true });
+        const { from, to } = readRange('#nt-tm-exp-from', '#nt-tm-exp-to');
+        exportPureStoryTxt({ favoritesOnly: true, from, to });
     };
 
     wrap.querySelector('#nt-tm-reset-rules').onclick = () => {
@@ -799,11 +831,22 @@ export function mountPanel() {
 
     wrap.querySelector('#nt-tm-run-clean').onclick = async () => {
         syncTextManagerInputs();
-        const rangeCount = parseInt(wrap.querySelector('#nt-tm-clean-range').value, 10) || 0;
-        const { msgChanged, totalHits } = await cleanChatSlop({ rangeCount, includeUser: false });
+        const { from, to } = readRange('#nt-tm-clean-from', '#nt-tm-clean-to');
+        const { msgChanged, totalHits } = await cleanChatSlop({ from, to, includeUser: false });
         if (window.toastr) {
-            if (totalHits > 0) toastr.success(`清除完成：共净化 ${msgChanged} 个楼层，移除 ${totalHits} 处八股表达！`);
+            if (totalHits > 0) toastr.success(`已真正删除：${msgChanged} 个楼层，${totalHits} 处八股（可撤销）`);
             else toastr.info('扫描完毕：未发现匹配的八股词汇');
+        }
+    };
+
+    wrap.querySelector('#nt-tm-hide-slop').onchange = (e) => {
+        syncTextManagerInputs();
+        if (e.target.checked) {
+            const n = hideSlopEverywhere();
+            if (window.toastr) toastr.success(`已开启视觉隐藏（${n} 个楼层已处理）`);
+        } else {
+            restoreSlopVisual();
+            if (window.toastr) toastr.info('已关闭视觉隐藏，文字恢复显示');
         }
     };
 
