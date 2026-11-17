@@ -75,31 +75,84 @@ ${tagClose}`;
     return p;
 }
 
-/** 后台 tick：角色轮值 + 世界轮值，频率由设置控制 */
-function buildTickPrompt({ needCharTick, needWorldTick }) {
-    const maxChars = Math.max(1, Number(settings.tickMaxChars) || 2);
-    const staleAfter = Number(settings.staleAfter) || 0;
-    const antiLazy = settings.enableAntiLazy && staleAfter > 0;
+/** 角色等级：索引里的 T1核心 也算 T1 */
+function tierOf(c) {
+    const m = String(c && c.tier || '').match(/T([1-4])/i);
+    return m ? `T${m[1]}` : 'T4';
+}
 
+function placeMatches(a, b) {
+    const norm = (s) => String(s || '').replace(/\s+/g, '');
+    const x = norm(a);
+    const y = norm(b);
+    if (!x || !y) return false;
+    return x.includes(y) || y.includes(x);
+}
+
+/** 插件硬调度：按 T1/T2/T3 规则算出本轮该结算谁，不靠模型自己挑 */
+function computeTickTargets(bookName, currentLayer) {
+    const chars = rosterCache.get(bookName) || [];
+    const clock = getSlotClock(bookName) || {};
+    const place = String(clock.place || '').trim();
+    const t2Every = Math.max(1, Number(settings.charTickEvery) || 2);
+    const t3Every = Math.max(5, Number(settings.staleAfter) || 5);
+    const max = Math.max(1, Number(settings.tickMaxChars) || 2);
+    const picked = [];
+
+    for (const c of chars) {
+        const tier = tierOf(c);
+        const layer = Number(c.layer) || 0;
+        const age = Math.max(0, currentLayer - layer);
+        const present = place && (placeMatches(c.location, place) || placeMatches(c.action, place));
+        if (tier === 'T1') {
+            picked.push({ name: c.name, tier, age, priority: 0, reason: 'T1' });
+        } else if (tier === 'T2' && present) {
+            picked.push({ name: c.name, tier, age, priority: 1, reason: 'T2 在场' });
+        } else if (tier === 'T2' && age >= t2Every) {
+            picked.push({ name: c.name, tier, age, priority: 2, reason: `T2 离场 ${age} 层` });
+        } else if (tier === 'T3' && age >= t3Every) {
+            picked.push({ name: c.name, tier, age, priority: 3, reason: `T3 ${age} 层` });
+        }
+    }
+
+    picked.sort((a, b) => a.priority - b.priority || b.age - a.age);
+    const t1 = picked.filter(p => p.tier === 'T1');
+    const rest = picked.filter(p => p.tier !== 'T1');
+    return t1.concat(rest.slice(0, Math.max(0, max - t1.length)));
+}
+
+/** 长期未出场降级：除 T1 外，超过 20 层且不在场就降一级 */
+async function applyTierDowngrades(bookName, currentLayer) {
+    if (!settings.enableAntiLazy) return;
+    const chars = rosterCache.get(bookName) || [];
+    const clock = getSlotClock(bookName) || {};
+    const place = String(clock.place || '').trim();
+    for (const c of chars) {
+        const tier = tierOf(c);
+        if (tier === 'T1') continue;
+        const age = Math.max(0, currentLayer - (Number(c.layer) || 0));
+        if (age <= 20) continue;
+        if (place && (placeMatches(c.location, place) || placeMatches(c.action, place))) continue;
+        const next = tier === 'T2' ? 'T3' : tier === 'T3' ? 'T4' : '';
+        if (!next) continue;
+        await refreshChar(bookName, c.name, { tier: next });
+        c.tier = next;
+        console.log(`[worldsim] 角色降级：${c.name} ${tier} → ${next}（${age} 层未出场）`);
+    }
+}
+
+/** 后台 tick：只写插件指定的角色 + 世界轮值 */
+function buildTickPrompt({ needWorldTick, targets = [] }) {
     const lines = ['<nekotools:tick>', '【本轮后台结算】'];
-    lines.push('- 所有内容都写在本轮 ws_update 的 JSON 里，tick / world 只是其中的字段。');
-    if (needCharTick) {
-        lines.push('- 按等级轮换，不要只挑最久没更新的：');
-        lines.push('  · T1（用户关注/钉住）：每轮至少推进 1 个；T1 不降级。');
-        lines.push('  · T2（高强度互动/世界书角色）：在场的本轮更新；不在场的每 2 轮更新一次。');
-        lines.push('  · T3（配角）：每 5 轮更新一次。');
-        lines.push('  · T4（路边 NPC）：只在出场时更新。');
-        lines.push('  · 除 T1 外，连续 20 轮未出场/未更新 → 在 roster 里降一级。');
-        lines.push(`- 本轮最多写 ${maxChars} 个 tick 对象，在 "tick" 里写他们这轮在后台做了什么：`);
+    if (targets.length) {
+        lines.push('- 只写插件指定的这些角色，不要写名单外的人：');
+        for (const t of targets) lines.push(`  · ${t.name}（${t.reason}）`);
         lines.push('  "tick": {"角色名": {"位置":"地图小地点名","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
-        lines.push('- 只写这些人；玩家不在场也要推进他们自己的计划，不要等玩家。');
+        lines.push('- 玩家不在场也要推进他们自己的计划；tick 写在本轮 ws_update 里。');
     }
     if (needWorldTick) {
         lines.push('- 本轮同时做世界 tick：只更新国家/势力/社会新闻里发生的变化，输出 world。');
         lines.push('- 顺带检查主线/支线：推进主线一步，完成/失败/新增 0–1 条支线（写 main / quests）。');
-    }
-    if (antiLazy) {
-        lines.push(`- 索引里超过 ${staleAfter} 层没更新的角色，本轮必须至少结算 1 个。`);
     }
     lines.push('- 若有角色本轮出场/相遇，必须结合他的日程或当前行动解释“为什么在这里”，不能凭空出现。');
     lines.push('</nekotools:tick>');
@@ -128,20 +181,6 @@ function refreshSnapshots(bookName, book) {
 
     const idx = Object.values(book.entries).find(e => e && e.comment === INDEX_TITLE);
     rosterCache.set(bookName, idx ? parseIndex(idx.content).chars : []);
-}
-
-/** T1 每轮提醒：用户关注/钉住角色必须持续推进 */
-function buildT1Prompt(bookName = '') {
-    const chars = rosterCache.get(bookName) || [];
-    const t1 = chars
-        .filter(c => /^T1/i.test(String(c.tier || '')))
-        .map(c => c.name)
-        .slice(0, 8);
-    const names = t1.length ? `本轮 T1 名单：${t1.join('、')}。` : '索引里没有 T1。';
-    return `<nekotools:t1>
-【T1 每轮推进】${names}若有 T1，本轮至少推进 1 个，写进 tick：位置 / 当前行动 / 下一步。
-如果本轮 T1 已经在正文出场，也要补一条 tick 记录他接下来要做什么。
-</nekotools:t1>`;
 }
 
 /** 开局地图生成：从世界书地点出发，补全周边可探索地点 */
@@ -1321,20 +1360,18 @@ registry.register({
             ctx.__nt_pendingSystems.push(msg);
         }
 
-        // 后台 tick：角色/世界按设置的频率轮值
-        const charEvery = Number(settings.charTickEvery) || 0;
+        // 后台 tick：插件硬调度角色 + 世界轮值
+        const tickTargets = settings.enableTicks && includeTracking
+            ? computeTickTargets(bookName, ctx.__nt_replyLayer || chat.length + 1)
+            : [];
         const worldEvery = Number(settings.worldTickEvery) || 0;
-        const needCharTick = settings.enableTicks && charEvery > 0 && aiCount > 0 && aiCount % charEvery === 0;
         const needWorldTick = settings.enableTicks && worldEvery > 0 && aiCount > 0 && aiCount % worldEvery === 0;
-        if (needCharTick || needWorldTick) {
+        if (tickTargets.length || needWorldTick) {
             ctx.__nt_pendingSystems.push({
                 role: 'system',
-                content: buildTickPrompt({ needCharTick, needWorldTick }),
+                content: buildTickPrompt({ needWorldTick, targets: tickTargets }),
             });
-            console.log(`[worldsim] 后台 tick：角色=${needCharTick} 世界=${needWorldTick}`);
-        } else if (settings.enableTicks && includeTracking && !needGenesis) {
-            // 非全量 tick 的轮次也要提醒 T1，否则 T1 做不到每轮
-            ctx.__nt_pendingSystems.push({ role: 'system', content: buildT1Prompt(bookName) });
+            console.log(`[worldsim] 后台 tick：角色=${tickTargets.map(t => t.name).join('、') || '无'} 世界=${needWorldTick}`);
         }
     },
 
@@ -1514,6 +1551,7 @@ registry.register({
                         await syncChars(currentLorebook, add, del);
                     }
                 }
+                await applyTierDowngrades(currentLorebook, replyLayer);
                 refreshSnapshots(currentLorebook, charsBook);
                 if (data.items && settings.enableItems) {
                     const itemMap = await applyAggregateOps(currentLorebook, '道具', data.items, 900, { keyword: true });

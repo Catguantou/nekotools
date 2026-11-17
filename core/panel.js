@@ -206,22 +206,22 @@ export function mountPanel() {
                             </label>
                         </div>
                         <div class="nt-data-row">
-                            <span class="nt-data-label">角色 tick 间隔 <span class="nt-hint">/ 每 N 条 AI 回复结算一批，0=关</span></span>
-                            <input type="number" id="nt-ws-char-tick" class="nt-data-input" value="${s.charTickEvery}" min="0" max="50">
+                            <span class="nt-data-label">T2 离场间隔 <span class="nt-hint">/ 不在场时每 N 层更新一次（默认 2）</span></span>
+                            <input type="number" id="nt-ws-char-tick" class="nt-data-input" value="${s.charTickEvery}" min="1" max="50">
                         </div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">世界 tick 间隔 <span class="nt-hint">/ 每 N 条 AI 回复结算一次，0=关</span></span>
                             <input type="number" id="nt-ws-world-tick" class="nt-data-input" value="${s.worldTickEvery}" min="0" max="50">
                         </div>
                         <div class="nt-data-row">
-                            <span class="nt-data-label">每轮最多结算角色 <span class="nt-hint">/ 控制 token</span></span>
+                            <span class="nt-data-label">每轮最多结算角色 <span class="nt-hint">/ 控制 token；T1 不受限</span></span>
                             <input type="number" id="nt-ws-tick-max" class="nt-data-input" value="${s.tickMaxChars}" min="1" max="10">
                         </div>
                         <div class="nt-data-row">
-                            <span class="nt-data-label">反偷懒阈值 <span class="nt-hint">/ 超过 N 层没更新就强制结算</span></span>
-                            <input type="number" id="nt-ws-stale-after" class="nt-data-input" value="${s.staleAfter}" min="0" max="200">
+                            <span class="nt-data-label">T3 间隔 <span class="nt-hint">/ 配角每 N 层更新一次（默认 5）</span></span>
+                            <input type="number" id="nt-ws-stale-after" class="nt-data-input" value="${s.staleAfter}" min="5" max="200">
                             <label style="display:flex;align-items:center;gap:6px;margin-left:8px;">
-                                <input type="checkbox" id="nt-ws-antilazy" ${s.enableAntiLazy ? 'checked' : ''}> 启用
+                                <input type="checkbox" id="nt-ws-antilazy" ${s.enableAntiLazy ? 'checked' : ''}> 20 层未出场降级
                             </label>
                         </div>
                     </div>
