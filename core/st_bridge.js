@@ -617,6 +617,21 @@ export const stBridge = {
         }
     },
 
+    /** 按 comment 删除条目（剧情推演换会话时要清掉） */
+    async removeEntryByComment(bookName, comment) {
+        const book = await this.loadWorldInfoAsync(bookName);
+        if (!book || !book.entries) return false;
+        let removed = false;
+        for (const [uid, entry] of Object.entries(book.entries)) {
+            if (entry && entry.comment === comment) {
+                delete book.entries[uid];
+                removed = true;
+            }
+        }
+        if (removed) await this.persistLorebook(bookName, book);
+        return removed;
+    },
+
     async updateEntry(bookName, title, content, isConstant = false, keywords = [], extra = {}) {
         const book = await this.loadWorldInfoAsync(bookName, true);
         if (!book) return;

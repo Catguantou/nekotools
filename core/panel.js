@@ -900,17 +900,17 @@ export function mountPanel() {
         renderFavoriteList();
     }, 500);
 
-    wrap.querySelector('#nt-ws-reset').onclick = () => {
-        if (!confirm('确定要重置轮数统计与预演缓存吗？')) return;
+    wrap.querySelector('#nt-ws-reset').onclick = async () => {
+        if (!confirm('确定清除本会话的剧情推演记录吗？（世界书里的「剧情推演」条目会被删除）')) return;
+        const name = stBridge.trackerBookName();
+        if (name) await stBridge.removeEntryByComment(name, '剧情推演');
         localStorage.removeItem('nt_preview_cache');
-        if (window.toastr) toastr.info('系统已重置');
+        if (window.toastr) toastr.info('剧情推演记录已清除');
     };
 
     wrap.querySelector('#nt-ws-export').onclick = () => {
         wrap.querySelector('#nt-ws-save').click();
-        const extra = {
-            nt_preview_cache: localStorage.getItem('nt_preview_cache'),
-        };
+        const extra = {};
         const payload = settings.exportAll(extra);
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -935,7 +935,6 @@ export function mountPanel() {
                 const text = await file.text();
                 const obj = JSON.parse(text);
                 const state = settings.importAll(obj);
-                if (state && state.nt_preview_cache) localStorage.setItem('nt_preview_cache', state.nt_preview_cache);
 
                 for (const m of registry.list()) {
                     if (typeof m.loadSettings === 'function') m.loadSettings();

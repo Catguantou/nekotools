@@ -26,6 +26,9 @@ const defaultSettings = {
 
 const settings = { ...defaultSettings, customPrompts: { ...defaultSettings.customPrompts } };
 
+// 仅内存记录，用于识别「换了会话」，不持久化
+let lastChatId = null;
+
 function loadSettings() {
     const saved = coreSettings.get('worldsim');
     if (saved && typeof saved === 'object') {
@@ -85,10 +88,6 @@ ${tagClose}
     const custom = (settings.customPrompts.preview || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
 
-    const cache = localStorage.getItem('nt_preview_cache');
-    if (cache) {
-        p += `\n【上一轮沙盘推演记录】\n${cache}\n（必须参考上一轮的推演结果，保持剧情连贯和长线逻辑，不要吃书或者过于跳跃。）`;
-    }
     return p;
 }
 
@@ -241,6 +240,7 @@ registry.register({
             try {
                 // 先清掉「激活列表有、文件没有」的幽灵书，避免 ST 每轮报错
                 await stBridge.cleanupGhostActiveBooks();
+                if (lastChatId === null) lastChatId = stBridge.getContext().chatId ?? null;
                 const book = await stBridge.ensureWorldbook(name);
                 console.log(`[worldsim] 追踪书检查 #${attempt}:`, name, book ? 'OK' : 'FAILED');
                 if (book) {
@@ -264,7 +264,13 @@ registry.register({
                         if (!settings.enabled) return;
                         const name = getLorebookName();
                         if (!name) return;
-                        await stBridge.ensureWorldbook(name);
+                        const book = await stBridge.ensureWorldbook(name);
+                        // 换会话：清掉上一段会话留下的剧情推演条目，避免污染新对话（同一角色卡也可能开新聊天）
+                        const chatId = stBridge.getContext().chatId;
+                        if (book && lastChatId !== null && chatId !== lastChatId) {
+                            await stBridge.removeEntryByComment(name, '剧情推演');
+                        }
+                        lastChatId = chatId;
                         await stBridge.deactivateStaleAutoBooks(name);
                     } catch (e) {
                         console.warn('[worldsim] 切换会话同步世界书失败', e);
@@ -278,7 +284,7 @@ registry.register({
         loadSettings();
         if (!settings.enabled) return;
 
-        // 轮数直接从聊天记录里数，不再写 localStorage（除了剧情推演缓存，不保留任何本地状态）
+        // 轮数直接从聊天记录里数，不写任何本地存储
         const chat = ctx.chat || [];
         const aiCount = chat.filter(m => m && !m.is_user && !m.is_system).length;
 
@@ -352,9 +358,13 @@ registry.register({
         }
 
         if (captured.ws_preview && settings.enablePreview) {
-            let cache = captured.ws_preview.trim();
-            if (cache.length > 50000) cache = cache.slice(-30000);
-            localStorage.setItem('nt_preview_cache', cache);
+            let text = captured.ws_preview.trim();
+            if (text.length > 50000) text = text.slice(-30000);
+            // 剧情推演写进追踪书（常驻条目），由酒馆在下一轮自动注入；
+            // 不落本地缓存，避免旧推演污染新对话/别的角色。
+            await stBridge.updateEntry(currentLorebook, '剧情推演', text, true, [], {
+                position: 4, depth: 1, order: 999
+            });
         }
 
         if (captured.ws_update && typeof captured.ws_update === 'string') {
