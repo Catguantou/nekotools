@@ -197,6 +197,12 @@ export function mountPanel() {
                                 进入角色卡会自动为这张卡建一本空追踪书并挂到全局；切换角色时旧卡的书会自动取消挂载。
                             </div>
                         </div>
+                        <label class="nt-grid-item" style="margin-top:8px;" title="删除角色卡时同时删除它绑定的世界书；删除世界书时可选择连绑定角色卡一起删。NEKOTOOL 追踪书不参与这条规则。">
+                            <input type="checkbox" id="nt-lore-sync-delete" class="nt-hidden-cb" ${stBridge.getLoreManagerConfig().syncCharLifecycle ? 'checked' : ''}>
+                            <span class="nt-box"></span>
+                            <span class="nt-text">角色卡⇄世界书 同步删除</span>
+                            <span class="nt-code">L_01</span>
+                        </label>
                     </div>
 
                     <div id="nt-lore-view-books">
@@ -395,12 +401,16 @@ export function mountPanel() {
     const bookForwardSelect = wrap.querySelector('#nt-ws-book-forward-target');
     let currentEditingBook = null;
 
+    wrap.querySelector('#nt-lore-sync-delete').onchange = (e) => {
+        stBridge.saveLoreManagerConfig({ syncCharLifecycle: e.target.checked });
+        if (window.toastr) toastr.info(e.target.checked ? '已开启：角色卡与世界书同步删除' : '已关闭：删除只解绑，不连坐');
+    };
+
     async function renderLoreList() {
         listEl.innerHTML = '<div style="color:#888; font-size:11px; padding:6px;">正在同步世界书列表...</div>';
-        let allNames = stBridge.getWorldNames();
-        if (!allNames.length) {
-            allNames = await stBridge.fetchWorldNamesFromApi();
-        }
+        // 每次都让 ST 重扫磁盘，否则新建的书不会出现在列表里
+        await stBridge.fetchWorldNamesFromApi();
+        const allNames = stBridge.getWorldNames();
 
         bookForwardSelect.innerHTML = '<option value="">-- 选择合并目标书 --</option><option value="__NEW__">[+ 新建目标世界书...]</option>';
         allNames.forEach(n => {
@@ -609,7 +619,7 @@ export function mountPanel() {
             c => selected.includes(c?.data?.extensions?.world) && !stBridge.isTrackerBook(c?.data?.extensions?.world)
         );
         let deleteLinkedChar = false;
-        if (boundChars.length) {
+        if (stBridge.getLoreManagerConfig().syncCharLifecycle && boundChars.length) {
             deleteLinkedChar = confirm(
                 `检测到 ${boundChars.length} 张角色卡绑定了所选世界书。\n\n` +
                 `点【确定】：连同角色卡一起删除\n点【取消】：只删世界书并解绑角色卡`

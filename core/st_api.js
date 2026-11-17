@@ -130,21 +130,39 @@ export async function refreshWorldList() {
  */
 export async function setWorldActive(name, active) {
     if (!name) return false;
-    const m = await loadWorldInfoModule();
 
-    // 幂等：已经是目标状态就什么都不做。
-    // onWorldInfoChange 的 'on' 分支是 push 而去重的，重复调用会让同一本书进两次。
-    const currently = readActiveWorlds();
-    if (currently.includes(name) === Boolean(active)) {
+    // 主路径：直接改 world-info 模块的活状态。
+    // 不依赖 #world_info 的 option 是否存在（新书在列表刷新前没有 option，
+    // 走官方 onWorldInfoChange 会静默失败，表现为「书建了但没挂上」）。
+    const m = await loadWorldInfoModule();
+    if (m && Array.isArray(m.selected_world_info)) {
+        const arr = m.selected_world_info;
+        const idx = arr.indexOf(name);
+        if (active && idx === -1) arr.push(name);
+        if (!active && idx !== -1) arr.splice(idx, 1);
+
+        // 让保存链路拿到的 globalSelect 也是这份数组
+        if (m.world_info) m.world_info.globalSelect = arr;
+
+        // 重建下拉框，让 UI 勾选态跟上
+        try {
+            if (typeof m.updateWorldInfoList === 'function') await m.updateWorldInfoList();
+        } catch (e) {
+            console.warn('[nekotools] 重建世界书列表失败', e);
+        }
+
+        const ctx = getCtx();
+        if (typeof ctx.saveSettingsDebounced === 'function') ctx.saveSettingsDebounced();
+        emit('WORLDINFO_SETTINGS_UPDATED');
         refreshGlobalSelectUi();
-        return true;
+        return readActiveWorlds().includes(name) === Boolean(active);
     }
 
+    // 回退（模块拿不到时）：走官方 onWorldInfoChange
     if (m && typeof m.onWorldInfoChange === 'function' && !String(name).includes(',')) {
         try {
             m.onWorldInfoChange({ state: active ? 'on' : 'off', silent: true }, name);
             refreshGlobalSelectUi();
-            // 官方函数在「书不存在」时只 toast 不抛错，必须复核结果
             return readActiveWorlds().includes(name) === Boolean(active);
         } catch (e) {
             console.warn('[nekotools] onWorldInfoChange 失败，改用 DOM 回退', e);

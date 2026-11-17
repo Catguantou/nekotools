@@ -41,7 +41,8 @@ export const stBridge = {
         const cfg = settings.get('loremanager');
         return {
             activeBooks: Array.isArray(cfg.activeBooks) ? cfg.activeBooks : null,
-            syncCharLifecycle: cfg.syncCharLifecycle !== false,
+            // 角色卡⇄世界书同步删除：默认关闭，面板里可开
+            syncCharLifecycle: cfg.syncCharLifecycle === true,
             autoActivateCharBook: cfg.autoActivateCharBook !== false,
             independentInject: cfg.independentInject !== false,
         };
@@ -544,10 +545,11 @@ export const stBridge = {
         const charName = char.name;
         if (!charName) return;
         
-        // 删角色卡 → 同步删它绑定的世界书（追踪书除外），但不动 NEKOTOOL 的追踪库规则
+        // 删角色卡 → 追踪书一定删；绑定的原生世界书只在「同步删除」开启时才删
+        const cfg = this.getLoreManagerConfig();
         const booksToDelete = [];
         const bound = char.data?.extensions?.world;
-        if (bound && !this.isTrackerBook(bound)) booksToDelete.push(bound);
+        if (cfg.syncCharLifecycle && bound && !this.isTrackerBook(bound)) booksToDelete.push(bound);
         booksToDelete.push(this.sanitizeWorldName(`【NEKOTOOL世界加载器·${charName}】`));
         
         for (const book of booksToDelete) {

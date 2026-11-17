@@ -469,24 +469,45 @@
 .ws-status-bar {
     display: flex;
     flex-wrap: wrap;
-    gap: 20px;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
-    border-left: 3px solid #0026FA;
-    padding: 12px 20px;
-    margin-bottom: 20px;
-    font-size: 13px;
-    color: #ccc;
-    font-family: 'Courier New', monospace;
-    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+    align-items: stretch;
+    gap: 0;
+    margin: 0 0 18px 0;
+    padding: 0;
+    background:
+        linear-gradient(135deg, rgba(18, 53, 255, 0.06) 0%, rgba(255, 255, 255, 0) 45%),
+        #f4f3ee;
+    color: #111;
+    border-left: 4px solid #1235ff;
+    box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.16), 0 6px 18px rgba(0, 0, 0, 0.25);
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+    font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "SimSun", serif;
+    overflow: hidden;
+}
+
+.ws-status-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 9px;
+    padding: 11px 16px 10px 12px;
+    border-right: 1px solid rgba(17, 17, 17, 0.14);
+    font-size: 13.5px;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.ws-status-item:last-child {
+    border-right: 0;
 }
 
 .ws-status-item b {
+    flex: none;
     color: #fff;
-    background: #0026FA;
-    padding: 2px 6px;
-    margin-right: 8px;
-    font-weight: 900;
+    background: #1235ff;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.22em;
+    padding: 2px 7px 3px 8px;
 }
 
 /* 视觉屏蔽：只是看不见，数据没动，可一键恢复 */
