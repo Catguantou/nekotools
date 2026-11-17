@@ -240,7 +240,10 @@ export const stBridge = {
                 headers,
                 body: JSON.stringify({})
             });
-            if (!res.ok) return [];
+            if (!res.ok) {
+                // 旧版酒馆没有 /api/worldinfo/list；退回 world-info 的活列表
+                return this.getWorldNames();
+            }
             const data = await res.json();
             let raw = [];
             if (Array.isArray(data)) {
@@ -252,10 +255,10 @@ export const stBridge = {
             // 让 ST 自己刷新列表：它会重建 #world_info 选项并重算 world_names。
             // 不再手工往 ctx.world_names 里塞——getContext() 返回的是快照对象，写了不生效。
             await refreshWorldList();
-            return names.length ? names : cleanAndDedupeList(readWorldNames());
+            return names.length ? names : this.getWorldNames();
         } catch (e) {
-            console.warn('[nekotools] /api/worldinfo/list 请求失败', e);
-            return [];
+            console.warn('[nekotools] /api/worldinfo/list 请求失败，改用内存列表', e);
+            return this.getWorldNames();
         }
     },
 
