@@ -130,6 +130,7 @@ export function mountPanel() {
                     <span class="nt-sub">系统面板</span>
                 </div>
                 <div class="nt-coords">
+                    <button id="nt-theme-toggle" class="nt-theme-btn" type="button">夜晚</button>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
             </div>
@@ -140,11 +141,11 @@ export function mountPanel() {
                 <div class="nt-bg-grid"></div>
 
                 <div class="nt-tabs">
-                    <button class="nt-tab active" data-target="nt-pane-core">01 / 核心</button>
-                    <button class="nt-tab" data-target="nt-pane-lore">02 / 世界书</button>
-                    <button class="nt-tab" data-target="nt-pane-data">03 / 数据</button>
-                    <button class="nt-tab" data-target="nt-pane-prompt">04 / 提示词</button>
-                    <button class="nt-tab" data-target="nt-pane-text">05 / 文本</button>
+                    <button class="nt-tab active" data-target="nt-pane-core"><span class="nt-tnum">01</span>概览</button>
+                    <button class="nt-tab" data-target="nt-pane-lore"><span class="nt-tnum">02</span>世界书</button>
+                    <button class="nt-tab" data-target="nt-pane-data"><span class="nt-tnum">03</span>追踪</button>
+                    <button class="nt-tab" data-target="nt-pane-text"><span class="nt-tnum">04</span>文本</button>
+                    <button class="nt-tab" data-target="nt-pane-settings"><span class="nt-tnum">05</span>设置</button>
                 </div>
 
                 <div class="nt-tab-pane active" id="nt-pane-core">
@@ -185,6 +186,20 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row">
                             <input type="text" id="nt-ws-focuschars" class="nt-data-input" style="width:100%; text-align:left;" value="${escapeHtml(s.focusChars || '')}" placeholder="例如: 张三,李四">
+                        </div>
+                    </div>
+
+                    <div class="nt-section">
+                        <div class="nt-sec-head">
+                            <span class="nt-index">03</span>
+                            <span class="nt-title">快捷跳转</span>
+                            <div class="nt-sec-line"></div>
+                        </div>
+                        <div class="nt-data-row" style="gap:10px; flex-wrap:wrap;">
+                            <button class="nt-btn-text" data-goto="nt-pane-lore">[世界书]</button>
+                            <button class="nt-btn-text" data-goto="nt-pane-data">[追踪]</button>
+                            <button class="nt-btn-text" data-goto="nt-pane-text">[文本]</button>
+                            <button class="nt-btn-text" data-goto="nt-pane-settings">[设置]</button>
                         </div>
                     </div>
                 </div>
@@ -279,12 +294,10 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-bigsummary" class="nt-hidden-cb" ${s.enableBigSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">大总结</span><span class="nt-code">T_09</span></label>
                         </div>
                     </div>
-                </div>
 
-                <div class="nt-tab-pane" id="nt-pane-prompt">
                     <div class="nt-section">
                         <div class="nt-sec-head">
-                            <span class="nt-index">01</span>
+                            <span class="nt-index">02</span>
                             <span class="nt-title">自定义提示词</span>
                             <div class="nt-sec-line"></div>
                         </div>
@@ -385,17 +398,65 @@ export function mountPanel() {
                     </div>
                 </div>
 
+                <div class="nt-tab-pane" id="nt-pane-settings">
+                    <div class="nt-section">
+                        <div class="nt-sec-head">
+                            <span class="nt-index">01</span>
+                            <span class="nt-title">数据与诊断</span>
+                            <div class="nt-sec-line"></div>
+                        </div>
+                        <div class="nt-data-row" style="gap:10px; flex-wrap:wrap;">
+                            <button id="nt-ws-import" class="nt-btn-action">[导入]</button>
+                            <button id="nt-ws-export" class="nt-btn-action">[导出]</button>
+                            <button id="nt-ws-reset" class="nt-btn-action">[重置]</button>
+                        </div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">界面主题 <span class="nt-hint">/ 白天或夜晚</span></span>
+                            <button id="nt-theme-toggle-2" class="nt-btn-text">[切换]</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="nt-footer">
-                    <button id="nt-ws-import" class="nt-btn-action danger">[导入]</button>
-                    <button id="nt-ws-export" class="nt-btn-action danger">[导出]</button>
-                    <button id="nt-ws-reset" class="nt-btn-action danger">重置</button>
-                    <button id="nt-ws-save" class="nt-btn-action primary">应用</button>
+                    <button id="nt-ws-save" class="nt-btn-action primary">[应用]</button>
                 </div>
             </div>
         </div>
     `;
 
     container.appendChild(wrap);
+
+    // ---------- 界面主题：白天 / 夜晚 ----------
+    function applyUiTheme(theme) {
+        const day = theme === 'day';
+        wrap.classList.toggle('nt-day', day);
+        wrap.classList.toggle('nt-night', !day);
+        document.body.classList.toggle('nt-ui-day', day);
+        const b1 = wrap.querySelector('#nt-theme-toggle');
+        if (b1) b1.textContent = day ? '白天' : '夜晚';
+    }
+    let uiTheme = (settings.get('ui') || {}).theme === 'day' ? 'day' : 'night';
+    applyUiTheme(uiTheme);
+
+    function toggleUiTheme() {
+        uiTheme = uiTheme === 'day' ? 'night' : 'day';
+        settings.set('ui', { theme: uiTheme });
+        applyUiTheme(uiTheme);
+        if (window.toastr) toastr.info(uiTheme === 'day' ? '已切换：白天' : '已切换：夜晚');
+    }
+    const themeBtn = wrap.querySelector('#nt-theme-toggle');
+    if (themeBtn) themeBtn.onclick = toggleUiTheme;
+    const themeBtn2 = wrap.querySelector('#nt-theme-toggle-2');
+    if (themeBtn2) themeBtn2.onclick = toggleUiTheme;
+
+    // 快捷跳转
+    wrap.querySelectorAll('[data-goto]').forEach(btn => {
+        btn.onclick = () => {
+            const target = btn.dataset.goto;
+            wrap.querySelectorAll('.nt-tab').forEach(t => t.classList.toggle('active', t.dataset.target === target));
+            wrap.querySelectorAll('.nt-tab-pane').forEach(p => p.classList.toggle('active', p.id === target));
+        };
+    });
 
     // 强制展开抽屉内容，无视酒馆的展开动画逻辑
     setTimeout(() => {

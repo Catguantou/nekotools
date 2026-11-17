@@ -37,22 +37,54 @@ const NT_STATUS_MARKER = '[[NT_STATUS]]';
 function buildStatusBar(raw) {
     const parts = String(raw).split(/[|｜]/).map(s => s.trim()).filter(Boolean);
     if (!parts.length) return null;
+
     const bar = document.createElement('div');
     bar.className = 'ws-status-bar';
+
+    const tag = document.createElement('div');
+    tag.className = 'plate-tag';
+    const sq = document.createElement('span');
+    sq.className = 'pt-sq';
+    const sys = document.createElement('span');
+    sys.className = 'mono';
+    sys.textContent = 'SYS';
+    tag.appendChild(sq);
+    tag.appendChild(sys);
+
+    const fields = document.createElement('div');
+    fields.className = 'plate-fields';
+
     for (const p of parts) {
-        const span = document.createElement('span');
+        const span = document.createElement('div');
         span.className = 'ws-status-item';
+        const label = document.createElement('i');
+        const value = document.createElement('b');
         const m = p.match(/^([^:：]+)[:：](.*)$/);
         if (m) {
-            const b = document.createElement('b');
-            b.textContent = m[1].trim();
-            span.appendChild(b);
-            span.appendChild(document.createTextNode(' ' + m[2].trim()));
+            label.textContent = m[1].trim();
+            value.textContent = m[2].trim();
         } else {
-            span.textContent = p;
+            label.textContent = '';
+            value.textContent = p;
         }
-        bar.appendChild(span);
+        span.appendChild(label);
+        span.appendChild(value);
+        fields.appendChild(span);
     }
+
+    const mark = document.createElement('div');
+    mark.className = 'plate-mark';
+    const bc = document.createElement('span');
+    bc.className = 'barcode-v';
+    const nm = document.createElement('span');
+    nm.className = 'mono';
+    nm.textContent = 'NT.STATUS';
+    mark.appendChild(bc);
+    mark.appendChild(nm);
+
+    bar.appendChild(tag);
+    bar.appendChild(fields);
+    bar.appendChild(mark);
     return bar;
 }
 
