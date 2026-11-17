@@ -1,6 +1,7 @@
 import { registry } from '../core/registry.js';
 import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
+import { touchSlot } from '../core/slots.js';
 
 const defaultSettings = {
     enabled: true,
@@ -598,6 +599,8 @@ registry.register({
         }
 
         setTimeout(() => { stBridge.hideOldMessages(settings.hideKeepCount, settings.visualHideKeep); }, 1000);
+        // 记录这一档最后游玩时间/层数，存档列表用
+        touchSlot(currentLorebook);
         } finally {
             // 一轮结束统一落盘（只写一次）
             await stBridge.commitBatch();

@@ -2,6 +2,7 @@ import { installFetchHook } from './core/hooks.js';
 import { settings } from './core/settings.js';
 import { registry } from './core/registry.js';
 import { mountPanel } from './core/panel.js';
+import { mountQuickMenu } from './core/quickmenu.js';
 
 import './modules/rewriter.js';
 import './modules/worldsim.js';
@@ -33,6 +34,11 @@ function boot() {
         console.log('[nekotools] 挂载面板...');
         mountPanel();
     }, 1500);
+
+    // ⭐ 输入栏快捷入口（和面板独立，失败了不影响面板）
+    setTimeout(() => {
+        try { mountQuickMenu(); } catch (e) { console.error('[nekotools:quickmenu]', e); }
+    }, 1200);
 }
 
 // ⭐ 多重触发机制，确保面板一定能加载

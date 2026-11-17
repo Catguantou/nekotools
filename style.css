@@ -1308,3 +1308,275 @@ body {
     border-color: rgba(255, 255, 255, 0.12) !important;
     color: #c9ccd4 !important;
 }
+
+/* =========================================
+   输入栏快捷入口（面板外）
+   ========================================= */
+#nt-quick-btn,
+#nt-quick-pop,
+#nt-quick-modal {
+    --ntq-blue: #5d6fae;
+    --ntq-line: rgba(255, 255, 255, 0.14);
+    --ntq-text: #e6e8ee;
+    --ntq-dim: #8b8f99;
+    --ntq-bg: rgba(10, 12, 16, 0.97);
+    font-family: "Helvetica Neue", "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+#nt-quick-btn {
+    width: 26px;
+    height: 26px;
+    margin: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border: 1px solid var(--ntq-line);
+    background: rgba(0, 0, 0, 0.28);
+    color: #cfd3dd;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+#nt-quick-btn:hover {
+    border-color: var(--ntq-blue);
+    color: #fff;
+    box-shadow: 0 0 8px rgba(93, 111, 174, 0.55);
+}
+
+#nt-quick-pop {
+    position: fixed;
+    z-index: 10000;
+    width: 230px;
+    max-width: calc(100vw - 16px);
+    padding: 10px;
+    background: var(--ntq-bg);
+    border: 1px solid var(--ntq-line);
+    border-top: 2px solid var(--ntq-blue);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+#nt-quick-pop[hidden] { display: none !important; }
+
+.nt-quick-pop-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px 8px;
+}
+.nt-quick-dot {
+    width: 5px;
+    height: 5px;
+    background: var(--ntq-blue);
+    box-shadow: 0 0 6px var(--ntq-blue);
+}
+.nt-quick-pop-title {
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+}
+.nt-quick-pop-tag {
+    margin-left: auto;
+    color: var(--ntq-dim);
+    font-family: 'Courier New', monospace;
+    font-size: 8px;
+    letter-spacing: 1px;
+}
+
+.nt-quick-pop-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nt-quick-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 100%;
+    padding: 8px 9px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--ntq-text);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+}
+.nt-quick-item:hover {
+    background: rgba(93, 111, 174, 0.13);
+    border-color: rgba(93, 111, 174, 0.5);
+}
+.nt-quick-item.disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+.nt-quick-item.disabled:hover {
+    background: transparent;
+    border-color: transparent;
+}
+.nt-quick-item-label {
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+.nt-quick-item-hint {
+    color: var(--ntq-dim);
+    font-size: 9px;
+}
+
+#nt-quick-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+}
+
+.nt-quick-modal {
+    width: min(440px, 100%);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    background: #0d0f14;
+    border: 1px solid var(--ntq-line);
+    border-top: 2px solid var(--ntq-blue);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);
+}
+.nt-quick-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--ntq-line);
+}
+.nt-quick-modal-title {
+    color: #fff;
+    font-size: 13px;
+    letter-spacing: 1px;
+}
+.nt-quick-modal-x {
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: 1px solid var(--ntq-line);
+    color: var(--ntq-dim);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+.nt-quick-modal-x:hover {
+    color: #fff;
+    border-color: var(--ntq-blue);
+}
+.nt-quick-modal-body {
+    padding: 14px;
+    overflow: auto;
+    color: var(--ntq-text);
+    font-size: 12px;
+    line-height: 1.7;
+}
+.nt-quick-modal-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--ntq-line);
+}
+.nt-quick-btn-text {
+    padding: 6px 14px;
+    background: transparent;
+    border: 1px solid var(--ntq-line);
+    color: #d2d5dd;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+}
+.nt-quick-btn-text:hover {
+    border-color: var(--ntq-blue);
+    color: #fff;
+}
+.nt-quick-btn-text.primary {
+    border-color: rgba(100, 120, 185, 0.55);
+    color: #e2e5ee;
+}
+.nt-quick-btn-text.primary:hover {
+    background: rgba(100, 120, 185, 0.14);
+    border-color: rgba(120, 140, 205, 0.8);
+}
+.nt-quick-note {
+    color: var(--ntq-dim);
+}
+
+.nt-quick-slots {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.nt-quick-slot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--ntq-line);
+    background: rgba(255, 255, 255, 0.02);
+}
+.nt-quick-slot.current {
+    border-color: rgba(93, 111, 174, 0.75);
+    background: rgba(93, 111, 174, 0.09);
+}
+.nt-quick-slot-main {
+    flex: 1;
+    min-width: 0;
+}
+.nt-quick-slot-title {
+    color: #fff;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+}
+.nt-quick-slot-meta {
+    margin-top: 2px;
+    color: var(--ntq-dim);
+    font-size: 10px;
+}
+.nt-quick-slot-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+}
+.nt-quick-btn-text.danger {
+    color: #c9a0a0;
+    border-color: rgba(180, 106, 106, 0.4);
+}
+.nt-quick-btn-text.danger:hover {
+    color: #e6b3b3;
+    border-color: #b46a6a;
+}
+
+@media (max-width: 640px) {
+    #nt-quick-modal {
+        align-items: flex-end;
+        padding: 0;
+    }
+    .nt-quick-modal {
+        width: 100%;
+        max-height: 80vh;
+        border-left: 0;
+        border-right: 0;
+        border-bottom: 0;
+    }
+    #nt-quick-pop {
+        width: min(260px, calc(100vw - 12px));
+    }
+}
