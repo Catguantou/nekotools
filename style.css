@@ -3285,14 +3285,14 @@ body {
     content: '';
     position: absolute;
     inset: 3px;
-    border: 1px solid rgba(216, 161, 58, 0.45);
+    border: 1px solid rgba(47, 91, 215, 0.45);
     border-radius: 50%;
     pointer-events: none;
 }
 #leftSendForm > #nt-quick-btn:hover {
-    border-color: #d8a13a !important;
+    border-color: #2f5bd7 !important;
     color: #fff;
-    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(216, 161, 58, 0.55), 0 0 16px rgba(216, 161, 58, 0.2) !important;
+    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(47, 91, 215, 0.55), 0 0 16px rgba(47, 91, 215, 0.2) !important;
 }
 
 #nt-quick-pop {
@@ -3302,7 +3302,7 @@ body {
     max-width: calc(100vw - 16px);
     padding: 0;
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-left: 2px solid #d8a13a;
+    border-left: 2px solid #2f5bd7;
     border-radius: 2px;
     background:
         linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px) 0 0 / 100% 18px,
@@ -3319,8 +3319,8 @@ body {
     right: 6px;
     width: 14px;
     height: 14px;
-    border-top: 1px solid rgba(216, 161, 58, 0.45);
-    border-right: 1px solid rgba(216, 161, 58, 0.45);
+    border-top: 1px solid rgba(47, 91, 215, 0.45);
+    border-right: 1px solid rgba(47, 91, 215, 0.45);
     pointer-events: none;
 }
 #nt-quick-pop::after {
@@ -3330,7 +3330,7 @@ body {
     bottom: 0;
     width: 150px;
     height: 130px;
-    background-image: radial-gradient(circle, #d8a13a 1px, transparent 1.2px);
+    background-image: radial-gradient(circle, #2f5bd7 1px, transparent 1.2px);
     background-size: 9px 9px;
     opacity: 0.16;
     -webkit-mask-image: linear-gradient(135deg, #000 0%, transparent 68%);
@@ -3349,8 +3349,8 @@ body {
     width: 8px;
     height: 8px;
     flex: none;
-    background: #d8a13a;
-    box-shadow: 0 0 0 1px rgba(216, 161, 58, 0.25);
+    background: #2f5bd7;
+    box-shadow: 0 0 0 1px rgba(47, 91, 215, 0.25);
     transform: rotate(45deg);
 }
 #nt-quick-pop .nt-quick-pop-titles {
@@ -3375,8 +3375,8 @@ body {
 #nt-quick-pop .nt-quick-pop-tag {
     margin-left: auto;
     padding: 2px 5px;
-    border: 1px solid rgba(216, 161, 58, 0.45);
-    color: #d8a13a;
+    border: 1px solid rgba(47, 91, 215, 0.45);
+    color: #2f5bd7;
     font-family: "Bahnschrift", "Segoe UI", sans-serif;
     font-size: 7px;
     letter-spacing: 1.4px;
@@ -3439,10 +3439,10 @@ body {
     border-color: rgba(255, 255, 255, 0.035);
 }
 #nt-quick-pop .nt-quick-item:hover::before {
-    background: #d8a13a;
+    background: #2f5bd7;
 }
 #nt-quick-pop .nt-quick-item:hover::after {
-    color: #d8a13a;
+    color: #2f5bd7;
 }
 #nt-quick-pop .nt-quick-item-label {
     color: #e8ebf1;
@@ -3469,14 +3469,406 @@ body {
 #nt-quick-pop .nt-quick-foot-line {
     flex: 1;
     height: 1px;
-    background: linear-gradient(90deg, rgba(216, 161, 58, 0.35), transparent);
+    background: linear-gradient(90deg, rgba(47, 91, 215, 0.35), transparent);
 }
 #nt-quick-pop .nt-quick-foot-dots {
     width: 26px;
     height: 5px;
-    background-image: radial-gradient(circle, rgba(216, 161, 58, 0.6) 0.8px, transparent 1px);
+    background-image: radial-gradient(circle, rgba(47, 91, 215, 0.6) 0.8px, transparent 1px);
     background-size: 6px 5px;
 }
+
+/* ============================================================
+   克莱因蓝统一弹窗（菜单里每个可点页面）
+   ============================================================ */
+#nt-quick-modal,
+#nt-quick-pop {
+    --ntq-blue: #2f5bd7;
+    --ntq-blue2: #6f8ff0;
+    --ntq-klein: #002fa7;
+    --ntq-line: rgba(110, 140, 225, 0.2);
+    --ntq-text: #e3e7ef;
+    --ntq-dim: #858c99;
+    --ntq-bg: rgba(11, 13, 18, 0.97);
+}
+
+#nt-quick-modal .nt-quick-modal {
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-left: 2px solid #2f5bd7;
+    border-radius: 2px;
+    background:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 0 / 100% 18px,
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px) 0 0 / 18px 100%,
+        #0b0d11;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.68);
+}
+#nt-quick-modal .nt-quick-modal::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 14px;
+    height: 14px;
+    border-top: 1px solid rgba(47, 91, 215, 0.55);
+    border-right: 1px solid rgba(47, 91, 215, 0.55);
+    pointer-events: none;
+}
+#nt-quick-modal .nt-quick-modal::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 150px;
+    height: 120px;
+    background-image: radial-gradient(circle, #2f5bd7 1px, transparent 1.2px);
+    background-size: 9px 9px;
+    opacity: 0.12;
+    -webkit-mask-image: linear-gradient(135deg, #000 0%, transparent 68%);
+    mask-image: linear-gradient(135deg, #000 0%, transparent 68%);
+    pointer-events: none;
+}
+#nt-quick-modal .nt-quick-modal-head {
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(0, 0, 0, 0.14);
+}
+#nt-quick-modal .nt-quick-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #f0f3f8;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+}
+#nt-quick-modal .nt-quick-modal-title::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: #2f5bd7;
+    transform: rotate(45deg);
+}
+#nt-quick-modal .nt-quick-modal-x {
+    width: 24px;
+    height: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 2px;
+    background: transparent;
+    color: #8d939e;
+    font-size: 13px;
+}
+#nt-quick-modal .nt-quick-modal-x:hover {
+    border-color: #2f5bd7;
+    color: #fff;
+    background: rgba(0, 47, 167, 0.22);
+}
+#nt-quick-modal .nt-quick-modal-body {
+    padding: 14px 16px;
+    color: #d9dde6;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    font-size: 11.5px;
+    line-height: 1.7;
+}
+#nt-quick-modal .nt-quick-modal-foot {
+    padding: 9px 16px 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(0, 0, 0, 0.12);
+}
+
+#nt-quick-modal .nt-quick-btn-text {
+    height: 28px;
+    padding: 0 13px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 2px;
+    background: transparent;
+    color: #9fa6b2;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+    font-size: 10.5px;
+    letter-spacing: 0.4px;
+}
+#nt-quick-modal .nt-quick-btn-text:hover {
+    border-color: rgba(80, 115, 225, 0.85);
+    color: #fff;
+    background: rgba(0, 47, 167, 0.18);
+}
+#nt-quick-modal .nt-quick-btn-text.primary {
+    border-color: rgba(80, 115, 225, 0.65);
+    background: rgba(0, 47, 167, 0.28);
+    color: #eef2ff;
+}
+#nt-quick-modal .nt-quick-btn-text.danger {
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #b7bdc9;
+}
+#nt-quick-modal .nt-quick-btn-text:disabled {
+    opacity: 0.45;
+}
+
+#nt-quick-modal .nt-quick-input,
+#nt-quick-modal select,
+#nt-quick-modal textarea {
+    border: 1px solid rgba(255, 255, 255, 0.13) !important;
+    border-radius: 2px !important;
+    background: #0e1117 !important;
+    color: #d8dce6 !important;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif !important;
+    font-size: 11px !important;
+}
+#nt-quick-modal select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 20px !important;
+    background-image:
+        linear-gradient(45deg, transparent 50%, #7f8898 50%),
+        linear-gradient(135deg, #7f8898 50%, transparent 50%);
+    background-position:
+        calc(100% - 12px) 50%,
+        calc(100% - 7px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+}
+#nt-quick-modal .nt-quick-form-row {
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+#nt-quick-modal .nt-quick-form-label {
+    color: #858c99;
+    font-size: 10.5px;
+    letter-spacing: 0.3px;
+}
+#nt-quick-modal .nt-quick-note {
+    color: #7e8592;
+    font-size: 10px;
+}
+#nt-quick-modal .nt-quick-clock-row {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 7px 2px;
+}
+#nt-quick-modal .nt-quick-clock-label {
+    color: #858c99;
+    font-size: 10.5px;
+}
+#nt-quick-modal .nt-quick-clock-value {
+    color: #eef1f7;
+}
+
+#nt-quick-modal .nt-quick-slot {
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.018);
+    padding: 9px 10px;
+}
+#nt-quick-modal .nt-quick-slot.current {
+    border-color: rgba(80, 115, 225, 0.75);
+    background: rgba(0, 47, 167, 0.12);
+}
+#nt-quick-modal .nt-quick-slot-title {
+    color: #eef1f7;
+}
+#nt-quick-modal .nt-quick-slot-meta {
+    color: #7e8592;
+    font-size: 9.5px;
+}
+#nt-quick-modal .nt-quick-chars-left,
+#nt-quick-modal .nt-quick-chars-right {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.018);
+    padding: 8px;
+}
+#nt-quick-modal .nt-quick-char-row {
+    border: 1px solid transparent;
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+    padding: 7px 8px;
+}
+#nt-quick-modal .nt-quick-char-row:hover {
+    background: rgba(47, 91, 215, 0.08);
+}
+#nt-quick-modal .nt-quick-char-row.active {
+    border-color: rgba(80, 115, 225, 0.7);
+    background: rgba(0, 47, 167, 0.16);
+}
+#nt-quick-modal .nt-quick-char-name {
+    color: #e9edf5;
+}
+#nt-quick-modal .nt-quick-char-meta {
+    color: #7d8490;
+    font-size: 9px;
+}
+#nt-quick-modal .nt-quick-char-field {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+#nt-quick-modal .nt-quick-char-field-key {
+    color: #7f8794;
+    font-size: 9.5px;
+}
+#nt-quick-modal .nt-quick-char-field-value {
+    color: #d9dde6;
+}
+#nt-quick-modal .nt-quick-roster-head {
+    color: #8d99b8;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#nt-quick-modal .nt-quest-main,
+#nt-quick-modal .nt-quest-side,
+#nt-quick-modal .nt-refresh-item,
+#nt-quick-modal .nt-map-detail {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.018);
+    border-radius: 2px;
+}
+#nt-quick-modal .nt-quest-title {
+    color: #eef1f7;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+}
+#nt-quick-modal .nt-quest-bar {
+    background: rgba(255, 255, 255, 0.08);
+}
+#nt-quick-modal .nt-quest-bar-fill {
+    background: linear-gradient(90deg, #002fa7, #4f74df);
+}
+#nt-quick-modal .nt-quest-label,
+#nt-quick-modal .nt-quest-section {
+    color: #7f8794;
+}
+#nt-quick-modal .nt-quest-value {
+    color: #d9dde6;
+}
+#nt-quick-modal .nt-quest-side-name {
+    color: #eef1f7;
+}
+#nt-quick-modal .nt-quest-side-meta,
+#nt-quick-modal .nt-quest-side-hook {
+    color: #7f8794;
+}
+#nt-quick-modal .nt-quest-input,
+#nt-quick-modal .nt-edit-area {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: #0e1117;
+    color: #d8dce6;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+}
+#nt-quick-modal .nt-quest-input:focus,
+#nt-quick-modal .nt-edit-area:focus {
+    border-color: #2f5bd7;
+}
+
+/* 地图页：羊皮纸地图保留，但 HUD/详情统一克莱因蓝 UI */
+#nt-quick-modal .nt-quick-map.parchment .nt-quick-map-hud {
+    border-color: rgba(80, 115, 225, 0.5);
+    background: linear-gradient(180deg, #131a2a, #0a0d14);
+    box-shadow: inset 0 0 0 1px rgba(47, 91, 215, 0.08);
+}
+#nt-quick-modal .nt-quick-map.parchment .nt-quick-map-crumb {
+    color: #8d96a8;
+    background: rgba(255, 255, 255, 0.04);
+}
+#nt-quick-modal .nt-quick-map.parchment .nt-quick-map-crumb:hover {
+    color: #fff;
+    border-color: rgba(80, 115, 225, 0.7);
+}
+#nt-quick-modal .nt-quick-map.parchment .nt-quick-map-btn {
+    color: #9aa3b4;
+    border-color: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.03);
+}
+#nt-quick-modal .nt-quick-map.parchment .nt-quick-map-btn:hover {
+    color: #fff;
+    border-color: rgba(80, 115, 225, 0.75);
+}
+#nt-quick-modal .nt-quick-map.parchment .nt-quick-map-btn.active {
+    color: #fff;
+    border-color: rgba(80, 115, 225, 0.8);
+    background: rgba(0, 47, 167, 0.38);
+    box-shadow: 0 0 14px rgba(47, 91, 215, 0.28);
+}
+#nt-quick-modal .nt-quick-map.parchment .nt-quick-map-info {
+    color: #8d96a8;
+}
+#nt-quick-modal .nt-map-node.current {
+    border-color: #2f5bd7;
+    box-shadow: 0 0 0 2px rgba(47, 91, 215, 0.4), 0 0 18px rgba(47, 91, 215, 0.4);
+}
+#nt-quick-modal .nt-map-node-current {
+    border-color: #002fa7;
+    background: radial-gradient(circle at 35% 30%, #4f74df, #002fa7);
+    color: #f2f5ff;
+}
+#nt-quick-modal .nt-map-detail {
+    border-color: rgba(80, 115, 225, 0.4);
+    background:
+        linear-gradient(135deg, rgba(0, 47, 167, 0.14), transparent 40%),
+        #0e1117;
+    color: #d9dde6;
+}
+#nt-quick-modal .nt-map-detail-title {
+    color: #f0f3f8;
+}
+#nt-quick-modal .nt-map-detail-sub,
+#nt-quick-modal .nt-map-detail-desc,
+#nt-quick-modal .nt-map-fact-label,
+#nt-quick-modal .nt-map-section,
+#nt-quick-modal .nt-map-note {
+    color: #7f8794;
+}
+#nt-quick-modal .nt-map-fact-value {
+    color: #d9dde6;
+}
+#nt-quick-modal .nt-map-detail-current {
+    border-color: rgba(80, 115, 225, 0.6);
+    background: rgba(0, 47, 167, 0.2);
+    color: #8fa7f5;
+}
+#nt-quick-modal .nt-map-exit {
+    border-color: rgba(80, 115, 225, 0.4);
+    background: rgba(0, 47, 167, 0.12);
+    color: #d9dde6;
+}
+#nt-quick-modal .nt-map-exit:hover {
+    border-color: rgba(80, 115, 225, 0.8);
+    background: rgba(0, 47, 167, 0.2);
+}
+#nt-quick-modal .nt-map-people-board {
+    border-color: rgba(80, 115, 225, 0.35);
+    background:
+        linear-gradient(135deg, rgba(0, 47, 167, 0.12), transparent 45%),
+        #0e1117;
+    color: #d9dde6;
+}
+#nt-quick-modal .nt-map-people-board .nt-map-section,
+#nt-quick-modal .nt-map-people-board .nt-map-note {
+    color: #7f8794;
+}
+#nt-quick-modal .nt-map-person {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.025);
+    color: #d9dde6;
+}
+#nt-quick-modal .nt-map-person:hover {
+    border-color: rgba(80, 115, 225, 0.7);
+}
+#nt-quick-modal .nt-map-person-name {
+    color: #eef1f7;
+}
+#nt-quick-modal .nt-map-person-meta {
+    color: #7f8794;
+}
+#nt-quick-modal .nt-map-avatar {
+    border-color: rgba(80, 115, 225, 0.45);
+    background: linear-gradient(145deg, #3e5fb8, #14265f);
+}
+#nt-quick-modal .nt-map-place-link {
+    border-color: rgba(80, 115, 225, 0.4);
+    color: #8d96a8;
+}
+#nt-quick-modal .nt-map-place-link:hover {
+    color: #fff;
+    border-color: rgba(80, 115, 225, 0.8);
+}
+
 
 
 
