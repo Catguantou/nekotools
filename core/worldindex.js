@@ -27,6 +27,7 @@ export function parseIndex(content) {
         if (!section) continue;
 
         if (section === 'chars') {
+            if (line.startsWith('（') || line.startsWith('【')) continue;
             const parsed = parseRosterLine(line);
             if (parsed) out.chars.push(parsed);
             continue;
@@ -164,7 +165,7 @@ export async function migrateIndex(bookName) {
     const itemsEntry = entries.find(e => e && e.comment === '道具');
     if (itemsEntry) {
         const names = readNames(itemsEntry.content);
-        if (names.length && JSON.stringify(names) !== JSON.stringify(sections.items)) {
+        if (JSON.stringify(names) !== JSON.stringify(sections.items)) {
             sections.items = names;
             changed = true;
         }
@@ -172,7 +173,7 @@ export async function migrateIndex(bookName) {
     const foreEntry = entries.find(e => e && e.comment === '伏笔');
     if (foreEntry) {
         const names = readNames(foreEntry.content);
-        if (names.length && JSON.stringify(names) !== JSON.stringify(sections.foreshadows)) {
+        if (JSON.stringify(names) !== JSON.stringify(sections.foreshadows)) {
             sections.foreshadows = names;
             changed = true;
         }
