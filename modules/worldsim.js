@@ -25,12 +25,45 @@ const defaultSettings = {
     focusChars: '',
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '',
     }
 };
 
 const settings = { ...defaultSettings, customPrompts: { ...defaultSettings.customPrompts } };
 
+// 仅内存：本档是否已完成「开局世界生成」
+const worldReady = new Map();
+const genesisTries = new Map();
+
+/** 开局世界生成：第一次运行时补全整个世界，而不是只提取当前文本 */
+function buildGenesisPrompt() {
+    const tagOpen = '<nekotools:genesis>';
+    const tagClose = '</nekotools:genesis>';
+    let p = `${tagOpen}
+【开局世界生成】这是本局第一次运行。先不要只盯着眼前场景，请基于角色卡、世界书设定、用户角色，补全一个完整的世界快照。
+必须在本轮 ws_update 里输出 "world": {"add": {...}}，至少 6 条，覆盖：
+- 国家 / 政权 / 城邦，以及彼此关系
+- 主要势力 / 组织 / 宗教 / 商会 / 军队
+- 政治、经济、文化现状，政策、战争或变革、舆论新闻
+- 与主角当前所在地区直接相关的局势
+每条格式："名称": "现状｜正在发生的变化或矛盾｜与主角的关系（若有）"
+沿用已有设定，不要另起炉灶；不要只写当前文本里已经出现的东西。
+${tagClose}`;
+    const custom = (settings.customPrompts.genesis || '').trim();
+    if (custom) p += `\n【附加要求】\n${custom}`;
+    return p;
+}
+
+/** 扫一遍书，判断世界局势是否已有内容，供 onRequest 同步读取 */
+function markWorldReady(bookName, book) {
+    if (!bookName) return;
+    const entry = book && book.entries
+        ? Object.values(book.entries).find(e => e && e.comment === '世界局势')
+        : null;
+    const hasWorld = Boolean(entry) && /(^|\n)\s*-\s*\S+[｜|]/.test(String(entry.content || ''));
+    worldReady.set(bookName, hasWorld);
+    if (hasWorld) genesisTries.delete(bookName);
+}
 // 仅内存记录，用于识别「换了会话」，不持久化
 let lastChatId = null;
 // 上一次已应用的更新快照：重 roll / 删除时回滚
@@ -272,8 +305,10 @@ function buildBigSummaryPrompt() {
     return p;
 }
 
-function buildSystemMessages(needBig, includeTracking = true, bookName = '') {
-    const list = [{ role: 'system', content: DIRECTOR_PROMPT }];
+function buildSystemMessages(needBig, includeTracking = true, bookName = '', needGenesis = false) {
+    const list = [];
+    if (needGenesis) list.push({ role: 'system', content: buildGenesisPrompt() });
+    list.push({ role: 'system', content: DIRECTOR_PROMPT });
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
     if (settings.enablePreview) list.push({ role: 'system', content: buildPreviewPrompt() });
@@ -595,6 +630,7 @@ async function normalizeEntryLayout(bookName) {
             await stBridge.persistLorebook(bookName, book);
             console.log('[worldsim] 条目布局已归位/转绿灯:', bookName);
         }
+        markWorldReady(bookName, book);
     } catch (e) {
         console.warn('[worldsim] 条目布局迁移失败', e);
     }
@@ -675,7 +711,9 @@ registry.register({
         // 切档/新建档后重新载入世界配置（白名单/黑名单）
         window.addEventListener('nekotool:slots-changed', () => {
             const name = getLorebookName();
-            if (name) loadConfig(name, { force: true }).catch(e => console.warn('[worldsim] 世界配置加载失败', e));
+            if (!name) return;
+            loadConfig(name, { force: true }).catch(e => console.warn('[worldsim] 世界配置加载失败', e));
+            normalizeEntryLayout(name).catch(e => console.warn('[worldsim] 条目布局迁移失败', e));
         });
 
         if (ctx.eventSource && ctx.eventTypes?.CHAT_CHANGED) {
@@ -747,11 +785,21 @@ registry.register({
         // 本轮回复将落在第几层（1 基）。onResponse 时 chat 可能还没算上这条回复
         ctx.__nt_replyLayer = chat.length + 1;
         const includeTracking = Boolean(bookName) && stBridge.getWorldNames().includes(bookName);
+        ctx.__nt_includeTracking = includeTracking;
         if (!includeTracking) {
             console.warn('[worldsim] 追踪书不存在，本轮只注入世界规则与状态栏，跳过追踪契约:', bookName || '(无角色)');
         }
 
-        for (const msg of buildSystemMessages(needBig, includeTracking, bookName)) {
+        // 开局世界生成：世界局势还没内容时，前几轮自动补全整个世界
+        const tries = genesisTries.get(bookName) || 0;
+        const needGenesis = includeTracking && settings.enableWorld && !worldReady.get(bookName) && tries < 5;
+        if (needGenesis) {
+            genesisTries.set(bookName, tries + 1);
+            console.log(`[worldsim] 注入开局世界生成（第 ${tries + 1} 次）`);
+        }
+        ctx.__nt_includeTracking = includeTracking;
+
+        for (const msg of buildSystemMessages(needBig, includeTracking, bookName, needGenesis)) {
             ctx.__nt_pendingSystems.push(msg);
         }
     },
@@ -777,8 +825,10 @@ registry.register({
         const currentLorebook = ctx.__nt_bookName || getLorebookName();
         if (!currentLorebook) return;
         const replyLayer = Number(ctx.__nt_replyLayer) || (Array.isArray(ctx.chat) ? ctx.chat.length : 0);
+        const wasTracking = ctx.__nt_includeTracking === true;
         delete ctx.__nt_bookName;
         delete ctx.__nt_replyLayer;
+        delete ctx.__nt_includeTracking;
 
         // 先收拾模型漏到正文的标签/推演块
         sanitizeLastMessage();
@@ -853,9 +903,12 @@ registry.register({
             });
         }
 
+        if (wasTracking && !captured.ws_update) {
+            console.warn('[worldsim] 模型没有输出 ws_update，本轮追踪未写入:', currentLorebook);
+        }
+
         if (captured.ws_update && typeof captured.ws_update === 'string') {
-            try {
-                const s = captured.ws_update.replace(/```json/g, '').replace(/```/g, '').trim();
+            try {                const s = captured.ws_update.replace(/```json/g, '').replace(/```/g, '').trim();
                 const start = s.indexOf('{');
                 const end = s.lastIndexOf('}');
                 if (start === -1 || end === -1) throw new Error('no json brackets');
@@ -910,7 +963,12 @@ registry.register({
                     const ops = (worldRaw && (Array.isArray(worldRaw.del) || worldRaw.add))
                         ? worldRaw
                         : { add: worldRaw };
-                    await applyAggregateOps(currentLorebook, '世界局势', ops, 800);
+                    const worldMap = await applyAggregateOps(currentLorebook, '世界局势', ops, 800);
+                    if (worldMap) {
+                        const ready = Object.keys(worldMap).length > 0;
+                        worldReady.set(currentLorebook, ready);
+                        if (ready) genesisTries.delete(currentLorebook);
+                    }
                 }
                 if (data.foreshadow && settings.enableForeshadow) {
                     const foreMap = await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow, 920, { keyword: true });
