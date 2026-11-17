@@ -4,6 +4,7 @@ import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, INDEX_TITLE } from '../core/worldindex.js';
+import { applyMapOps, setCurrent, mapHasStructure, parseMap, MAP_TITLE } from '../core/worldmap.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -14,6 +15,7 @@ const defaultSettings = {
     enableItems: true,
     enablePlot: true,
     enableWorld: true,
+    enableMap: true,
     enableForeshadow: true,
     enableSummary: true,
     enableBigSummary: true,
@@ -31,15 +33,17 @@ const defaultSettings = {
     enableAntiLazy: true,
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '',
     }
 };
 
 const settings = { ...defaultSettings, customPrompts: { ...defaultSettings.customPrompts } };
 
-// 仅内存：本档是否已完成「开局世界生成」
+// 仅内存：本档是否已完成「开局世界生成」/「开局地图生成」
 const worldReady = new Map();
 const genesisTries = new Map();
+const mapReady = new Map();
+const mapTries = new Map();
 
 /** 开局世界生成：第一次运行时补全整个世界，而不是只提取当前文本 */
 function buildGenesisPrompt() {
@@ -88,7 +92,53 @@ function buildTickPrompt({ needCharTick, needWorldTick }) {
     return p;
 }
 
-/** 扫一遍书，判断世界局势是否已有内容，供 onRequest 同步读取 */
+/** 开局地图生成：从世界书地点出发，补全周边可探索地点 */
+function buildMapGenesisPrompt(bookName = '') {
+    const tagOpen = '<nekotools:mapgen>';
+    const tagClose = '</nekotools:mapgen>';
+    const clock = bookName ? getSlotClock(bookName) : null;
+    const here = clock && clock.place ? `当前地点：${clock.place}。` : '';
+    let p = `${tagOpen}
+【开局地图生成】${here}从世界书已有地点出发，总结当前已知地点，并合理推演周边地点，输出 "map": {"add": {"地点名": "类型｜出口：A、B｜可交互：...｜常驻：..."}}。
+- 8–12 个地点，必须包含主角当前地点；地点之间用出口互相连接。
+- 先复用世界书里出现过的地名，不要造与设定冲突的地方。
+- 每个地点写清类型（城区/建筑/野外）、可交互物、常驻人物（没有就留空）。
+${tagClose}`;
+    const custom = (settings.customPrompts.map || '').trim();
+    if (custom) p += `\n【附加要求】\n${custom}`;
+    return p;
+}
+
+/** 每轮的地图增量契约 */
+function buildMapPrompt() {
+    let p = `<nekotools:track.map>
+【地图】JSON 字段 "map": {"add": {"地点名": "类型｜出口：A、B｜可交互：...｜常驻：..."}, "del": ["地点名"]}
+只写新出现/变化的地点；当前地点由插件自动写。地点名要能在正文里出现。
+</nekotools:track.map>`;
+    return p;
+}
+
+function buildMapCurrent(clock, layer) {
+    if (!clock) return '';
+    const bits = [];
+    if (clock.place) bits.push(clock.place);
+    if (clock.time) bits.push(clock.time);
+    if (clock.weather) bits.push(clock.weather);
+    if (layer > 0) bits.push(`第 ${layer} 层`);
+    return bits.join('｜');
+}
+
+/** 扫一遍书，判断地图是否已有足够地点 */
+function markMapReady(bookName, book) {
+    if (!bookName) return;
+    const entry = book && book.entries
+        ? Object.values(book.entries).find(e => e && e.comment === MAP_TITLE)
+        : null;
+    const data = entry ? parseMap(entry.content) : null;
+    const ready = mapHasStructure(data);
+    mapReady.set(bookName, ready);
+    if (ready) mapTries.delete(bookName);
+}
 function markWorldReady(bookName, book) {
     if (!bookName) return;
     const entry = book && book.entries
@@ -223,7 +273,7 @@ ${tagClose}
 function buildTrackingMessages(bookName = '') {
     const list = [];
     const anyEnabled = settings.enableChars || settings.enableItems || settings.enablePlot
-        || settings.enableWorld || settings.enableForeshadow;
+        || settings.enableWorld || settings.enableForeshadow || settings.enableMap;
     if (!anyEnabled) return list;
 
     const tagOpen = '<ws_' + 'update>';
@@ -232,7 +282,7 @@ function buildTrackingMessages(bookName = '') {
         role: 'system',
         content: `<nekotools:update>
 【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略，标签内含合法 JSON（不要代码块包裹，标签外不加任何其它字符）。
-chars / tick / items / plot / world / foreshadow / roster 都只写**本轮变化**：chars 写有变化的角色；tick 写离屏角色的后台行动；其余分类只写增量（add/del），绝不重复输出未变化的内容。
+chars / tick / items / plot / world / map / foreshadow / roster 都只写**本轮变化**：chars 写有变化的角色；tick 写离屏角色的后台行动；其余分类只写增量（add/del），绝不重复输出未变化的内容。
 </nekotools:update>`
     });
 
@@ -266,6 +316,8 @@ chars / tick / items / plot / world / foreshadow / roster 都只写**本轮变�
 
     // 角色索引：不依赖「角色追踪」开关，只要有追踪就维护
     list.push({ role: 'system', content: buildRosterPrompt(bookName) });
+
+    if (settings.enableMap) list.push({ role: 'system', content: buildMapPrompt() });
 
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
@@ -341,9 +393,10 @@ function buildBigSummaryPrompt() {
     return p;
 }
 
-function buildSystemMessages(needBig, includeTracking = true, bookName = '', needGenesis = false) {
+function buildSystemMessages(needBig, includeTracking = true, bookName = '', needGenesis = false, needMapGenesis = false) {
     const list = [];
     if (needGenesis) list.push({ role: 'system', content: buildGenesisPrompt() });
+    if (needMapGenesis) list.push({ role: 'system', content: buildMapGenesisPrompt(bookName) });
     list.push({ role: 'system', content: DIRECTOR_PROMPT });
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
@@ -672,10 +725,10 @@ function sanitizeLastMessage() {
 async function applyClock(bookName, captured, replyLayer = 0) {
     if (!settings.enableStatus) {
         clearClockJump(bookName);
-        return;
+        return null;
     }
     const fields = parseStatusFields(captured && captured.ws_status);
-    if (!fields) return;
+    if (!fields) return null;
 
     const oldClock = getSlotClock(bookName) || {};
     // 本轮缺的字段沿用上一轮，避免模型偶尔没写时间就把钟清掉
@@ -692,7 +745,7 @@ async function applyClock(bookName, captured, replyLayer = 0) {
     setSlotClock(bookName, { ...merged, layer, at: Date.now() });
     try { window.dispatchEvent(new CustomEvent('nekotool:clock-changed')); } catch (_) {}
 
-    if (!oldDate || !newDate) return;
+    if (!oldDate || !newDate) return { ...merged, layer };
     // 只认「往前走」的跳跃；闪回/回档不报补算
     const delta = daysBetween(oldDate, newDate);
     const limit = Number(settings.clockJumpDays) || 7;
@@ -703,6 +756,7 @@ async function applyClock(bookName, captured, replyLayer = 0) {
     } else {
         clearClockJump(bookName);
     }
+    return { ...merged, layer };
 }
 
 function clearClockJump(bookName) {
@@ -735,6 +789,7 @@ async function cleanupLegacyEntries(bookName) {
 /** 固定条目布局：位置一律「角色定义之前」，order 决定先后 */
 const ENTRY_LAYOUT = {
     '世界局势': { order: 800, constant: true, keyword: false },
+    '地图': { order: 830, constant: true, keyword: false },
     '索引': { order: 850, constant: true, keyword: false },
     '道具': { order: 900, constant: false, keyword: true },
     '计划': { order: 910, constant: true, keyword: false },
@@ -808,6 +863,7 @@ async function normalizeEntryLayout(bookName) {
             console.log('[worldsim] 条目布局已归位/转绿灯:', bookName);
         }
         markWorldReady(bookName, book);
+        markMapReady(bookName, book);
     } catch (e) {
         console.warn('[worldsim] 条目布局迁移失败', e);
     }
@@ -976,9 +1032,17 @@ registry.register({
             genesisTries.set(bookName, tries + 1);
             console.log(`[worldsim] 注入开局世界生成（第 ${tries + 1} 次）`);
         }
+
+        // 开局地图生成：地图还没足够地点时补全
+        const mapTriesNow = mapTries.get(bookName) || 0;
+        const needMapGenesis = includeTracking && settings.enableMap && !mapReady.get(bookName) && mapTriesNow < 5;
+        if (needMapGenesis) {
+            mapTries.set(bookName, mapTriesNow + 1);
+            console.log(`[worldsim] 注入开局地图生成（第 ${mapTriesNow + 1} 次）`);
+        }
         ctx.__nt_includeTracking = includeTracking;
 
-        for (const msg of buildSystemMessages(needBig, includeTracking, bookName, needGenesis)) {
+        for (const msg of buildSystemMessages(needBig, includeTracking, bookName, needGenesis, needMapGenesis)) {
             ctx.__nt_pendingSystems.push(msg);
         }
 
@@ -1062,7 +1126,11 @@ registry.register({
         };
 
         // 状态栏 → 时钟（只存设置，供 TOOL 菜单显示和跳跃检测）
-        await applyClock(currentLorebook, captured, replyLayer);
+        const clockNow = (await applyClock(currentLorebook, captured, replyLayer)) || getSlotClock(currentLorebook);
+        // 地图「当前」行每轮同步
+        if (settings.enableMap && clockNow && (clockNow.place || clockNow.time)) {
+            await setCurrent(currentLorebook, buildMapCurrent(clockNow, replyLayer));
+        }
 
         if (captured.ws_big_summary && settings.enableBigSummary) {
             await stBridge.updateEntry(currentLorebook, '大总结', captured.ws_big_summary.trim(), true, [], {
@@ -1178,6 +1246,10 @@ registry.register({
                         worldReady.set(currentLorebook, ready);
                         if (ready) genesisTries.delete(currentLorebook);
                     }
+                }
+                if (data.map && settings.enableMap) {
+                    const mapData = await applyMapOps(currentLorebook, data.map);
+                    if (mapData) mapReady.set(currentLorebook, mapHasStructure(mapData));
                 }
                 if (data.foreshadow && settings.enableForeshadow) {
                     const foreMap = await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow, 920, { keyword: true });

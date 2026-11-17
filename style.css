@@ -1614,6 +1614,18 @@ body {
 #nt-quick-modal .nt-quick-modal.wide {
     width: min(880px, 100%);
 }
+#nt-quick-modal .nt-quick-chars-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+#nt-quick-modal .nt-quick-roster-head {
+    color: #fff;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--ntq-line);
+}
 #nt-quick-modal .nt-quick-chars {
     display: flex;
     gap: 12px;

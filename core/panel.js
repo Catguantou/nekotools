@@ -110,6 +110,7 @@ export function mountPanel() {
             ['roster', 'P_10', '角色索引'],
             ['genesis', 'P_11', '开局世界生成'],
             ['tick', 'P_12', '后台 tick'],
+            ['map', 'P_13', '开局地图生成'],
         ];
         return map.map(([key, code, name]) => {
             const val = (s.customPrompts && s.customPrompts[key]) || '';

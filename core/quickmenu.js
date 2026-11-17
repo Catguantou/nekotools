@@ -460,24 +460,42 @@ async function showRosterModal() {
     }
 
     const body = document.createElement('div');
-    body.className = 'nt-quick-chars';
+    body.className = 'nt-quick-chars-wrap';
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'nt-quick-roster-head';
+    body.appendChild(headerEl);
+
+    const cols = document.createElement('div');
+    cols.className = 'nt-quick-chars';
     const left = document.createElement('div');
     left.className = 'nt-quick-chars-left';
     const right = document.createElement('div');
     right.className = 'nt-quick-chars-right';
-    body.appendChild(left);
-    body.appendChild(right);
+    cols.appendChild(left);
+    cols.appendChild(right);
+    body.appendChild(cols);
 
     let list = [];
     let cfg = { pinned: [], blocked: [] };
     let selected = '';
     let editing = false;
     let renderSeq = 0;
+    let clockNow = readClock();
+
+    const updateHeader = () => {
+        const place = clockNow && clockNow.place ? clockNow.place : '未知地点';
+        const time = clockNow && clockNow.time ? clockNow.time : '未知时间';
+        headerEl.textContent = `第 ${currentLayerNo()} 层 · ${place} · ${time}`;
+    };
+    updateHeader();
 
     openModal({ title: '角色管理', body, wide: true, footer: [{ label: '关闭', primary: true }] });
 
     const refresh = async () => {
         cfg = await loadConfig(book, { force: true });
+        clockNow = readClock();
+        updateHeader();
         list = await readRoster(book);
         if (!selected || !list.some(x => x.name === selected)) selected = list[0] ? list[0].name : '';
         editing = false;
@@ -595,7 +613,8 @@ async function showRosterModal() {
             name.textContent = item.name;
             const meta = document.createElement('span');
             meta.className = 'nt-quick-char-meta';
-            meta.textContent = [item.tier, item.location, charAge(item)].filter(Boolean).join(' · ');
+            const here = clockNow && clockNow.place && item.location === clockNow.place ? '在场' : '';
+            meta.textContent = [here, item.tier, item.location, charAge(item)].filter(Boolean).join(' · ');
             main.appendChild(name);
             main.appendChild(meta);
 
@@ -662,7 +681,7 @@ async function showRosterModal() {
         const meta = document.createElement('div');
         meta.className = 'nt-quick-char-detail-meta';
         meta.textContent = [
-            item.location ? `位置：${item.location}` : '',
+            item.location ? `位置：${item.location}${clockNow && clockNow.place === item.location ? '（在场）' : ''}` : '',
             item.action ? `最近行动：${item.action}` : '',
             item.layer ? `最后更新：第 ${item.layer} 层（${charAge(item)}）` : '',
         ].filter(Boolean).join('\n');
