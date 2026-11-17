@@ -925,8 +925,8 @@ async function showActionModal() {
 }
 
 const MAP_DIR_POS = {
-    '北': [50, 14], '东北': [75, 24], '东': [87, 50], '东南': [75, 76],
-    '南': [50, 86], '西南': [25, 76], '西': [13, 50], '西北': [25, 24], '中': [50, 50],
+    '北': [50, 30], '东北': [70, 36], '东': [80, 52], '东南': [70, 68],
+    '南': [50, 74], '西南': [30, 68], '西': [20, 52], '西北': [30, 36], '中': [50, 52],
 };
 const MAP_DIR_RING = ['北', '东北', '东', '东南', '南', '西南', '西', '西北'];
 
@@ -953,70 +953,50 @@ function mapHash(text) {
     return Math.abs(h);
 }
 
+function mapInferDirection(place) {
+    const text = `${place && place.direction ? place.direction : ''} ${place && place.desc ? place.desc : ''} ${place && place.type ? place.type : ''}`;
+    if (/东北/.test(text)) return '东北';
+    if (/西北/.test(text)) return '西北';
+    if (/东南/.test(text)) return '东南';
+    if (/西南/.test(text)) return '西南';
+    if (/北/.test(text)) return '北';
+    if (/南/.test(text)) return '南';
+    if (/东/.test(text)) return '东';
+    if (/西/.test(text)) return '西';
+    if (/中|中央/.test(text)) return '中';
+    return '';
+}
+
 function mapNodePosition(place, name, index) {
-    let dir = normalizeDirection(place && place.direction);
+    let dir = normalizeDirection(place && place.direction) || mapInferDirection(place);
     if (!dir) dir = MAP_DIR_RING[index % MAP_DIR_RING.length];
-    const base = MAP_DIR_POS[dir] || [50, 50];
+    const base = MAP_DIR_POS[dir] || [50, 52];
     const h = mapHash(name);
-    const jx = ((h % 9) - 4) * 1.1;
-    const jy = (((h >> 4) % 9) - 4) * 1.1;
+    const jx = ((h % 7) - 3) * 1.4;
+    const jy = (((h >> 4) % 7) - 3) * 1.3;
     return {
         dir,
-        x: Math.max(7, Math.min(93, base[0] + jx)),
-        y: Math.max(13, Math.min(87, base[1] + jy)),
+        x: Math.max(9, Math.min(91, base[0] + jx)),
+        y: Math.max(20, Math.min(84, base[1] + jy)),
     };
 }
 
-const MAP_BASE_SVG = `<svg class="nt-map-base-svg" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
-<defs>
-<radialGradient id="ntParch" cx="48%" cy="42%" r="75%">
-<stop offset="0%" stop-color="#e7d3a8"/>
-<stop offset="62%" stop-color="#d8bf8f"/>
-<stop offset="100%" stop-color="#b79561"/>
-</radialGradient>
-<pattern id="ntGrain" width="7" height="7" patternUnits="userSpaceOnUse">
-<circle cx="1" cy="1" r="0.7" fill="#7a5a34" opacity="0.18"/>
-<circle cx="5" cy="4" r="0.5" fill="#fff6e2" opacity="0.25"/>
-</pattern>
-</defs>
-<rect width="1000" height="620" fill="url(#ntParch)"/>
-<rect width="1000" height="620" fill="url(#ntGrain)"/>
-<path d="M80,150 C150,70 300,55 420,95 C520,130 565,80 660,110 C780,150 850,95 915,180 C960,245 930,330 875,390 C810,465 705,505 600,485 C520,470 455,520 360,500 C275,480 205,520 145,455 C75,380 60,285 80,225 Z"
- fill="#c8ab77" opacity="0.62" stroke="#7a5a34" stroke-width="3.2" stroke-dasharray="10 6"/>
-<path d="M95,180 C135,135 205,140 235,175 C270,215 240,270 195,280 C150,290 100,250 95,215 Z"
- fill="#bfa069" opacity="0.5" stroke="#7a5a34" stroke-width="2" stroke-dasharray="7 5"/>
-<path d="M650,95 C690,60 755,65 780,100 C805,140 775,175 730,180 C685,185 640,140 650,95 Z"
- fill="#bfa069" opacity="0.45" stroke="#7a5a34" stroke-width="2" stroke-dasharray="7 5"/>
-<path d="M230,250 C330,200 430,215 520,250 C610,285 700,255 780,300 C840,335 820,405 760,430 C690,460 610,440 540,455 C460,472 380,455 320,420 C250,380 195,315 230,250 Z"
- fill="none" stroke="#7d6a4a" opacity="0.35" stroke-width="1.6" stroke-dasharray="5 5"/>
-<path d="M360,130 C390,175 380,225 410,265 C435,300 425,340 455,380" fill="none" stroke="#7d8f88" opacity="0.45" stroke-width="4" stroke-linecap="round"/>
-<path d="M700,210 C680,255 700,300 675,345 C655,380 665,420 690,455" fill="none" stroke="#7d8f88" opacity="0.38" stroke-width="3" stroke-linecap="round"/>
-<g stroke="#6b4a2a" fill="none" opacity="0.35" stroke-width="2">
-<path d="M205,440 l15 -22 l15 22"/><path d="M235,445 l13 -19 l13 19"/>
-<path d="M300,175 l16 -24 l16 24"/><path d="M335,180 l14 -20 l14 20"/>
-<path d="M735,360 l16 -24 l16 24"/><path d="M770,365 l13 -20 l13 20"/>
-</g>
-<g fill="#6b4a2a" opacity="0.4" font-family="serif" font-size="15" letter-spacing="4">
-<text x="88" y="545">西 海</text>
-<text x="455" y="70">北 境</text>
-<text x="872" y="505">东 海</text>
-</g>
-<g stroke="#6b4a2a" fill="none" opacity="0.45">
-<circle cx="86" cy="86" r="30"/><circle cx="86" cy="86" r="20"/>
-<path d="M86,50 L86,122 M50,86 L122,86 M62,62 L110,110 M110,62 L62,110"/>
-<path d="M86,58 l7,20 l20,7 l-20,7 l-7,20 l-7,-20 l-20,-7 l20,-7 Z" fill="#6b4a2a" fill-opacity="0.18"/>
-</g>
-<rect x="9" y="9" width="982" height="602" fill="none" stroke="#6b4a2a" opacity="0.55" stroke-width="4"/>
-<rect x="18" y="18" width="964" height="584" fill="none" stroke="#6b4a2a" opacity="0.28" stroke-width="1.5"/>
-</svg>`;
-
 function currentMapPath(data) {
-    const parts = String(data.current || '').split('｜').map(s => s.trim());
-    const site = (data.sites && data.sites[parts[2]]) ? parts[2]
-        : ((data.sites && data.sites[parts[0]]) ? parts[0] : '');
-    const bySite = findPath(data, site);
-    if (bySite.site || bySite.city || bySite.region) return bySite;
-    return { region: parts[0] || '', city: parts[1] || '', site: parts[2] || '' };
+    const parts = String(data.current || '').split('｜').map(s => s.trim()).filter(Boolean);
+    const valid = (p) => p && (
+        (p.site && data.sites && data.sites[p.site])
+        || (p.city && data.cities && data.cities[p.city])
+        || (p.region && data.regions && data.regions[p.region])
+    );
+    for (const part of parts) {
+        const p = findPath(data, part);
+        if (valid(p)) return { region: p.region, city: p.city, site: p.site };
+    }
+    if (parts.length) {
+        const p = findPath(data, parts[0]);
+        if (valid(p)) return { region: p.region, city: p.city, site: p.site };
+    }
+    return { region: '', city: '', site: '' };
 }
 
 function mapIcon(type, name) {
@@ -1088,6 +1068,12 @@ async function showMapModal(opts = {}) {
         else state.level = 'world';
     };
     setStateFromPath(cur);
+    if (!opts.focusCurrent) {
+        state.level = 'world';
+        state.region = '';
+        state.city = '';
+        state.site = '';
+    }
 
     const jumpTo = (loc) => {
         const p = findPath(data, loc);
@@ -1106,6 +1092,8 @@ async function showMapModal(opts = {}) {
     };
 
     openModal({ title: '世界地图', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+    const modalPanel = document.querySelector('#nt-quick-modal .nt-quick-modal');
+    if (modalPanel) modalPanel.classList.add('nt-map-modal');
 
     const isCurrent = (level, name) => {
         if (level === 'region') return cur.region === name;
@@ -1175,7 +1163,8 @@ async function showMapModal(opts = {}) {
         label.textContent = name;
         const sub = document.createElement('span');
         sub.className = 'nt-map-node-sub';
-        sub.textContent = [place.direction ? `方位·${place.direction}` : '', place.type].filter(Boolean).join(' / ');
+        const dir = normalizeDirection(place.direction) || mapInferDirection(place);
+        sub.textContent = [dir ? `方位·${dir}` : '', place.type].filter(Boolean).join(' / ');
         b.appendChild(icon);
         b.appendChild(label);
         b.appendChild(sub);
@@ -1274,7 +1263,7 @@ async function showMapModal(opts = {}) {
             };
             addFact('可交互', site.interact);
             addFact('常驻', site.regulars);
-            addFact('方位', site.direction);
+            addFact('方位', normalizeDirection(site.direction) || mapInferDirection(site));
             detail.appendChild(facts);
 
             detail.appendChild(section('出口 / 周边'));
@@ -1386,11 +1375,6 @@ async function showMapModal(opts = {}) {
 
         const canvas = document.createElement('div');
         canvas.className = 'nt-map-canvas';
-        const base = document.createElement('div');
-        base.className = 'nt-map-base';
-        base.innerHTML = MAP_BASE_SVG;
-        canvas.appendChild(base);
-
         const links = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         links.setAttribute('class', 'nt-map-links');
         links.setAttribute('viewBox', '0 0 100 100');
@@ -1402,8 +1386,21 @@ async function showMapModal(opts = {}) {
         canvas.appendChild(nodes);
 
         const positions = new Map();
+        const placed = [];
+        const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
         items.forEach((item, index) => {
-            const pos = mapNodePosition(item.p, item.name, index);
+            let pos = mapNodePosition(item.p, item.name, index);
+            let guard = 0;
+            while (placed.some(p => Math.hypot(p.x - pos.x, p.y - pos.y) < 10.5) && guard < 16) {
+                const ang = guard * 2.399 + index * 1.3;
+                pos = {
+                    ...pos,
+                    x: clamp(pos.x + Math.cos(ang) * 6.5, 9, 91),
+                    y: clamp(pos.y + Math.sin(ang) * 5.5, 20, 84),
+                };
+                guard++;
+            }
+            placed.push(pos);
             positions.set(item.name, pos);
             const onClick = () => {
                 if (item.level === 'region') {

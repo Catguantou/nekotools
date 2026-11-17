@@ -2065,16 +2065,28 @@ body {
     flex-direction: column;
     gap: 10px;
 }
+#nt-quick-modal .nt-map-modal {
+    max-height: 94vh;
+}
 #nt-quick-modal .nt-map-canvas {
     position: relative;
     width: 100%;
-    aspect-ratio: 16 / 9.9;
+    aspect-ratio: 16 / 9;
     min-height: 300px;
-    border: 7px solid #5c3f26;
+    border: 6px solid #5c3f26;
     border-radius: 6px;
     overflow: hidden;
     background: #d8bf8f;
-    box-shadow: inset 0 0 70px rgba(70, 44, 20, 0.45), 0 10px 26px rgba(0, 0, 0, 0.45);
+    box-shadow: inset 0 0 40px rgba(70, 44, 20, 0.18), 0 10px 26px rgba(0, 0, 0, 0.4);
+}
+#nt-quick-modal .nt-map-canvas::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: #d8bf8f url('./assets/map-parchment.jpg') center / cover no-repeat;
+    filter: saturate(1.12) brightness(1.04);
+    pointer-events: none;
 }
 #nt-quick-modal .nt-map-base,
 #nt-quick-modal .nt-map-base-svg {
@@ -2105,22 +2117,34 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1px;
-    max-width: 150px;
-    padding: 5px 8px 4px;
+    gap: 0;
+    max-width: 145px;
+    padding: 4px 8px 3px;
     border: 1px solid #6b4a2a;
-    border-radius: 4px;
-    background: linear-gradient(180deg, #f6e8c8, #e2cca0);
+    border-radius: 3px;
+    background: linear-gradient(180deg, #f8edd4, #e3cca2);
     color: #3b2a18;
     font-family: "Noto Serif SC", "Songti SC", "SimSun", serif;
-    box-shadow: 0 2px 6px rgba(40, 24, 10, 0.45), inset 0 0 0 1px rgba(255, 248, 228, 0.5);
+    box-shadow: 0 2px 5px rgba(40, 24, 10, 0.42), inset 0 0 0 1px rgba(255, 248, 228, 0.45);
     cursor: pointer;
     transform: translate(-50%, -50%);
     transition: transform 0.12s ease, box-shadow 0.12s ease, z-index 0s;
     z-index: 2;
 }
+#nt-quick-modal .nt-map-node::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -4px;
+    width: 7px;
+    height: 7px;
+    background: #e3cca2;
+    border-right: 1px solid #6b4a2a;
+    border-bottom: 1px solid #6b4a2a;
+    transform: translateX(-50%) rotate(45deg);
+}
 #nt-quick-modal .nt-map-node:hover {
-    transform: translate(-50%, -50%) scale(1.06);
+    transform: translate(-50%, -50%) scale(1.05);
     box-shadow: 0 6px 16px rgba(40, 24, 10, 0.55);
     z-index: 6;
 }
@@ -2128,12 +2152,21 @@ body {
     border-color: #9d3a26;
     box-shadow: 0 0 0 2px rgba(157, 58, 38, 0.45), 0 0 18px rgba(157, 58, 38, 0.45);
 }
+#nt-quick-modal .nt-map-node.current::after {
+    border-color: #9d3a26;
+    background: #e3cca2;
+}
+#nt-quick-modal .nt-map-node-region {
+    border-width: 2px;
+    border-style: double;
+    padding: 4px 8px 3px;
+}
 #nt-quick-modal .nt-map-node-icon {
     font-size: 13px;
     line-height: 1.1;
 }
 #nt-quick-modal .nt-map-node-label {
-    max-width: 136px;
+    max-width: 132px;
     overflow: hidden;
     color: #2f2012;
     font-size: 12px;
@@ -2146,7 +2179,7 @@ body {
     font-size: 13px;
 }
 #nt-quick-modal .nt-map-node-sub {
-    max-width: 136px;
+    max-width: 132px;
     overflow: hidden;
     color: #7a5a34;
     font-size: 8px;
@@ -2156,25 +2189,30 @@ body {
 }
 #nt-quick-modal .nt-map-node-current {
     position: absolute;
-    top: -9px;
-    right: -9px;
+    top: -20px;
+    left: 50%;
+    right: auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 23px;
-    height: 23px;
+    width: auto;
+    height: 16px;
+    padding: 0 5px;
     border: 1px solid #5e1f13;
-    border-radius: 50%;
+    border-radius: 8px;
     background: radial-gradient(circle at 35% 30%, #c45a3e, #8d2c1c);
     color: #f7e7c8;
     font-size: 8px;
+    transform: translateX(-50%);
     box-shadow: 0 1px 4px rgba(40, 10, 5, 0.6);
 }
 #nt-quick-modal .nt-map-detail {
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    padding: 12px 14px;
+    gap: 6px;
+    max-height: 224px;
+    overflow: auto;
+    padding: 10px 12px;
     border: 1px solid #7a5a34;
     border-radius: 6px;
     background:

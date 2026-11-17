@@ -144,22 +144,64 @@ export function mapHasStructure(data) {
         && Object.keys(data.sites || {}).length >= 3;
 }
 
-/** 当前地点属于哪个区域/城市 */
+/** 当前地点属于哪个区域/城市（支持「王都·市场街」这类复合写法） */
+function normalizePlaceText(text) {
+    return String(text || '')
+        .replace(/\s+/g, '')
+        .replace(/[·•・\/>\-—｜|]+/g, '·')
+        .trim();
+}
+
+function resolvePlaceName(data, place) {
+    const raw = String(place || '').trim();
+    if (!raw) return null;
+
+    const groups = [
+        ['site', Object.keys(data.sites || {})],
+        ['city', Object.keys(data.cities || {})],
+        ['region', Object.keys(data.regions || {})],
+    ];
+    const norm = normalizePlaceText(raw);
+    for (const [kind, names] of groups) {
+        if (names.includes(raw)) return { kind, name: raw };
+        for (const name of names) {
+            if (normalizePlaceText(name) === norm) return { kind, name };
+        }
+    }
+
+    const segments = raw.split(/[·•・\/>\-—｜|]+/).map(s => s.trim()).filter(Boolean);
+    for (const seg of segments.reverse()) {
+        const segNorm = normalizePlaceText(seg);
+        for (const [kind, names] of groups) {
+            if (names.includes(seg)) return { kind, name: seg };
+            for (const name of names) {
+                if (normalizePlaceText(name) === segNorm) return { kind, name };
+            }
+        }
+    }
+
+    const all = groups
+        .flatMap(([kind, names]) => names.map(name => ({ kind, name })))
+        .sort((a, b) => b.name.length - a.name.length);
+    for (const entry of all) {
+        if (entry.name.length < 2) continue;
+        if (raw.includes(entry.name) || norm.includes(normalizePlaceText(entry.name))) return entry;
+    }
+    return null;
+}
+
 export function findPath(data, place) {
-    const name = String(place || '').trim();
-    if (!name) return {};
-    if (data.sites && data.sites[name]) {
-        const city = data.sites[name].city;
+    const resolved = resolvePlaceName(data, place);
+    if (!resolved) return { region: '', city: '', site: String(place || '').trim() };
+    if (resolved.kind === 'site') {
+        const city = data.sites[resolved.name].city;
         const region = data.cities && data.cities[city] ? data.cities[city].region : '';
-        return { region, city, site: name };
+        return { region, city, site: resolved.name };
     }
-    if (data.cities && data.cities[name]) {
-        return { region: data.cities[name].region, city: name, site: '' };
+    if (resolved.kind === 'city') {
+        return { region: data.cities[resolved.name].region, city: resolved.name, site: '' };
     }
-    if (data.regions && data.regions[name]) {
-        return { region: name, city: '', site: '' };
-    }
-    return { region: '', city: '', site: name };
+    return { region: resolved.name, city: '', site: '' };
 }
 
 function findEntry(book) {
