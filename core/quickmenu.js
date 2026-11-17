@@ -486,7 +486,7 @@ function placePop() {
     if (mobile) {
         // 手机：接近红圈大小，但左右不铺满
         const state = floatState();
-        const width = Math.min(310, window.innerWidth - 16);
+        const width = Math.min(260, window.innerWidth - 16);
         const maxHeight = Math.min(620, window.innerHeight - 24);
         const left = state.side === 'left' ? 8 : window.innerWidth - width - 8;
         pop.style.left = `${left}px`;
