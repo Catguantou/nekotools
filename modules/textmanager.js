@@ -16,8 +16,25 @@ const tmSettings = {
     autoCleanOnReceive: false,
     exportIncludeNames: true,
     exportSkipHidden: false,
+    exportSkipSystem: true,
     slopRulesText: DEFAULT_SLOP_RULES.join('\n')
 };
+
+// 清理后刷新单条消息的 DOM，否则界面要等重载才看得出变化
+function refreshMessageDom(index, msg) {
+    try {
+        const ctx = stBridge.getContext();
+        if (typeof ctx.updateMessageBlock === 'function') {
+            ctx.updateMessageBlock(index, msg);
+        }
+    } catch (e) {
+        console.warn('[nekotools] 刷新消息失败', e);
+    }
+}
+
+function escapeRegExp(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // ========== 状态栏升级（纯文本标记 → 样式条） ==========
 const NT_STATUS_MARKER = '[[NT_STATUS]]';
@@ -125,11 +142,14 @@ export function exportPureStoryTxt({ favoritesOnly = false } = {}) {
     const ctx = stBridge.getContext();
     const includeNames = tmSettings.exportIncludeNames !== false;
     const skipHidden = tmSettings.exportSkipHidden === true;
+    const skipSystem = tmSettings.exportSkipSystem !== false;
 
     const blocks = [];
-    ctx.chat.forEach((msg, idx) => {
+    (ctx.chat || []).forEach((msg, idx) => {
         if (favoritesOnly && !msg.extra?.nekotool_favorite) return;
-        if (skipHidden && msg.is_system && msg.extra?.hidden) return;
+        // 系统消息不是剧情；隐藏楼层按「数据层 hidden」判断，不再只看系统消息
+        if (skipSystem && msg.is_system) return;
+        if (skipHidden && msg.extra?.hidden) return;
         if (!msg.mes) return;
 
         // 剥离所有NEKOTOOL标签和HTML标签
@@ -138,6 +158,8 @@ export function exportPureStoryTxt({ favoritesOnly = false } = {}) {
             .replace(/<nekotools:[^>]*>[\s\S]*?<\/nekotools:[^>]*>/gi, '')
             .replace(/\[\[NT_STATUS\]\][^\n]*/g, '')
             .replace(/<[^>]+>/g, '')
+            .replace(/[ \t]+\n/g, '\n')
+            .replace(/\n{3,}/g, '\n\n')
             .trim();
 
         if (!text) return;
@@ -150,11 +172,19 @@ export function exportPureStoryTxt({ favoritesOnly = false } = {}) {
         }
     });
 
+    if (!blocks.length) {
+        if (window.toastr) toastr.warning('没有可导出的楼层');
+        return;
+    }
+
     const blob = new Blob([blocks.join('\n\n')], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+    const charName = stBridge.getCharacterName?.() || 'chat';
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     a.href = url;
-    a.download = `story_${Date.now()}.txt`;
+    a.download = `${stBridge.sanitizeWorldName(charName)}_${stamp}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -166,83 +196,118 @@ export function exportPureStoryTxt({ favoritesOnly = false } = {}) {
 }
 
 // ========== 一键清除八股 ==========
-export async function cleanChatSlop({ rangeCount = 0, includeUser = false } = {}) {
-    const ctx = stBridge.getContext();
-    const rulesText = tmSettings.slopRulesText || DEFAULT_SLOP_RULES.join('\n');
+let lastCleanBackup = null;
 
-    const rules = rulesText
+function parseSlopRules(rulesText) {
+    const raw = String(rulesText || '')
         .split('\n')
         .map(line => line.trim())
-        .filter(Boolean)
-        .map(rule => {
-            // 支持正则格式 /pattern/flags
-            const regexMatch = rule.match(/^\/(.+?)\/([gimuy]*)$/);
-            if (regexMatch) {
-                try {
-                    return new RegExp(regexMatch[1], regexMatch[2]);
-                } catch {
-                    return rule;
-                }
+        .filter(line => line && !line.startsWith('#'));
+
+    const rules = [];
+    for (const line of raw) {
+        // /正则/flags
+        const m = line.match(/^\/(.+)\/([gimuy]*)$/);
+        if (m) {
+            try {
+                const flags = m[2].includes('g') ? m[2] : m[2] + 'g';
+                rules.push({ re: new RegExp(m[1], flags), to: '' });
+            } catch (e) {
+                console.warn('[nekotools] 无效正则，已跳过:', line, e);
             }
-            // 支持替换格式 "旧词=>新词"
-            if (rule.includes('=>')) {
-                const [from, to] = rule.split('=>').map(s => s.trim());
-                return { type: 'replace', from, to };
+            continue;
+        }
+        // 旧词=>新词（字面替换，不做正则解释）
+        if (line.includes('=>')) {
+            const [from, to = ''] = line.split('=>').map(s => s.trim());
+            if (!from) continue;
+            try {
+                rules.push({ re: new RegExp(escapeRegExp(from), 'g'), to });
+            } catch (e) {
+                console.warn('[nekotools] 无效替换规则，已跳过:', line, e);
             }
-            return rule;
-        });
+            continue;
+        }
+        // 纯文本：按字面量删除，避免把 . * ? 之类当成正则
+        try {
+            rules.push({ re: new RegExp(escapeRegExp(line), 'g'), to: '' });
+        } catch (e) {
+            console.warn('[nekotools] 无效词条，已跳过:', line, e);
+        }
+    }
+    return rules;
+}
+
+export async function cleanChatSlop({ rangeCount = 0, includeUser = false } = {}) {
+    const ctx = stBridge.getContext();
+    const chat = ctx.chat || [];
+    const rules = parseSlopRules(tmSettings.slopRulesText || DEFAULT_SLOP_RULES.join('\n'));
 
     let msgChanged = 0;
     let totalHits = 0;
-    const startIdx = rangeCount > 0 ? Math.max(0, ctx.chat.length - rangeCount) : 0;
+    const backup = [];
+    const startIdx = rangeCount > 0 ? Math.max(0, chat.length - rangeCount) : 0;
 
-    for (let i = startIdx; i < ctx.chat.length; i++) {
-        const msg = ctx.chat[i];
+    for (let i = startIdx; i < chat.length; i++) {
+        const msg = chat[i];
         if (!msg.mes || (msg.is_user && !includeUser)) continue;
 
         let cleaned = msg.mes;
         let changed = false;
 
-        for (const rule of rules) {
-            if (rule instanceof RegExp) {
-                const before = cleaned;
-                cleaned = cleaned.replace(rule, '');
-                if (cleaned !== before) {
-                    changed = true;
-                    totalHits++;
-                }
-            } else if (rule.type === 'replace') {
-                const before = cleaned;
-                cleaned = cleaned.replace(new RegExp(rule.from, 'g'), rule.to);
-                if (cleaned !== before) {
-                    changed = true;
-                    totalHits++;
-                }
-            } else if (typeof rule === 'string') {
-                const before = cleaned;
-                cleaned = cleaned.replace(new RegExp(rule, 'g'), '');
-                if (cleaned !== before) {
-                    changed = true;
-                    totalHits++;
-                }
+        for (const { re, to } of rules) {
+            const before = cleaned;
+            cleaned = cleaned.replace(re, to);
+            if (cleaned !== before) {
+                changed = true;
+                totalHits++;
             }
         }
 
         if (changed) {
-            msg.mes = cleaned.trim();
+            // 收尾：去掉删词留下的重复标点与空白
+            cleaned = cleaned
+                .replace(/，{2,}/g, '，')
+                .replace(/。{2,}/g, '。')
+                .replace(/[ \t]{2,}/g, ' ')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+
+            backup.push({ i, mes: msg.mes });
+            msg.mes = cleaned;
             msgChanged++;
+            refreshMessageDom(i, msg);
         }
     }
 
     if (msgChanged > 0) {
-        if (typeof ctx.saveChatConditional === 'function') {
-            ctx.saveChatConditional();
-        } else if (typeof ctx.saveChat === 'function') {
-            ctx.saveChat();
-        }
+        if (typeof ctx.saveChat === 'function') ctx.saveChat();
+        else if (typeof ctx.saveChatConditional === 'function') ctx.saveChatConditional();
     }
 
+    lastCleanBackup = backup.length ? backup : null;
     return { msgChanged, totalHits };
+}
+
+/** 撤销上一次「立即清除八股」的改动（只保留一步） */
+export function undoLastClean() {
+    if (!lastCleanBackup || !lastCleanBackup.length) return 0;
+    const ctx = stBridge.getContext();
+    const chat = ctx.chat || [];
+    let restored = 0;
+    for (const { i, mes } of lastCleanBackup) {
+        if (!chat[i]) continue;
+        chat[i].mes = mes;
+        refreshMessageDom(i, chat[i]);
+        restored++;
+    }
+    if (typeof ctx.saveChat === 'function') ctx.saveChat();
+    lastCleanBackup = null;
+    return restored;
+}
+
+export function canUndoClean() {
+    return Boolean(lastCleanBackup && lastCleanBackup.length);
 }
 
 // ========== 注册模块 ==========
@@ -277,6 +342,10 @@ registry.register({
 
         // 注入楼层收藏星标按钮
         const observer = new MutationObserver(() => {
+            // 长聊天里 DOM 变动很频繁，节流一下，避免每次变动都全量扫描
+            const now = Date.now();
+            if (now - (observer._lastScan || 0) < 120) return;
+            observer._lastScan = now;
             document.querySelectorAll('#chat .mes:not([data-nt-star])').forEach(mesEl => {
                 const mesId = mesEl.getAttribute('mesid');
                 if (!mesId) return;

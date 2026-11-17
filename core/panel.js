@@ -6,7 +6,8 @@ import {
     exportPureStoryTxt,
     getFavoriteFloors,
     jumpToFloor,
-    toggleFavoriteFloor
+    toggleFavoriteFloor,
+    undoLastClean
 } from '../modules/textmanager.js';
 
 function escapeHtml(s) {
@@ -322,6 +323,12 @@ export function mountPanel() {
                                 <span class="nt-text">跳过已隐藏楼层</span>
                                 <span class="nt-code">E_02</span>
                             </label>
+                            <label class="nt-grid-item">
+                                <input type="checkbox" id="nt-tm-exp-skip-sys" class="nt-hidden-cb" ${tm.exportSkipSystem !== false ? 'checked' : ''}>
+                                <span class="nt-box"></span>
+                                <span class="nt-text">跳过系统消息</span>
+                                <span class="nt-code">E_03</span>
+                            </label>
                         </div>
                         <div class="nt-data-row" style="justify-content:flex-start; gap:12px;">
                             <button id="nt-tm-export-txt" class="nt-btn-action primary">[一键导出纯剧情 TXT]</button>
@@ -356,6 +363,7 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row" style="justify-content:flex-start; gap:12px;">
                             <button id="nt-tm-run-clean" class="nt-btn-action primary">[立即一键清除八股]</button>
+                            <button id="nt-tm-undo-clean" class="nt-btn-text" style="color:#ffcc00;">[撤销上次清理]</button>
                         </div>
                     </div>
                 </div>
@@ -765,6 +773,7 @@ export function mountPanel() {
         if (!tmMod) return;
         tmMod.settings.exportIncludeNames = wrap.querySelector('#nt-tm-exp-names').checked;
         tmMod.settings.exportSkipHidden = wrap.querySelector('#nt-tm-exp-skip-hide').checked;
+        tmMod.settings.exportSkipSystem = wrap.querySelector('#nt-tm-exp-skip-sys').checked;
         tmMod.settings.autoCleanOnReceive = wrap.querySelector('#nt-tm-auto-clean').checked;
         tmMod.settings.slopRulesText = wrap.querySelector('#nt-tm-slop-rules').value;
         tmMod.saveSettings();
@@ -795,6 +804,14 @@ export function mountPanel() {
         if (window.toastr) {
             if (totalHits > 0) toastr.success(`清除完成：共净化 ${msgChanged} 个楼层，移除 ${totalHits} 处八股表达！`);
             else toastr.info('扫描完毕：未发现匹配的八股词汇');
+        }
+    };
+
+    wrap.querySelector('#nt-tm-undo-clean').onclick = () => {
+        const n = undoLastClean();
+        if (window.toastr) {
+            if (n > 0) toastr.success(`已撤销 ${n} 个楼层的清理`);
+            else toastr.info('没有可撤销的清理（只保留最近一次）');
         }
     };
 
