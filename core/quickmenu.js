@@ -410,8 +410,8 @@ function showFloatButton() {
 
 function initFloatDrag(btn) {
     let drag = null;
+    let suppressClickUntil = 0;
     btn.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
         e.stopPropagation();
         try { btn.setPointerCapture(e.pointerId); } catch (_) {}
         const st = floatState();
@@ -445,14 +445,10 @@ function initFloatDrag(btn) {
         drag = null;
         btn.classList.remove('nt-dragging');
         if (!d.moved) {
-            if (d.wasHidden) {
-                saveFloatState({ hidden: false });
-                applyFloatPosition(btn, floatState(), true);
-            } else {
-                togglePop();
-            }
+            // 点击交给下面的 click 处理，避免触摸/指针序列里丢事件
             return;
         }
+        suppressClickUntil = Date.now() + 400;
         const size = btn.offsetWidth || 48;
         const left = parseFloat(btn.style.left) || 0;
         const top = parseFloat(btn.style.top) || d.startTop;
@@ -464,9 +460,15 @@ function initFloatDrag(btn) {
     btn.addEventListener('pointerup', finish);
     btn.addEventListener('pointercancel', finish);
     btn.addEventListener('click', (e) => {
-        // pointerup 已经处理点击；阻止事件冒泡到文档关闭菜单
         e.preventDefault();
         e.stopPropagation();
+        if (Date.now() < suppressClickUntil) return;
+        if (btn.classList.contains('nt-float-hidden')) {
+            saveFloatState({ hidden: false });
+            applyFloatPosition(btn, floatState(), true);
+            return;
+        }
+        togglePop();
     });
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
 }
