@@ -112,6 +112,8 @@ export function mountPanel() {
             ['tick', 'P_12', '后台 tick'],
             ['map', 'P_13', '开局地图生成'],
             ['quest', 'P_14', '开局主线生成'],
+            ['cognition', 'P_15', '认知隔离'],
+            ['presence', 'P_16', '在场与日程'],
         ];
         return map.map(([key, code, name]) => {
             const val = (s.customPrompts && s.customPrompts[key]) || '';
@@ -328,6 +330,8 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-summary" class="nt-hidden-cb" ${s.enableSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">小总结</span><span class="nt-code">T_08</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-bigsummary" class="nt-hidden-cb" ${s.enableBigSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">大总结</span><span class="nt-code">T_09</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quests" class="nt-hidden-cb" ${s.enableQuests ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">主线支线</span><span class="nt-code">T_10</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">认知隔离</span><span class="nt-code">T_11</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-presence" class="nt-hidden-cb" ${s.enablePresence ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">日程在场</span><span class="nt-code">T_12</span></label>
                         </div>
                     </div>
 
@@ -1142,6 +1146,8 @@ export function mountPanel() {
         s.enablePlot = wrap.querySelector('#nt-ws-plot').checked;
         s.enableWorld = wrap.querySelector('#nt-ws-world').checked;
         s.enableQuests = wrap.querySelector('#nt-ws-quests').checked;
+        s.enableCognition = wrap.querySelector('#nt-ws-cognition').checked;
+        s.enablePresence = wrap.querySelector('#nt-ws-presence').checked;
         s.enableForeshadow = wrap.querySelector('#nt-ws-foreshadow').checked;
         s.enableSummary = wrap.querySelector('#nt-ws-summary').checked;
         s.enableBigSummary = wrap.querySelector('#nt-ws-bigsummary').checked;

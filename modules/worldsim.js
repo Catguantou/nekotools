@@ -18,6 +18,8 @@ const defaultSettings = {
     enableWorld: true,
     enableMap: true,
     enableQuests: true,
+    enableCognition: true,
+    enablePresence: true,
     enableForeshadow: true,
     enableSummary: true,
     enableBigSummary: true,
@@ -36,7 +38,7 @@ const defaultSettings = {
     enableAntiLazy: true,
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '', presence: '',
     }
 };
 
@@ -57,10 +59,11 @@ function buildGenesisPrompt() {
     let p = `${tagOpen}
 【开局世界生成】这是本局第一次运行。先不要只盯着眼前场景，请基于角色卡、世界书设定、用户角色，补全一个完整的世界快照。
 必须在本轮 ws_update 里输出 "world": {
-  "国家": {"名称": "政体｜领袖｜经济｜军事｜外交｜文化｜当前动向"},
-  "势力": {"名称": "目标｜资源｜与主角关系｜当前动作"},
+  "国家": {"名称": "政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},
+  "势力": {"名称": "类型｜目标｜资源｜与主角关系｜当前动作"},
   "社会新闻": {"标题": "事件｜影响｜来源"}
 }
+国家固定 7 段字段、势力固定 5 段字段、社会新闻固定 3 段字段，顺序不要乱；缺的写“未知”。
 至少 3 个国家、3 个势力、3 条社会新闻；国家之间要有建交/贸易/冲突/文化渗透等关系，势力要有自己的目标。
 沿用已有设定，不要另起炉灶；不要只写当前文本里已经出现的东西。
 ${tagClose}`;
@@ -78,7 +81,13 @@ function buildTickPrompt({ needCharTick, needWorldTick }) {
     const lines = ['<nekotools:tick>', '【本轮后台结算】'];
     lines.push('- 所有内容都写在本轮 ws_update 的 JSON 里，tick / world 只是其中的字段。');
     if (needCharTick) {
-        lines.push(`- 从「索引」里挑最多 ${maxChars} 个最久没更新的角色（优先钉住/T1，其次 T2），在 "tick" 里写他们这轮在后台做了什么：`);
+        lines.push('- 按等级轮换，不要只挑最久没更新的：');
+        lines.push('  · T1（用户关注/钉住）：每轮至少推进 1 个；T1 不降级。');
+        lines.push('  · T2（高强度互动/世界书角色）：在场的本轮更新；不在场的每 2 轮更新一次。');
+        lines.push('  · T3（配角）：每 5 轮更新一次。');
+        lines.push('  · T4（路边 NPC）：只在出场时更新。');
+        lines.push('  · 除 T1 外，连续 20 轮未出场/未更新 → 在 roster 里降一级。');
+        lines.push(`- 本轮最多写 ${maxChars} 个 tick 对象，在 "tick" 里写他们这轮在后台做了什么：`);
         lines.push('  "tick": {"角色名": {"位置":"地图小地点名","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
         lines.push('- 只写这些人；玩家不在场也要推进他们自己的计划，不要等玩家。');
     }
@@ -98,6 +107,14 @@ function buildTickPrompt({ needCharTick, needWorldTick }) {
     return p;
 }
 
+/** T1 每轮提醒：用户关注/钉住角色必须持续推进 */
+function buildT1Prompt() {
+    return `<nekotools:t1>
+【T1 每轮推进】索引里若有 T1（用户关注/钉住）角色，本轮至少推进 1 个，写进 tick：位置 / 当前行动 / 下一步。
+如果本轮 T1 已经在正文出场，也要补一条 tick 记录他接下来要做什么。索引里没有 T1 就跳过。
+</nekotools:t1>`;
+}
+
 /** 开局地图生成：从世界书地点出发，补全周边可探索地点 */
 function buildMapGenesisPrompt(bookName = '') {
     const tagOpen = '<nekotools:mapgen>';
@@ -114,6 +131,7 @@ function buildMapGenesisPrompt(bookName = '') {
 - 2–3 个大地图区域（国家/地区），每个区域 1–2 个中地图城市，每个城市 3–5 个小地点。
 - 方位用 北/南/东/西/中/东北/西北/东南/西南；同一层的地点要分散开，不要全挤在中间。
 - 必须包含主角当前地点，且它在某个城市下；地点之间用出口互相连接。
+- **地点名全局唯一，不要重名**；不同城市的同名地点请用“城市·地点”区分。
 - 先复用世界书里出现过的地名，不要造与设定冲突的地方。
 ${tagClose}`;
     const custom = (settings.customPrompts.map || '').trim();
@@ -131,7 +149,7 @@ function buildMapPrompt() {
   "sites": {"城市名": {"地点名": "方位：南｜类型｜出口：A、B｜可交互：...｜常驻：..."}},
   "del": {"regions": ["..."], "cities": ["..."], "sites": ["..."]}
 }
-只写本轮新出现/变化的地点；当前地点由插件自动写。方位用 北/南/东/西/中/东北/西北/东南/西南，同层要分散。地点名要能在正文里出现，且位置必须使用这里的小地点名。
+只写本轮新出现/变化的地点；当前地点由插件自动写。方位用 北/南/东/西/中/东北/西北/东南/西南，同层要分散。地点名**全局唯一**，不要重名；重名用“城市·地点”区分。地点名要能在正文里出现，且位置必须使用这里的小地点名。
 </nekotools:track.map>`;
     return p;
 }
@@ -295,6 +313,40 @@ const DIRECTOR_PROMPT = `<nekotools:director>
 4. 输出格式：严格遵守下方系统标签的契约。所有标签必须放在正文末尾，标签内部仅供系统后台记录，不要用代码块包裹，绝对不要在正文中向用户解释这些标签。
 </nekotools:director>`;
 
+/** 认知隔离：去掉全知视角，角色只能用有限感官与已有记忆行动 */
+function buildCognitionPrompt() {
+    let p = `<nekotools:cognition>
+【认知隔离 · 最高优先级】
+- 去除全知视角，完全以角色的有限认知看待当下。角色只基于当前五感与已有记忆行动，遵守情报的时空限制。
+- 只有用户被引号包裹、实际说出口的对话和明确的表情可以被感知；用户的想法、心理活动、旁白、系统提示严禁被角色得知或回应。
+- 去元认知：禁止打破第四面墙的说明、元叙事、设定解说；禁止“原著/原本轨迹/剧情需要/作为AI”等 meta 发言。
+- 时间：绝不混淆时间轴；未来的事不能提前被当下得知；未发生的未来、以后才会认识的人，绝不可能被角色说出口，绝对禁止剧透。
+- 空间：信息获取严格限制在角色物理感官内；无法得知不在场的事件。
+- 判断标准：严格区分叙事者所知与角色所知；凡是不清楚角色是否可知的内容，一律处理为“不知道”；严禁上帝视角、预知未来、跨场景获取情报。
+- 信息差：任何情报都要有来源（看到/听到/查到/被告诉）；角色之间、角色与用户之间允许存在信息差，不得凭空得知。
+- 秘密：角色的个人隐私、重大秘密、成长经历、痛苦往事，绝不随口说出；只有被逼问、信任足够或剧情付出代价时才可能透露。
+</nekotools:cognition>`;
+    const custom = (settings.customPrompts.cognition || '').trim();
+    if (custom) p += `\n【附加要求】\n${custom}`;
+    return p;
+}
+
+/** 在场与日程：角色不能凭空出现在当前场景 */
+function buildPresencePrompt(bookName) {
+    const clock = bookName ? getSlotClock(bookName) : null;
+    const place = clock && clock.place ? `当前地点：${clock.place}。` : '';
+    let p = `<nekotools:presence>
+【在场与日程】${place}
+- 角色出场必须满足：索引里的位置就是当前地点，或按他的日程/当前行动确实在此地。
+- 不在场的角色不能凭空出现；若要出场，必须先写清他如何赶到（路程、时间、理由）。
+- 每次让角色出场前先检查：他真的会在这里吗？不确定就让他不在。
+- T4 路人只在需要时出现，不要为了热闹塞人。
+</nekotools:presence>`;
+    const custom = (settings.customPrompts.presence || '').trim();
+    if (custom) p += `\n【附加要求】\n${custom}`;
+    return p;
+}
+
 function buildStatusPrompt() {
     const tagOpen = '<ws_' + 'status>';
     const tagClose = '</ws_' + 'status>';
@@ -413,7 +465,8 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 
     if (settings.enableWorld) {
         let c = `<nekotools:track.world>
-【世界局势】JSON 字段 "world": {"国家": {"名称":"政体｜领袖｜经济｜军事｜外交｜文化｜当前动向"}, "势力": {"名称":"目标｜资源｜与主角关系｜当前动作"}, "社会新闻": {"标题":"事件｜影响｜来源"}, "del": {"国家":["名称"], "势力":["名称"], "社会新闻":["标题"]}}
+【世界局势】JSON 字段 "world": {"国家": {"名称":"政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"}, "势力": {"名称":"类型｜目标｜资源｜与主角关系｜当前动作"}, "社会新闻": {"标题":"事件｜影响｜来源"}, "del": {"国家":["名称"], "势力":["名称"], "社会新闻":["标题"]}}
+要求：国家固定 7 段字段、势力固定 5 段字段、社会新闻固定 3 段字段，顺序不要乱；缺的写“未知”。
 要求：只写本轮**变化**；国家、势力、社会新闻分开维护，不要把所有东西都塞进社会新闻。没有变化就写 "world": {}。
 社会新闻只写**已经发生的公开事实**；可执行的目标/承诺/待办钩子放「支线」，不要写进社会新闻。
 世界要自己运转：国家之间会建交/断交/战争/贸易/文化渗透，势力有自己的目标和动作，不要围着主角转。
@@ -467,6 +520,8 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
     if (needMapGenesis) list.push({ role: 'system', content: buildMapGenesisPrompt(bookName) });
     if (needQuestGenesis) list.push({ role: 'system', content: buildQuestGenesisPrompt() });
     list.push({ role: 'system', content: DIRECTOR_PROMPT });
+    if (settings.enableCognition) list.push({ role: 'system', content: buildCognitionPrompt() });
+    if (settings.enablePresence && includeTracking) list.push({ role: 'system', content: buildPresencePrompt(bookName) });
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
     if (settings.enablePreview) list.push({ role: 'system', content: buildPreviewPrompt() });
@@ -1234,6 +1289,9 @@ registry.register({
                 content: buildTickPrompt({ needCharTick, needWorldTick }),
             });
             console.log(`[worldsim] 后台 tick：角色=${needCharTick} 世界=${needWorldTick}`);
+        } else if (settings.enableTicks && includeTracking && !needGenesis) {
+            // 非全量 tick 的轮次也要提醒 T1，否则 T1 做不到每轮
+            ctx.__nt_pendingSystems.push({ role: 'system', content: buildT1Prompt() });
         }
     },
 
