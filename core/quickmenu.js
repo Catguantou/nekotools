@@ -30,6 +30,7 @@ import { stBridge } from './st_bridge.js';
 const BTN_ID = 'nt-quick-btn';
 const POP_ID = 'nt-quick-pop';
 const MODAL_ID = 'nt-quick-modal';
+const FLOAT_ID = 'nt-float-btn';
 
 let mounted = false;
 let modalCloser = null;
@@ -368,10 +369,136 @@ function restoreMobileControls() {
     mobileControlHomes.clear();
 }
 
+function floatState() {
+    const cfg = settings.get('worldsim') || {};
+    const s = cfg.quickFloat || {};
+    return {
+        side: s.side === 'left' ? 'left' : 'right',
+        top: Number(s.top) || Math.round(window.innerHeight * 0.58),
+        hidden: Boolean(s.hidden),
+    };
+}
+
+function saveFloatState(patch) {
+    settings.set('worldsim', { quickFloat: { ...floatState(), ...patch } });
+}
+
+function applyFloatPosition(btn, state, animate = false) {
+    if (!btn) return state;
+    const size = btn.offsetWidth || 48;
+    const visibleLeft = state.side === 'left' ? 8 : window.innerWidth - size - 8;
+    const hiddenLeft = state.side === 'left' ? -(size - 14) : window.innerWidth - 14;
+    const top = Math.max(60, Math.min(Number(state.top) || 300, window.innerHeight - 150));
+    btn.style.left = `${state.hidden ? hiddenLeft : visibleLeft}px`;
+    btn.style.top = `${top}px`;
+    btn.style.transition = animate ? 'left .18s ease, top .18s ease' : 'none';
+    btn.classList.toggle('nt-float-hidden', Boolean(state.hidden));
+    return { ...state, top };
+}
+
+function hideFloatButton() {
+    const btn = $(FLOAT_ID);
+    if (btn) btn.style.display = 'none';
+}
+
+function showFloatButton() {
+    const btn = $(FLOAT_ID);
+    if (!btn) return;
+    btn.style.display = '';
+    applyFloatPosition(btn, floatState());
+}
+
+function initFloatDrag(btn) {
+    let drag = null;
+    btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+        const st = floatState();
+        drag = {
+            id: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            startLeft: parseFloat(btn.style.left) || 0,
+            startTop: parseFloat(btn.style.top) || st.top,
+            moved: false,
+            wasHidden: st.hidden,
+        };
+        btn.classList.add('nt-dragging');
+    });
+    btn.addEventListener('pointermove', (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
+        if (Math.hypot(dx, dy) > 6) drag.moved = true;
+        if (!drag.moved) return;
+        const size = btn.offsetWidth || 48;
+        const left = Math.max(-(size - 14), Math.min(window.innerWidth - 14, drag.startLeft + dx));
+        const top = Math.max(60, Math.min(window.innerHeight - 150, drag.startTop + dy));
+        btn.style.left = `${left}px`;
+        btn.style.top = `${top}px`;
+        btn.style.transition = 'none';
+    });
+    const finish = (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        const d = drag;
+        drag = null;
+        btn.classList.remove('nt-dragging');
+        if (!d.moved) {
+            if (d.wasHidden) {
+                saveFloatState({ hidden: false });
+                applyFloatPosition(btn, floatState(), true);
+            } else {
+                togglePop();
+            }
+            return;
+        }
+        const size = btn.offsetWidth || 48;
+        const left = parseFloat(btn.style.left) || 0;
+        const top = parseFloat(btn.style.top) || d.startTop;
+        const side = left + size / 2 < window.innerWidth / 2 ? 'left' : 'right';
+        const hidden = left <= 24 || left + size >= window.innerWidth - 24;
+        saveFloatState({ side, top, hidden });
+        applyFloatPosition(btn, { side, top, hidden }, true);
+    };
+    btn.addEventListener('pointerup', finish);
+    btn.addEventListener('pointercancel', finish);
+    btn.addEventListener('click', (e) => {
+        // pointerup 已经处理点击；阻止事件冒泡到文档关闭菜单
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    btn.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+function ensureFloatButton() {
+    const mobile = window.matchMedia('(max-width: 640px)').matches;
+    const existing = $(FLOAT_ID);
+    if (!mobile || !quickMenuEnabled()) {
+        if (existing) existing.remove();
+        return;
+    }
+    if (existing) {
+        const pop = $(POP_ID);
+        existing.style.display = pop && !pop.hidden ? 'none' : '';
+        applyFloatPosition(existing, floatState());
+        return;
+    }
+    const btn = document.createElement('div');
+    btn.id = FLOAT_ID;
+    btn.className = 'nt-float-btn';
+    btn.title = 'NEKOTOOL 快捷菜单（可拖到屏幕边缘隐藏）';
+    btn.textContent = 'TOOL';
+    initFloatDrag(btn);
+    document.body.appendChild(btn);
+    applyFloatPosition(btn, floatState());
+}
+
 function closePop() {
     const pop = $(POP_ID);
     if (pop) pop.hidden = true;
     restoreMobileControls();
+    showFloatButton();
 }
 
 function updateQuickStatus() {
@@ -423,6 +550,7 @@ function openPop() {
     }
     // 先显示，再刷新内容；任何刷新异常都不能导致菜单打不开
     pop.hidden = false;
+    hideFloatButton();
     parkMobileControls();
     try { updateJumpUi(); } catch (err) { console.warn('[nekotools] 刷新跳时提示失败', err); }
     try { updateClockUi(); } catch (err) { console.warn('[nekotools] 刷新时钟失败', err); }
@@ -2630,8 +2758,9 @@ function buildPop() {
     document.addEventListener('click', (e) => {
         const popEl = $(POP_ID);
         const btn = $(BTN_ID);
+        const floatBtn = $(FLOAT_ID);
         if (!popEl || popEl.hidden) return;
-        if (popEl.contains(e.target) || (btn && btn.contains(e.target))) return;
+        if (popEl.contains(e.target) || (btn && btn.contains(e.target)) || (floatBtn && floatBtn.contains(e.target))) return;
         closePop();
     });
     document.addEventListener('keydown', (e) => {
@@ -2669,6 +2798,7 @@ function refreshQuickMenuVisibility() {
     }
     if (!$(POP_ID)) buildPop();
     updateJumpUi();
+    ensureFloatButton();
 }
 
 function ensureButton() {
@@ -2717,6 +2847,7 @@ export function mountQuickMenu() {
     const tick = () => {
         if (ensureButton()) {
             buildPop();
+            ensureFloatButton();
             return;
         }
         if (tries++ < 30) setTimeout(tick, 500);
@@ -2734,6 +2865,7 @@ export function mountQuickMenu() {
         setInterval(() => {
             if (!ensureButton()) return;
             if (!$(POP_ID)) buildPop();
+            ensureFloatButton();
             updateJumpUi();
         }, 3000);
     }

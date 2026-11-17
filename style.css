@@ -4458,3 +4458,58 @@ body {
         display: none !important;
     }
 }
+
+/* ============================================================
+   手机悬浮 TOOL：可拖动，拖到屏幕边缘自动半隐藏
+   ============================================================ */
+#nt-float-btn {
+    position: fixed;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #101116;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #e7ebf7;
+    font-family: "Bahnschrift", "Segoe UI", sans-serif;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    z-index: 100003;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), inset 0 0 0 2px rgba(0, 0, 0, 0.55);
+    cursor: grab;
+}
+#nt-float-btn::before {
+    content: '';
+    position: absolute;
+    inset: 5px;
+    border: 1px solid rgba(47, 91, 215, 0.5);
+    border-radius: 50%;
+    pointer-events: none;
+}
+#nt-float-btn.nt-dragging {
+    cursor: grabbing;
+    opacity: 0.9;
+}
+#nt-float-btn.nt-float-hidden {
+    opacity: 0.72;
+}
+
+@media (max-width: 640px) {
+    #nt-float-btn {
+        display: flex;
+    }
+    #leftSendForm > #nt-quick-btn {
+        display: none !important;
+    }
+}
+
+@media (min-width: 641px) {
+    #nt-float-btn {
+        display: none !important;
+    }
+}
