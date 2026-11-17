@@ -138,22 +138,28 @@ export const stBridge = {
     /** 像不像一个人名（扫世界书时用来过滤设定/规则类条目） */
     looksLikeCharacterName(name) {
         const s = String(name ?? '').trim();
-        if (s.length < 2 || s.length > 12) return false;
-        if (/[：:｜|【】\[\]（）()、，,。.!！?？\d]/.test(s)) return false;
-        if (/^(设定|世界|规则|背景|简介|概要|说明|备注|系统|提示|注意|序章|终章|第一章)$/.test(s)) return false;
+        if (!s) return false;
+        if (/^(user|玩家)/i.test(s)) return false;
+        // 中文名 2–6 字，或英文名 2–15 个字母
+        if (!/^[\u4e00-\u9fa5]{2,6}$/.test(s) && !/^[A-Za-z][A-Za-z' -]{1,14}$/.test(s)) return false;
+        if (/^(设定|世界|规则|背景|简介|概要|说明|备注|系统|提示|注意|序章|终章|第一章|必须|论坛|时间轴)$/.test(s)) return false;
+        // 常见地名后缀，别把地点当角色
+        if (/[城镇村山河湖海国州省街路巷门宫殿塔馆店堂院府楼阁港岛关站区境界地域谷林原漠峰岭洞潭泉井桥都]$/.test(s)) return false;
         return true;
     },
 
     /**
      * 本地扫全部世界书，汇总「像角色」的条目名并打分。
      * 只读，不写盘；返回 [{ name, score }]，按分数降序、最多 40 个。
+     *
+     * 采纳门槛：被追踪过 / 聊天里被提到过 / 就是当前角色卡。
+     * 只有书里一条从未被提到的条目，先不进索引——避免把设定标题当人名塞满常驻条目。
      */
     async scanCharacterCandidates() {
         const reserved = new Set([
             '角色索引', '世界时钟', '主线', '周边地图', '世界局势', '世界新闻',
             '小总结', '大总结', '剧情推演', '道具', '计划', '伏笔', '世界配置',
             '白名单', '黑名单',
-            // 常见设定类标题，别当成人名
             '地理', '历史', '政治', '经济', '文化', '势力', '国家', '地点',
             '地图', '技能', '魔法', '种族', '宗教', '组织', '人物', '角色',
             '关系', '时间线', '世界观', '背景', '设定', '规则', '序章', '终章',
@@ -162,13 +168,16 @@ export const stBridge = {
         const names = await this.fetchWorldNamesFromApi();
         const list = Array.isArray(names) && names.length ? names : this.getWorldNames();
         const charName = this.getCharacterName();
-        const scores = new Map();
-        const bump = (name, n) => {
+        const candidates = new Map(); // name -> { comment, tracked }
+        const add = (name, kind) => {
             const k = String(name ?? '').trim();
             if (!k) return;
-            scores.set(k, (scores.get(k) || 0) + n);
+            const cur = candidates.get(k) || { comment: false, tracked: false };
+            cur[kind] = true;
+            candidates.set(k, cur);
         };
 
+        let scanned = 0;
         for (const bookName of list) {
             // 别的角色卡的追踪书不参与扫描，避免把别人家的 NPC 混进来
             if (this.isTrackerBook(bookName) && !isSlotOf(bookName, charName)) continue;
@@ -183,28 +192,43 @@ export const stBridge = {
                 if (!entry) continue;
                 const comment = String(entry.comment || '').trim();
                 if (comment.startsWith('角色·')) {
-                    bump(comment.slice(3), 4);
+                    add(comment.slice(3), 'tracked');
                     continue;
                 }
                 if (reserved.has(comment)) continue;
                 if (!this.looksLikeCharacterName(comment)) continue;
-                bump(comment, 2);
+                add(comment, 'comment');
             }
+            // 书多时让出事件循环，别把主线程卡死
+            if (++scanned % 3 === 0) await new Promise(r => setTimeout(r, 0));
         }
 
-        if (charName) bump(charName, 2);
-
-        // 聊天里被提到得越多，等级越高（本地数数，零 token）
+        // 聊天提及（本地数数，零 token）：只数候选，且只看最近 300 条
         const ctx = this.getContext();
         const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
-        const chatText = chat.map(m => (m && m.mes) || '').join('\n');
-        for (const [name, score] of [...scores.entries()]) {
+        const recent = chat.slice(-300);
+        const chatText = recent.map(m => (m && m.mes) || '').join('\n');
+        const mentions = new Map();
+        for (const name of candidates.keys()) {
             const hits = chatText.split(name).length - 1;
-            if (hits > 0) scores.set(name, score + Math.min(3, hits));
+            if (hits > 0) mentions.set(name, hits);
         }
 
-        return [...scores.entries()]
-            .map(([name, score]) => ({ name, score }))
+        if (charName) add(charName, 'comment');
+
+        const out = [];
+        for (const [name, info] of candidates) {
+            const hit = mentions.get(name) || 0;
+            const isCard = charName && name === charName;
+            const score = (info.tracked ? 4 : 0)
+                + (info.comment ? 2 : 0)
+                + (isCard ? 2 : 0)
+                + Math.min(3, hit);
+            if (score < 2) continue;
+            out.push({ name, score });
+        }
+
+        return out
             .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'zh'))
             .slice(0, 40);
     },
@@ -311,8 +335,10 @@ export const stBridge = {
             if (!res.ok) return [];
             const data = await res.json();
             let raw = [];
-            if (Array.isArray(data)) raw = data;
-            else if (data && typeof data === 'object') raw = Object.keys(data);
+            if (Array.isArray(data)) {
+                // /list 返回对象数组：文件名在 file_id，优先用它（name 是书内字段，可能不同）
+                raw = data.map(x => (x && typeof x === 'object') ? (x.file_id || x.name) : x);
+            } else if (data && typeof data === 'object') raw = Object.keys(data);
             
             const names = cleanAndDedupeList(raw);
             // 让 ST 自己刷新列表：它会重建 #world_info 选项并重算 world_names。

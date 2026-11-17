@@ -96,6 +96,7 @@ export async function createSlot() {
     if (!book) throw new Error('新建存档失败（世界书没建出来）');
     await stBridge.deactivateStaleAutoBooks(name);
     touchSlot(name);
+    notifySlotsChanged();
     return { name, slot: next };
 }
 
@@ -113,6 +114,7 @@ export async function switchSlot(n) {
 
     await stBridge.deactivateStaleAutoBooks(target.name);
     touchSlot(target.name);
+    notifySlotsChanged();
     return target.name;
 }
 
@@ -133,7 +135,12 @@ export async function deleteSlot(n) {
         const rest = stBridge.listTrackerBooksForCurrentChar();
         if (rest.length) await switchSlot(rest[rest.length - 1].slot);
     }
+    notifySlotsChanged();
     return true;
+}
+
+function notifySlotsChanged() {
+    try { window.dispatchEvent(new CustomEvent('nekotool:slots-changed')); } catch (_) {}
 }
 
 function dateStamp() {
@@ -220,5 +227,6 @@ export async function importCurrent(file) {
     if (got !== want) throw new Error(`导入后条目数不对（期望 ${want}，实际 ${got}）`);
 
     await switchSlot(parsed.slot);
+    notifySlotsChanged();
     return { name: targetName, entries: got, slot: parsed.slot };
 }

@@ -167,7 +167,15 @@ try {
     const d1 = wf.parseGameDate('2026年11月17日');
     const d2 = wf.parseGameDate('2027年2月1日');
     assert(d1 && d2 && wf.daysBetween(d1, d2) === 76, '剧情日期差值不对');
+    assert(wf.daysBetween(d2, d1) === -76, '剧情日期倒推差值不对');
     assert(wf.parseGameDate('不是日期') === null, '非法日期应返回 null');
+    assert(wf.parseGameDate('2026年2月30日') === null, '2 月 30 日应判非法');
+    assert(wf.parseGameDate('2026年4月31日') === null, '4 月 31 日应判非法');
+    assert(wf.parseGameDate('2024年2月29日') !== null, '闰年 2 月 29 日应合法');
+    assert(wf.parseGameDate('0026年1月1日') === null, '过小年份应判非法');
+
+    const clockFields = wf.parseClockContent('时间：2026年1月1日｜地点：王都｜天气：雪');
+    assert(clockFields.time === '2026年1月1日' && clockFields.place === '王都', '时钟条目解析失败');
     assert(
         wf.buildClockContent({ time: '2026年11月17日', place: '酒馆', weather: '雨', temperature: '18℃' }, 42).includes('第 42 层'),
         '时钟条目缺少层号'

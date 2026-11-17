@@ -127,6 +127,15 @@ export function slotLabel(n) {
 
 // ========== 状态栏 / 世界时钟 ==========
 
+function parseFieldMap(text) {
+    const map = {};
+    for (const part of String(text ?? '').split(/[|｜\n]/)) {
+        const m = part.match(/^\s*([^:：]+)[:：]([\s\S]*)$/);
+        if (m) map[m[1].trim()] = m[2].trim();
+    }
+    return map;
+}
+
 /**
  * 解析状态栏文本（模型输出的 `<ws_status>` 内容）。
  * 例：时间: 2026年11月17日 | 地点: 酒馆 | 天气: 雨 | 温度: 18℃
@@ -136,11 +145,7 @@ export function parseStatusFields(raw) {
     const text = String(raw ?? '').trim();
     if (!text) return null;
 
-    const map = {};
-    for (const part of text.split(/[|｜\n]/)) {
-        const m = part.match(/^\s*([^:：]+)[:：]([\s\S]*)$/);
-        if (m) map[m[1].trim()] = m[2].trim();
-    }
+    const map = parseFieldMap(text);
     if (!map['时间'] && !map['地点']) return null;
     return {
         time: map['时间'] || '',
@@ -150,6 +155,23 @@ export function parseStatusFields(raw) {
     };
 }
 
+/** 解析「世界时钟」条目内容；缺字段给空串，用于和本轮状态栏合并 */
+export function parseClockContent(text) {
+    const map = parseFieldMap(text);
+    return {
+        time: map['时间'] || '',
+        place: map['地点'] || '',
+        weather: map['天气'] || '',
+        temperature: map['温度'] || '',
+    };
+}
+
+function daysInMonth(year, month) {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return days[month - 1] || 0;
+}
+
 /** 从文本里抠出剧情日期 { y, m, d }；没有或日期非法返回 null */
 export function parseGameDate(text) {
     const m = String(text ?? '').match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
@@ -157,7 +179,9 @@ export function parseGameDate(text) {
     const y = Number(m[1]);
     const mo = Number(m[2]);
     const d = Number(m[3]);
-    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    if (y < 1000 || y > 9999) return null;
+    if (mo < 1 || mo > 12) return null;
+    if (d < 1 || d > daysInMonth(y, mo)) return null;
     return { y, m: mo, d };
 }
 

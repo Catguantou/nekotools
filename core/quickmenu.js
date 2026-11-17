@@ -47,6 +47,8 @@ function currentJump() {
     const cfg = settings.get('worldsim');
     const jump = cfg && cfg.clockJump;
     if (!jump || typeof jump !== 'object') return null;
+    // 6 小时没处理就自动过期，免得旧提示永远挂着
+    if (jump.at && Date.now() - Number(jump.at) > 6 * 3600 * 1000) return null;
     const cur = stBridge.currentTrackerName();
     if (jump.book && cur && jump.book !== cur) return null;
     return jump;
