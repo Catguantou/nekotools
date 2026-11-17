@@ -508,35 +508,41 @@ registry.register({
 
         // 注入楼层收藏星标按钮
         const observer = new MutationObserver((records) => {
+            // 本次变动涉及的消息（供去八股/状态栏共用）
+            const touched = new Set();
+
             // ① 同步去八股：MutationObserver 回调在绘制前执行，
             //    在这里改 DOM 用户看不到中间态，所以不会闪。
             if (tmSettings.hideSlopVisual === true) {
-                const touched = new Set();
-                for (const rec of records) {
-                    if (rec.type === 'characterData') {
-                        const mes = rec.target.parentElement?.closest?.('.mes');
-                        if (mes) touched.add(mes);
-                        continue;
-                    }
-                    if (rec.target instanceof Element) {
-                        const host = rec.target.closest?.('.mes_text');
-                        if (host) {
-                            const mes = host.closest('.mes');
+                try {
+                    for (const rec of records) {
+                        if (rec.type === 'characterData') {
+                            const mes = rec.target.parentElement?.closest?.('.mes');
                             if (mes) touched.add(mes);
+                            continue;
+                        }
+                        if (rec.target instanceof Element) {
+                            const host = rec.target.closest?.('.mes_text');
+                            if (host) {
+                                const mes = host.closest('.mes');
+                                if (mes) touched.add(mes);
+                            }
+                        }
+                        for (const node of rec.addedNodes) {
+                            if (node.nodeType !== 1) continue;
+                            if (node.matches?.('.mes')) {
+                                touched.add(node);
+                            } else {
+                                const mes = node.closest?.('.mes');
+                                if (mes) touched.add(mes);
+                                else node.querySelectorAll?.('.mes').forEach(m => touched.add(m));
+                            }
                         }
                     }
-                    for (const node of rec.addedNodes) {
-                        if (node.nodeType !== 1) continue;
-                        if (node.matches?.('.mes')) {
-                            touched.add(node);
-                        } else {
-                            const mes = node.closest?.('.mes');
-                            if (mes) touched.add(mes);
-                            else node.querySelectorAll?.('.mes').forEach(m => touched.add(m));
-                        }
-                    }
+                    touched.forEach(hideSlopInMessage);
+                } catch (e) {
+                    console.warn('[nekotools] 视觉隐藏失败（不影响其他功能）', e);
                 }
-                touched.forEach(hideSlopInMessage);
             }
 
             // ② 星标/状态栏/视觉屏蔽：可以延后合并处理
@@ -575,8 +581,14 @@ registry.register({
 
             // 状态栏：只处理本次变动到的消息（全量留给初次加载）
             const ctx = stBridge.getContext();
-            if (touched.size) {
-                touched.forEach(mesEl => upgradeStatusBars(mesEl));
+            try {
+                if (touched.size) {
+                    touched.forEach(mesEl => upgradeStatusBars(mesEl));
+                }
+            } catch (e) {
+                console.warn('[nekotools] 状态栏渲染失败', e);
+            }
+            try {
                 touched.forEach(el => {
                     if (el.classList.contains('nt-visual-hidden')) return;
                     const mid = el.getAttribute('mesid');
@@ -584,6 +596,8 @@ registry.register({
                     const msg = ctx.chat?.[Number(mid)];
                     if (msg?.extra?.hidden) el.classList.add('nt-visual-hidden');
                 });
+            } catch (e) {
+                console.warn('[nekotools] 视觉屏蔽失败', e);
             }
             }, 100);
         });
@@ -595,6 +609,19 @@ registry.register({
                 subtree: true
             });
         }
+
+        // 兜底：生成结束 / 收到消息 / 切会话时再补一次状态栏渲染
+        const ev = ctx.eventTypes || {};
+        [ev.MESSAGE_RECEIVED, ev.GENERATION_ENDED, ev.CHAT_CHANGED].forEach(name => {
+            if (!name || !ctx.eventSource) return;
+            ctx.eventSource.on(name, () => setTimeout(() => {
+                try {
+                    upgradeStatusBars();
+                } catch (e) {
+                    console.warn('[nekotools] 状态栏补渲染失败', e);
+                }
+            }, 80));
+        });
 
         // 初次加载：把已渲染好的旧楼层补处理一遍
         setTimeout(() => {

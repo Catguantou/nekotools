@@ -421,6 +421,39 @@ export function mountPanel() {
 
     container.appendChild(wrap);
 
+    // ---------- 区块折叠：每个 nt-section 变成可折叠面板 ----------
+    {
+        const openCount = new Map();
+        wrap.querySelectorAll('.nt-section').forEach(sec => {
+            if (sec.closest('details.nt-section')) return;
+            const head = sec.querySelector(':scope > .nt-sec-head');
+            if (!head) return;
+
+            const pane = sec.closest('.nt-tab-pane');
+            const paneId = pane ? pane.id : 'default';
+            const opened = openCount.get(paneId) || 0;
+
+            const det = document.createElement('details');
+            det.className = 'nt-section nt-collapsible';
+            const idx = head.querySelector('.nt-index')?.textContent?.trim() || '';
+            if (idx) det.dataset.idx = idx;
+            det.open = opened === 0;
+            openCount.set(paneId, opened + 1);
+
+            const sum = document.createElement('summary');
+            sum.className = 'nt-summary';
+            sum.appendChild(head);
+
+            const body = document.createElement('div');
+            body.className = 'nt-sec-body';
+            while (sec.firstChild) body.appendChild(sec.firstChild);
+
+            det.appendChild(sum);
+            det.appendChild(body);
+            sec.replaceWith(det);
+        });
+    }
+
     // 快捷跳转
     wrap.querySelectorAll('[data-goto]').forEach(btn => {
         btn.onclick = () => {

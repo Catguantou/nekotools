@@ -726,6 +726,7 @@ body {
 
 /* ---------- 澶撮儴 ---------- */
 #nt-ws-panel .nt-header {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -733,6 +734,27 @@ body {
     padding: 0 14px;
     border-bottom: 1px solid var(--ntk-line);
     cursor: pointer;
+    overflow: hidden;
+}
+/* 标题栏：斜线纹理 + 底部刻度 */
+#nt-ws-panel .nt-header::before {
+    content: "";
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 190px;
+    background: repeating-linear-gradient(115deg, transparent 0 7px, var(--ntk-blue) 7px 8px);
+    opacity: .12;
+    mask-image: linear-gradient(90deg, transparent, #000 65%);
+    pointer-events: none;
+}
+#nt-ws-panel .nt-header::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 4px;
+    background: repeating-linear-gradient(90deg, var(--ntk-line2) 0 1px, transparent 1px 7px);
+    opacity: .45;
+    pointer-events: none;
 }
 #nt-ws-panel .nt-logo-wrap { display: flex; align-items: center; gap: 10px; }
 #nt-ws-panel .nt-deco-line {
@@ -788,7 +810,19 @@ body {
     color: var(--ntk-faint);
     letter-spacing: .1em;
 }
-#nt-ws-panel .nt-tab.active .nt-tnum { color: var(--ntk-blue); }
+#nt-ws-panel .nt-tab.active .nt-tnum { color: var(--ntk-blue2); }
+
+/* tab 底部刻度尺 */
+#nt-ws-panel .nt-tab::before {
+    content: "";
+    position: absolute;
+    left: 8px; right: 8px; bottom: 0;
+    height: 3px;
+    background: repeating-linear-gradient(90deg, var(--ntk-line2) 0 1px, transparent 1px 6px);
+    opacity: .4;
+    pointer-events: none;
+}
+#nt-ws-panel .nt-tab.active::before { display: none; }
 
 /* ---------- 闈㈡澘鍐呭 ---------- */
 #nt-ws-panel .nt-tab-pane { display: none; padding: 10px; }
@@ -828,7 +862,14 @@ body {
     letter-spacing: .1em;
     color: var(--ntk-fg);
 }
-#nt-ws-panel .nt-sec-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--ntk-line2), transparent); }
+#nt-ws-panel .nt-sec-line {
+    flex: 1;
+    height: 5px;
+    background-image: radial-gradient(circle, var(--ntk-line2) 1px, transparent 1.2px);
+    background-size: 6px 5px;
+    background-repeat: repeat-x;
+    background-color: transparent;
+}
 #nt-ws-panel .nt-hint { font-size: 10px; color: var(--ntk-faint); letter-spacing: .04em; }
 
 /* 妯″潡鏍?*/
@@ -952,12 +993,11 @@ body {
 #nt-ws-panel .nt-prompt-textarea:focus { border-color: var(--ntk-blue); }
 
 /* 鎻愮ず璇嶄袱鍒楁帓甯冿紝鍘嬬缉椤甸暱 */
-#nt-ws-panel .nt-section:has(.nt-prompt-block) {
+#nt-ws-panel .nt-sec-body:has(.nt-prompt-block) {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px 10px;
 }
-#nt-ws-panel .nt-section:has(.nt-prompt-block) > .nt-sec-head { grid-column: 1 / -1; }
 
 /* 涓栫晫涔﹀垪琛?*/
 #nt-ws-panel .nt-ws-booklist { border: 1px solid var(--ntk-line); padding: 6px; background: var(--ntk-bg); max-height: 300px !important; overflow-y: auto; }
@@ -1104,7 +1144,7 @@ body {
     #nt-ws-panel .nt-grid-item { padding: 6px; font-size: 11px; }
     #nt-ws-panel .nt-code { display: none; }
 
-    #nt-ws-panel .nt-section:has(.nt-prompt-block) { grid-template-columns: 1fr; }
+    #nt-ws-panel .nt-sec-body:has(.nt-prompt-block) { grid-template-columns: 1fr; }
 
     #nt-ws-panel .nt-data-row { flex-wrap: wrap; gap: 6px; padding: 4px 0; }
     #nt-ws-panel .nt-data-label { font-size: 11px; }
