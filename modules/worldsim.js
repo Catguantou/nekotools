@@ -103,7 +103,7 @@ function buildTrackingMessages() {
         role: 'system',
         content: `<nekotools:update>
 【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略，标签内含合法 JSON（不要代码块包裹，标签外不加任何其它字符）。
-chars / items / plot / world / foreshadow 中，除 chars 可按需只写有变化的角色外，其余四类都必须给出**完整清单**：前端会用本轮清单整条覆盖世界书条目，未列出的视为删除。
+chars / items / plot / world / foreshadow 都只写**本轮变化**：chars 写有变化的角色；其余四类只写增量（add/del），绝不重复输出未变化的内容。
 </nekotools:update>`
     });
 
@@ -130,9 +130,9 @@ chars / items / plot / world / foreshadow 中，除 chars 可按需只写有变�
 
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
-【道具追踪】JSON 字段 "items": {"道具名": "[持有者 | 作用 | 来源] 描述"}
-要求：每轮输出**当前完整清单**（不是增量）；未列出的道具视为已失去，会被前端删除。
-重点保留未来剧情可能召回的道具，最多 30 条。
+【道具追踪】JSON 字段 "items": {"add": {"道具名": "[持有者 | 作用 | 来源] 描述"}, "del": ["道具名"]}
+要求：只写本轮**变化**的道具，不要重复未变的条目。add 新增或覆盖同名项；del 删除已失去/已用掉的道具。没有变化就写 "items": {}。
+重点保留未来剧情可能召回的道具。
 `;
         const custom = (settings.customPrompts.items || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
@@ -142,8 +142,8 @@ chars / items / plot / world / foreshadow 中，除 chars 可按需只写有变�
 
     if (settings.enablePlot) {
         let c = `<nekotools:track.plot>
-【计划追踪】JSON 字段 "plot": {"计划名": "[执行者 | 目标 | 进度 | 状态] 描述"}
-要求：每轮输出当前仍在推进的**完整清单**（不是增量）；已结束或已暴露的计划保留并标注状态；未列出视为已作废，会被前端删除。
+【计划追踪】JSON 字段 "plot": {"add": {"计划名": "[执行者 | 目标 | 进度 | 状态] 描述"}, "del": ["计划名"]}
+要求：只写本轮**变化**的计划，不要重复未变的条目。add 新增或覆盖；计划结束/作废用 del。没有变化就写 "plot": {}。
 重要：此条目与角色后台动向联动。暗中进行的计划必须严守认知隔离，绝不能提前在正文中让用户或无关角色得知
 `;
         const custom = (settings.customPrompts.plot || '').trim();
@@ -154,8 +154,8 @@ chars / items / plot / world / foreshadow 中，除 chars 可按需只写有变�
 
     if (settings.enableWorld) {
         let c = `<nekotools:track.world>
-【世界局势】JSON 字段 "world": {"局势名": "描述"}
-要求：每轮输出当前宏观格局的**完整清单**（可多条，键名自定）；过时的局势可合并成一条趋势；未列出视为已淡化。
+【世界局势】JSON 字段 "world": {"add": {"局势名": "描述"}, "del": ["局势名"]}
+要求：只写本轮**变化**的局势，不要重复未变的内容。add 新增或覆盖；过时/淡化/被合并的局势用 del。没有变化就写 "world": {}。
 内容为国家、势力、政治经济文化、舆论争端风向、大人物动向等，模拟真实世界运转，不要围着主角转。
 `;
         const custom = (settings.customPrompts.world || '').trim();
@@ -166,8 +166,8 @@ chars / items / plot / world / foreshadow 中，除 chars 可按需只写有变�
 
     if (settings.enableForeshadow) {
         let c = `<nekotools:track.foreshadow>
-【草蛇伏笔】JSON 字段 "foreshadow": {"伏笔名": "[线索 | 指向/可能的作用] 描述"}
-要求：每轮输出尚未触发的**完整清单**（不是增量）；已触发的伏笔不再列出，会被前端删除。与计划追踪严格分开。
+【草蛇伏笔】JSON 字段 "foreshadow": {"add": {"伏笔名": "[线索 | 指向/可能的作用] 描述"}, "del": ["伏笔名"]}
+要求：只写本轮**新增或修改**的伏笔，不要重复未变的条目。已触发/废弃的伏笔用 del。没有变化就写 "foreshadow": {}。与计划追踪严格分开。
 `;
         const custom = (settings.customPrompts.foreshadow || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
@@ -243,6 +243,53 @@ function formatAggregate(map) {
         .filter(([, v]) => v !== undefined && v !== null && String(v).trim())
         .map(([k, v]) => `- ${k}｜${String(v).trim()}`);
     return lines.length ? lines.join('\n') : '（暂无）';
+}
+
+/** 从聚合条目内容还原成 {名称: 描述} */
+function readAggregate(content) {
+    const map = {};
+    for (const line of String(content || '').split('\n')) {
+        const m = line.match(/^\s*-\s*([^｜|]+)[｜|]([\s\S]*)$/);
+        if (m) map[m[1].trim()] = m[2].trim();
+    }
+    return map;
+}
+
+/** 解析增量指令：{ add: {名:描述}, del: [名] }；兼容旧的整表格式 */
+function parseOps(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const hasOps = Array.isArray(raw.del) || (raw.add && typeof raw.add === 'object');
+    if (hasOps) {
+        return {
+            add: (raw.add && typeof raw.add === 'object') ? raw.add : {},
+            del: Array.isArray(raw.del) ? raw.del.map(String) : [],
+        };
+    }
+    return { add: raw, del: [] };
+}
+
+/** 按增量指令修改单条目：只动变化的行，不重写未变内容 */
+async function applyAggregateOps(bookName, title, raw, order = 900) {
+    const ops = parseOps(raw);
+    if (!ops) return false;
+    if (!Object.keys(ops.add).length && !ops.del.length) return false;
+
+    const book = await stBridge.loadWorldInfoAsync(bookName);
+    if (!book || !book.entries) return false;
+    const entry = Object.values(book.entries).find(e => e && e.comment === title);
+    const map = readAggregate(entry?.content);
+
+    for (const key of ops.del) delete map[key];
+    for (const [key, value] of Object.entries(ops.add)) {
+        const text = (value === null || value === undefined) ? '' : String(value).trim();
+        if (!text) { delete map[key]; continue; } // 传空值等同删除
+        map[key] = text;
+    }
+
+    await stBridge.updateEntry(bookName, title, formatAggregate(map), true, [], {
+        position: 4, depth: 999, order
+    });
+    return true;
 }
 
 registry.register({
@@ -429,30 +476,20 @@ registry.register({
                     }
                 }
                 if (data.items && settings.enableItems) {
-                    await stBridge.updateEntry(currentLorebook, '道具', formatAggregate(data.items), true, [], {
-                        position: 4, depth: 999, order: 900
-                    });
+                    await applyAggregateOps(currentLorebook, '道具', data.items);
                 }
                 if (data.plot && settings.enablePlot) {
-                    await stBridge.updateEntry(currentLorebook, '计划', formatAggregate(data.plot), true, [], {
-                        position: 4, depth: 999, order: 900
-                    });
+                    await applyAggregateOps(currentLorebook, '计划', data.plot);
                 }
                 if (data.world && settings.enableWorld) {
                     const worldRaw = data.world;
-                    const worldText = typeof worldRaw === 'string'
-                        ? worldRaw.trim()
-                        : (worldRaw && worldRaw['局势'] ? String(worldRaw['局势']).trim() : formatAggregate(worldRaw));
-                    if (worldText) {
-                        await stBridge.updateEntry(currentLorebook, '世界局势', worldText, true, [], {
-                            position: 4, depth: 999, order: 900
-                        });
-                    }
+                    const ops = (worldRaw && (Array.isArray(worldRaw.del) || worldRaw.add))
+                        ? worldRaw
+                        : { add: worldRaw };
+                    await applyAggregateOps(currentLorebook, '世界局势', ops);
                 }
                 if (data.foreshadow && settings.enableForeshadow) {
-                    await stBridge.updateEntry(currentLorebook, '伏笔', formatAggregate(data.foreshadow), true, [], {
-                        position: 4, depth: 999, order: 900
-                    });
+                    await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow);
                 }
             } catch (e) {
                 console.warn('[worldsim] JSON 解析失败', e, captured.ws_update);
