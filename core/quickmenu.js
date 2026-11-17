@@ -2208,7 +2208,28 @@ function buildPop() {
 
 // ========== 挂载 ==========
 
+function quickMenuEnabled() {
+    return settings.get('worldsim').enableQuickMenu !== false;
+}
+
+function refreshQuickMenuVisibility() {
+    const enabled = quickMenuEnabled();
+    const btn = $(BTN_ID);
+    if (btn) btn.style.display = enabled ? '' : 'none';
+    if (!enabled) {
+        closePop();
+        return;
+    }
+    if (!btn) {
+        if (ensureButton()) buildPop();
+        return;
+    }
+    if (!$(POP_ID)) buildPop();
+    updateJumpUi();
+}
+
 function ensureButton() {
+    if (!quickMenuEnabled()) return false;
     if ($(BTN_ID)) return true;
     const host = document.getElementById('leftSendForm');
     if (!host) return false;
@@ -2246,6 +2267,7 @@ export function mountQuickMenu() {
             const book = e && e.detail ? e.detail.bookName : '';
             showMainCompleteModal(book).catch(err => console.warn('[nekotools] 主线完成弹窗失败', err));
         });
+        window.addEventListener('nekotool:quickmenu-toggle', () => refreshQuickMenuVisibility());
         setInterval(() => {
             if (!ensureButton()) return;
             if (!$(POP_ID)) buildPop();

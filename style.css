@@ -3137,3 +3137,61 @@ body {
     color: #eef0f5;
 }
 
+/* 统一灰调勾选框 */
+#nt-ws-panel input[type="checkbox"]:not(.nt-hidden-cb),
+#nt-quick-modal input[type="checkbox"],
+#nt-quick-pop input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    border: 1px solid #5a606b;
+    border-radius: 2px;
+    background: #15181e;
+    cursor: pointer;
+    flex: none;
+    vertical-align: middle;
+}
+#nt-ws-panel input[type="checkbox"]:not(.nt-hidden-cb):checked,
+#nt-quick-modal input[type="checkbox"]:checked,
+#nt-quick-pop input[type="checkbox"]:checked {
+    background: #4e5f96;
+    border-color: #7d8fce;
+}
+#nt-ws-panel input[type="checkbox"]:not(.nt-hidden-cb):checked::after,
+#nt-quick-modal input[type="checkbox"]:checked::after,
+#nt-quick-pop input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 4px;
+    height: 8px;
+    border: solid #eef0f5;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+}
+#nt-ws-panel .nt-data-row > label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+#nt-ws-panel .nt-slop-add {
+    flex-wrap: wrap;
+}
+#nt-ws-panel .nt-slop-add .nt-data-select {
+    flex: 0 0 92px;
+    width: 92px !important;
+}
+#nt-ws-panel .nt-slop-add .nt-data-input {
+    flex: 1 1 120px;
+    min-width: 0;
+    width: auto !important;
+}
+#nt-ws-panel .nt-slop-add .nt-btn-text {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+

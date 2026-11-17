@@ -29,6 +29,7 @@ const defaultSettings = {
     hideKeepCount: 2,
     visualHideKeep: 0,
     enableTicks: true,
+    enableQuickMenu: true,
     worldTickEvery: 3,
     charTickEvery: 2,
     tickMaxChars: 2,

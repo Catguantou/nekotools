@@ -163,6 +163,7 @@ export function mountPanel() {
                         </div>
                         <div class="nt-grid-layout">
                             ${getModulesHtml()}
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quickmenu" class="nt-hidden-cb" ${s.enableQuickMenu !== false ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">TOOL 菜单</span><span class="nt-code">U_01</span></label>
                         </div>
                     </div>
 
@@ -1150,6 +1151,7 @@ export function mountPanel() {
         s.bigSummaryLimit = parseInt(wrap.querySelector('#nt-ws-biglimit').value) || 100;
         s.recordUserCharacter = wrap.querySelector('#nt-ws-record-user').checked;
         s.enableTicks = wrap.querySelector('#nt-ws-tick-enable').checked;
+        s.enableQuickMenu = wrap.querySelector('#nt-ws-quickmenu').checked;
         s.charTickEvery = parseInt(wrap.querySelector('#nt-ws-char-tick').value) || 0;
         s.worldTickEvery = parseInt(wrap.querySelector('#nt-ws-world-tick').value) || 0;
         s.tickMaxChars = parseInt(wrap.querySelector('#nt-ws-tick-max').value) || 2;
@@ -1162,6 +1164,9 @@ export function mountPanel() {
         });
 
         mod.saveSettings();
+        try {
+            window.dispatchEvent(new CustomEvent('nekotool:quickmenu-toggle', { detail: { enabled: s.enableQuickMenu } }));
+        } catch (_) {}
         syncTextManagerInputs();
         // 词库可能变了：先还原旧的隐藏，再按新规则重新套一遍
         restoreSlopVisual();
