@@ -4476,3 +4476,13 @@ body {
 /* ============================================================
    手机悬浮 TOOL：竖条，可拖动，拖到边缘半隐藏
    ============================================================ */
+
+/* 修复手机 WebView 里 body fixed 导致模态遮罩高度算成 0 */
+#nt-quick-modal {
+    top: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100vw !important;
+    height: 100vh !important;
+}
