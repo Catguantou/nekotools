@@ -3,7 +3,8 @@ import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
-import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories } from '../core/worldfmt.js';
+import { migrateIndex, syncChars, syncNames, INDEX_TITLE } from '../core/worldindex.js';
+import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
     enabled: true,
@@ -177,7 +178,12 @@ chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：c
 - 近期打算：短期内最可能采取的下一个具体行动
 - 关键记忆：【事件】→ 导致了什么转变（本轮只写新增的 1-2 条，用数组或换行分隔；插件会追加到旧记忆，不会覆盖）
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
-可选补充（会一起写进档案）：身份 / 外貌 / 与主角关系。姓名由插件自动写，不用输出。
+可选：身份。
+必填基础：性别 / 外貌（简单一句）/ 人际关系。
+人际关系是对象，键写对方名字；对用户角色固定写 <user>。值的格式："好感 X｜信任 Y｜标签：一句原因"。
+好感/信任都是 0-100：好感 0-20 敌意 / 21-40 冷淡 / 41-60 中性 / 61-80 亲近 / 81-100 信赖或爱慕；
+信任 0-20 提防 / 21-40 保留 / 41-60 一般 / 61-80 信任 / 81-100 生死托付。
+只写本轮有变化的人；插件会按人合并，没写到的旧关系保留。姓名由插件自动写，不用输出。
 `;
         const focus = (settings.focusChars || '').trim();
         if (focus) {
@@ -303,13 +309,21 @@ async function updateCharacterEntry(bookName, name, info, book) {
         }
     }
 
+    // 人际关系按人合并：本轮没写到的人保留旧状态
+    const mergedRel = {
+        ...normalizeRelationships(old['人际关系']),
+        ...normalizeRelationships(info && info['人际关系']),
+    };
+
     const finalInfo = { ...(info && typeof info === 'object' ? info : {}) };
-    // 旧的可选基本信息（身份/外貌/关系等）本轮没写就保留
+    // 旧的可选基本信息（性别/外貌/身份等）本轮没写就保留
     for (const [k, v] of Object.entries(old)) {
-        if (k === '姓名' || k === '关键记忆') continue;
+        if (k === '姓名' || k === '关键记忆' || k === '人际关系') continue;
         if (!(k in finalInfo) || !String(finalInfo[k] ?? '').trim()) finalInfo[k] = v;
     }
     finalInfo['关键记忆'] = merged;
+    if (Object.keys(mergedRel).length) finalInfo['人际关系'] = mergedRel;
+    else delete finalInfo['人际关系'];
 
     const content = formatCharacterYaml(name, finalInfo);
     stBridge.upsertEntryInBook(target, `角色·${name}`, content, {
@@ -406,7 +420,7 @@ async function applyAggregateOps(bookName, title, raw, order = 900, { keyword = 
         extra: { position: 0, depth: 0, order },
     });
     await stBridge.persistLorebook(bookName, book);
-    return true;
+    return map;
 }
 
 /** 兜底：模型没按契约包标签时，把漏到正文的未闭合 tag / 推演块切掉 */
@@ -509,7 +523,7 @@ async function cleanupLegacyEntries(bookName) {
 /** 固定条目布局：位置一律「角色定义之前」，order 决定先后 */
 const ENTRY_LAYOUT = {
     '世界局势': { order: 800, constant: true, keyword: false },
-    '角色索引': { order: 850, constant: true, keyword: false },
+    '索引': { order: 850, constant: true, keyword: false },
     '道具': { order: 900, constant: false, keyword: true },
     '计划': { order: 910, constant: true, keyword: false },
     '伏笔': { order: 920, constant: false, keyword: true },
@@ -568,7 +582,7 @@ async function normalizeEntryLayout(bookName) {
                 }
             }
 
-            if (!isChar && entry.comment !== '世界配置') {
+            if (!isChar && entry.comment !== INDEX_TITLE && entry.comment !== '世界配置') {
                 const content = String(entry.content || '');
                 if (!content.startsWith('【以下为')) {
                     entry.content = `【以下为${c}】\n${content}`;
@@ -639,9 +653,10 @@ registry.register({
                 const book = await stBridge.ensureWorldbook(name);
                 console.log(`[worldsim] 追踪书检查 #${attempt}:`, name, book ? 'OK' : 'FAILED');
                 if (book) {
-                    // 清掉旧版本留在书里的「世界时钟」和自动扫描名册；条目布局归位
+                    // 清掉旧版本留在书里的「世界时钟」和自动扫描名册；合并混合索引；条目布局归位
                     await cleanupLegacyEntries(name);
                     await loadConfig(name);
+                    await migrateIndex(name);
                     await normalizeEntryLayout(name);
                     await stBridge.deactivateStaleAutoBooks(name);
                     await stBridge.preloadActivatedLorebooks();
@@ -681,6 +696,7 @@ registry.register({
                         await stBridge.deactivateStaleAutoBooks(name);
                         await loadConfig(name);
                         await cleanupLegacyEntries(name);
+                        await migrateIndex(name);
                         await normalizeEntryLayout(name);
                     } catch (e) {
                         console.warn('[worldsim] 切换会话同步世界书失败', e);
@@ -878,11 +894,13 @@ registry.register({
                         ? source.del.map(String).filter(n => !pinnedNow.has(n))
                         : [];
                     if (Object.keys(add).length || del.length) {
-                        await applyAggregateOps(currentLorebook, '角色索引', { add, del }, 850);
+                        // 角色详情走绿灯，常驻索引只存名字行
+                        await syncChars(currentLorebook, add, del);
                     }
                 }
                 if (data.items && settings.enableItems) {
-                    await applyAggregateOps(currentLorebook, '道具', data.items, 900, { keyword: true });
+                    const itemMap = await applyAggregateOps(currentLorebook, '道具', data.items, 900, { keyword: true });
+                    if (itemMap) await syncNames(currentLorebook, 'items', Object.keys(itemMap));
                 }
                 if (data.plot && settings.enablePlot) {
                     await applyAggregateOps(currentLorebook, '计划', data.plot, 910);
@@ -895,7 +913,8 @@ registry.register({
                     await applyAggregateOps(currentLorebook, '世界局势', ops, 800);
                 }
                 if (data.foreshadow && settings.enableForeshadow) {
-                    await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow, 920, { keyword: true });
+                    const foreMap = await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow, 920, { keyword: true });
+                    if (foreMap) await syncNames(currentLorebook, 'foreshadows', Object.keys(foreMap));
                 }
             } catch (e) {
                 console.warn('[worldsim] JSON 解析失败', e, captured.ws_update);

@@ -179,7 +179,7 @@ export function stripRosterLayer(value) {
 
 // ========== 角色档案（YAML 子集） ==========
 
-const CHAR_BASE_FIELDS = ['姓名', '身份', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化'];
+const CHAR_BASE_FIELDS = ['姓名', '性别', '外貌', '身份', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化', '人际关系'];
 
 function yamlQuote(value) {
     return JSON.stringify(String(value ?? ''));
@@ -201,7 +201,31 @@ export function normalizeMemories(value) {
     return s.split('\n').map(x => x.trim()).filter(Boolean);
 }
 
-/** 角色档案写成 YAML：姓名必写，关键记忆用列表 */
+/** 人际关系统一成 { 对方: "好感 X｜信任 Y｜标签：原因" } */
+export function normalizeRelationships(value) {
+    if (!value) return {};
+    if (Array.isArray(value)) {
+        const out = {};
+        for (const item of value) {
+            const s = String(item ?? '').trim();
+            const m = s.match(/^([^:：]+)[:：]([\s\S]*)$/);
+            if (m) out[m[1].trim()] = m[2].trim();
+        }
+        return out;
+    }
+    if (typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) {
+            const key = String(k ?? '').trim();
+            const val = String(v ?? '').trim();
+            if (key && val) out[key] = val;
+        }
+        return out;
+    }
+    return {};
+}
+
+/** 角色档案写成 YAML：姓名必写，关键记忆用列表，人际关系用映射 */
 export function formatCharacterYaml(name, info = {}) {
     const src = info && typeof info === 'object' ? info : {};
     const lines = [`姓名: ${yamlQuote(name)}`];
@@ -216,6 +240,15 @@ export function formatCharacterYaml(name, info = {}) {
             lines.push('关键记忆:');
             for (const item of list) lines.push(`  - ${yamlQuote(item)}`);
             used.add(key);
+            continue;
+        }
+        if (key === '人际关系') {
+            const rel = normalizeRelationships(v);
+            used.add(key);
+            const keys = Object.keys(rel);
+            if (!keys.length) continue;
+            lines.push('人际关系:');
+            for (const person of keys) lines.push(`  ${yamlQuote(person)}: ${yamlQuote(rel[person])}`);
             continue;
         }
         if (v === undefined || v === null || !String(v).trim()) continue;
@@ -262,12 +295,21 @@ export function parseCharacterYaml(content) {
             out[current] = arr;
             continue;
         }
+        const mapItem = line.match(/^\s{2,}([^:：]+)[:：]\s*(.*)$/);
+        if (mapItem && current) {
+            const holder = out[current];
+            if (holder && typeof holder === 'object' && !Array.isArray(holder)) {
+                holder[yamlUnquote(mapItem[1].trim())] = yamlUnquote(mapItem[2].trim());
+                continue;
+            }
+        }
         const kv = line.match(/^([^:：]+)[:：]\s*(.*)$/);
         if (!kv) continue;
         const key = kv[1].trim();
         const value = kv[2].trim();
         current = key;
-        out[key] = value ? yamlUnquote(value) : [];
+        if (!value) out[key] = key === '人际关系' ? {} : [];
+        else out[key] = yamlUnquote(value);
     }
     return out;
 }

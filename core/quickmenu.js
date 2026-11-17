@@ -14,8 +14,9 @@ import {
     saveCharacterEntry,
     removeRosterName,
     removeCharacterEntry,
+    addRosterName,
 } from './slots.js';
-import { slotLabel, parseStatusFields, formatRosterLine, parseCharacterYaml } from './worldfmt.js';
+import { slotLabel, parseStatusFields, parseCharacterYaml } from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
@@ -426,7 +427,7 @@ function updateClockUi() {
 
 // ========== 角色管理 ==========
 
-const CHAR_FIELD_ORDER = ['姓名', '身份', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化'];
+const CHAR_FIELD_ORDER = ['姓名', '性别', '外貌', '身份', '状态', '后台运行', '长期目标', '近期打算', '关键记忆', '特殊变化', '人际关系'];
 
 function currentLayerNo() {
     const chat = stBridge.getContext().chat || [];
@@ -441,10 +442,14 @@ function charAge(item) {
 
 function charFields(content) {
     const parsed = parseCharacterYaml(content);
-    return Object.entries(parsed).map(([key, value]) => ({
-        key,
-        value: Array.isArray(value) ? value.join('\n') : String(value ?? ''),
-    }));
+    return Object.entries(parsed).map(([key, value]) => {
+        let text;
+        if (Array.isArray(value)) text = value.join('\n');
+        else if (value && typeof value === 'object') {
+            text = Object.entries(value).map(([k, v]) => `${k}: ${v}`).join('\n');
+        } else text = String(value ?? '');
+        return { key, value: text };
+    });
 }
 
 async function showRosterModal() {
@@ -493,11 +498,7 @@ async function showRosterModal() {
 
         // 新钉住但索引里没有：补一行
         if (pinned.includes(name) && !list.some(x => x.name === name)) {
-            const lines = list.map(x => x.raw);
-            lines.push(formatRosterLine({ name, tier: 'T1', layer: currentLayerNo() }));
-            await stBridge.updateEntry(book, '角色索引', lines.join('\n'), true, [], {
-                position: 4, depth: 999, order: 998,
-            });
+            await addRosterName(book, name, `T1｜第 ${currentLayerNo()} 层`);
             list = await readRoster(book);
         }
         renderList();

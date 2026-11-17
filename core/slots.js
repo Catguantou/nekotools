@@ -4,13 +4,13 @@
 import { stBridge } from './st_bridge.js';
 import { settings } from './settings.js';
 import { invalidateConfig } from './worldcfg.js';
+import { readIndex, addChar as addIndexChar, removeChar as removeIndexChar } from './worldindex.js';
 import {
     slotName,
     sanitizeWorldName,
     buildSaveFile,
     parseSaveFile,
     slotLabel,
-    parseRosterLine,
 } from './worldfmt.js';
 
 function readMeta() {
@@ -62,17 +62,16 @@ export function setSlotClock(bookName, clock) {
     setSlotMeta(bookName, { clock: clock || null });
 }
 
-/** 读取当前档的「角色索引」条目（AI 维护），返回 [{ name, tier, location, action, layer, raw }] */
+/** 读取当前档的「索引」角色段，返回 [{ name, tier, location, action, layer, raw }] */
 export async function readRoster(bookName) {
     if (!bookName) return [];
-    const book = await stBridge.loadWorldInfoAsync(bookName, true);
-    if (!book || !book.entries) return [];
-    const entry = Object.values(book.entries).find(e => e && e.comment === '角色索引');
-    if (!entry) return [];
-    return String(entry.content || '')
-        .split('\n')
-        .map(parseRosterLine)
-        .filter(Boolean);
+    const index = await readIndex(bookName);
+    return index.chars;
+}
+
+/** 往索引角色段补一行（钉住时用） */
+export async function addRosterName(bookName, name, value = 'T1') {
+    return addIndexChar(bookName, name, value);
 }
 
 /** 读某个角色的六字段条目；没有返回空串 */
@@ -97,20 +96,7 @@ export async function saveCharacterEntry(bookName, name, content) {
 /** 从索引里删掉一个名字（读最新内容再删，避免覆盖 AI 刚写的内容） */
 export async function removeRosterName(bookName, name) {
     if (!bookName || !name) return false;
-    const book = await stBridge.loadWorldInfoAsync(bookName, true);
-    if (!book || !book.entries) return false;
-    const entry = Object.values(book.entries).find(e => e && e.comment === '角色索引');
-    if (!entry) return false;
-    const lines = String(entry.content || '')
-        .split('\n')
-        .filter(line => {
-            const parsed = parseRosterLine(line);
-            return !(parsed && parsed.name === name);
-        });
-    await stBridge.updateEntry(bookName, '角色索引', lines.join('\n'), true, [], {
-        position: 4, depth: 999, order: 998,
-    });
-    return true;
+    return removeIndexChar(bookName, name);
 }
 
 /** 删除某个角色的六字段条目（拉黑时用） */
