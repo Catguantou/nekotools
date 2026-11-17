@@ -13,12 +13,46 @@
 
 let wiModule = null;
 let wiPromise = null;
+let scriptModule = null;
+let scriptPromise = null;
 
 export function getCtx() {
     try {
         return window.SillyTavern?.getContext?.() || window.getContext?.() || {};
     } catch (_) {
         return {};
+    }
+}
+
+/** 懒加载 ST 的 script.js（静默生成等） */
+export function loadScriptModule() {
+    if (scriptModule) return Promise.resolve(scriptModule);
+    if (!scriptPromise) {
+        scriptPromise = import('../../../../../script.js')
+            .then(m => { scriptModule = m; return m; })
+            .catch(e => {
+                console.warn('[nekotools] 无法加载 script.js，静默生成不可用', e);
+                return null;
+            })
+            .finally(() => { scriptPromise = null; });
+    }
+    return scriptPromise;
+}
+
+/**
+ * 用户主动点「请求更新」时的一次静默生成（不走聊天记录）。
+ * 设置 window.__nt_quiet，让 hooks 跳过注入与结算，避免递归。
+ */
+export async function generateQuiet(prompt) {
+    const mod = await loadScriptModule();
+    if (!mod || typeof mod.generateQuietPrompt !== 'function') {
+        throw new Error('当前酒馆版本不支持静默生成');
+    }
+    window.__nt_quiet = true;
+    try {
+        return await mod.generateQuietPrompt({ quietPrompt: prompt, quietToLoud: false });
+    } finally {
+        window.__nt_quiet = false;
     }
 }
 

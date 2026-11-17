@@ -45,6 +45,8 @@ function processBody(bodyStr, url) {
     let body;
     try { body = JSON.parse(bodyStr); } catch { return { body: bodyStr, ctx: null }; }
     if (!Array.isArray(body.messages)) return { body: bodyStr, ctx: null };
+    // 用户主动触发的静默生成：不注入、不结算，避免递归
+    if (window.__nt_quiet) return { body: bodyStr, ctx: null };
 
     const ctx = makeCtx(body, url);
     for (const mod of registry.enabled()) {

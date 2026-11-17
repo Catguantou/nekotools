@@ -63,6 +63,18 @@ export async function applyMain(bookName, raw) {
         if (value) merged[key] = value;
     }
     merged['进度'] = clampProgress(merged['进度']);
+    return saveMain(bookName, merged);
+}
+
+/** 直接覆盖主线（手动编辑用） */
+export async function saveMain(bookName, main) {
+    const book = await stBridge.loadWorldInfoAsync(bookName, true);
+    if (!book || !book.entries) return null;
+    const merged = { ...(main || {}) };
+    for (const key of MAIN_FIELDS) {
+        if (merged[key] !== undefined) merged[key] = String(merged[key] ?? '').trim();
+    }
+    merged['进度'] = clampProgress(merged['进度']);
 
     stBridge.upsertEntryInBook(book, MAIN_TITLE, renderMain(merged), {
         isConstant: true,
@@ -121,6 +133,24 @@ export async function applyQuests(bookName, raw) {
         else delete data[n];
     }
 
+    stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
+        isConstant: true,
+        extra: { position: 0, depth: 0, order: 812, key: [] },
+    });
+    await stBridge.persistLorebook(bookName, book);
+    return data;
+}
+
+/** 直接覆盖支线（手动编辑用） */
+export async function saveQuests(bookName, quests) {
+    const book = await stBridge.loadWorldInfoAsync(bookName, true);
+    if (!book || !book.entries) return null;
+    const data = {};
+    for (const [name, value] of Object.entries(quests || {})) {
+        const n = String(name || '').trim();
+        const text = String(value ?? '').trim();
+        if (n && text) data[n] = text;
+    }
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: true,
         extra: { position: 0, depth: 0, order: 812, key: [] },

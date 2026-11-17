@@ -946,6 +946,75 @@ ${tagClose}`;
     return p;
 }
 
+/**
+ * 「请求更新」按钮的写回入口：只处理静默生成返回的 JSON。
+ * 普通回合仍走 onResponse，不经过这里。
+ */
+export async function applyRefreshData(bookName, data, layer = 0) {
+    const summary = { chars: 0, world: 0, map: 0, main: 0, quests: 0, items: 0, foreshadow: 0, plot: 0 };
+    if (!bookName || !data || typeof data !== 'object') return summary;
+    const book = await stBridge.loadWorldInfoAsync(bookName);
+    if (!book || !book.entries) return summary;
+    const touched = [];
+
+    const chars = data.chars && typeof data.chars === 'object' && !Array.isArray(data.chars) ? data.chars : null;
+    const ticks = data.tick && typeof data.tick === 'object' && !Array.isArray(data.tick) ? data.tick : null;
+    for (const source of [chars, ticks]) {
+        if (!source) continue;
+        for (const [name, info] of Object.entries(source)) {
+            const n = String(name || '').trim();
+            if (!n || !info || typeof info !== 'object') continue;
+            await updateCharacterEntry(bookName, n, info, book, layer);
+            touched.push({ name: n, info });
+        }
+    }
+    for (const { name, info } of touched) {
+        const patch = { layer };
+        if (info['位置']) patch.location = String(info['位置']).trim();
+        if (info['当前行动']) patch.action = String(info['当前行动']).trim();
+        await refreshChar(bookName, name, patch);
+    }
+    summary.chars = touched.length;
+
+    if (data.world) {
+        const world = await applyWorldUpdate(bookName, data.world);
+        summary.world = world
+            ? Object.keys(world.国家 || {}).length + Object.keys(world.势力 || {}).length + Object.keys(world.社会新闻 || {}).length
+            : 0;
+    }
+    if (data.map) {
+        const map = await applyMapOps(bookName, data.map);
+        summary.map = map ? Object.keys(map.sites || {}).length : 0;
+    }
+    if (data.main) {
+        const main = await applyMain(bookName, data.main);
+        summary.main = main ? 1 : 0;
+    }
+    if (data.quests) {
+        const quests = await applyQuests(bookName, data.quests);
+        summary.quests = quests ? Object.keys(quests).length : 0;
+    }
+    if (data.items) {
+        const map = await applyAggregateOps(bookName, '道具', data.items, 900, { keyword: true });
+        if (map) {
+            await syncNames(bookName, 'items', Object.keys(map));
+            summary.items = Object.keys(map).length;
+        }
+    }
+    if (data.foreshadow) {
+        const map = await applyAggregateOps(bookName, '伏笔', data.foreshadow, 920, { keyword: true });
+        if (map) {
+            await syncNames(bookName, 'foreshadows', Object.keys(map));
+            summary.foreshadow = Object.keys(map).length;
+        }
+    }
+    if (data.plot) {
+        const map = await applyAggregateOps(bookName, '计划', data.plot, 910);
+        summary.plot = map ? Object.keys(map).length : 0;
+    }
+    return summary;
+}
+
 registry.register({
     id: 'worldsim',
     name: '世界模拟',

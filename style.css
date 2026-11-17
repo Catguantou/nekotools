@@ -2489,6 +2489,123 @@ body {
     color: var(--ntq-dim);
     font-size: 11px;
 }
+#nt-quick-modal .nt-quest-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+#nt-quick-modal .nt-quest-edit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+#nt-quick-modal .nt-quest-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--ntq-text);
+    font-size: 11px;
+    outline: none;
+}
+#nt-quick-modal .nt-quest-input:focus {
+    border-color: var(--ntq-blue);
+}
+#nt-quick-modal .nt-quest-name {
+    max-width: 150px;
+    flex: 0 0 150px;
+    color: #fff;
+}
+#nt-quick-modal .nt-quest-del {
+    padding: 5px 8px;
+    border: 1px solid rgba(180, 80, 80, 0.4);
+    border-radius: 4px;
+    background: rgba(120, 40, 40, 0.2);
+    color: #e0a0a0;
+    font-size: 10px;
+    cursor: pointer;
+}
+#nt-quick-modal .nt-quest-del:hover {
+    border-color: rgba(220, 100, 100, 0.8);
+    color: #ffd0d0;
+}
+#nt-quick-modal .nt-quest-add {
+    align-self: flex-start;
+    padding: 6px 10px;
+    border: 1px dashed var(--ntq-line);
+    border-radius: 4px;
+    background: none;
+    color: var(--ntq-dim);
+    font-size: 10px;
+    cursor: pointer;
+}
+#nt-quick-modal .nt-quest-add:hover {
+    color: #fff;
+    border-color: var(--ntq-blue);
+}
+
+#nt-quick-modal .nt-refresh {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+#nt-quick-modal .nt-refresh-note {
+    color: var(--ntq-dim);
+    font-size: 10px;
+    line-height: 1.6;
+}
+#nt-quick-modal .nt-refresh-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.025);
+    color: var(--ntq-text);
+    font-size: 11px;
+    cursor: pointer;
+}
+#nt-quick-modal .nt-refresh-item:hover {
+    border-color: var(--ntq-blue);
+}
+#nt-quick-modal .nt-refresh-quick {
+    display: flex;
+    gap: 8px;
+}
+#nt-quick-modal .nt-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+#nt-quick-modal .nt-edit-select {
+    width: 160px;
+    padding: 6px 8px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 4px;
+    background: #11151d;
+    color: var(--ntq-text);
+    font-size: 11px;
+}
+#nt-quick-modal .nt-edit-area {
+    width: 100%;
+    min-height: 320px;
+    padding: 10px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.28);
+    color: var(--ntq-text);
+    font-family: Consolas, "Microsoft YaHei", monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    resize: vertical;
+    outline: none;
+}
+#nt-quick-modal .nt-edit-area:focus {
+    border-color: var(--ntq-blue);
+}
 #nt-quick-modal .nt-map-people-board .nt-map-section {
     color: #7a5a34;
 }

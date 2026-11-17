@@ -19,7 +19,9 @@ import {
 import { slotLabel, parseStatusFields, parseCharacterYaml } from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
 import { readMap, findPath } from './worldmap.js';
-import { readMain, readQuests, clampProgress } from './worldquest.js';
+import { readMain, readQuests, clampProgress, saveMain, saveQuests } from './worldquest.js';
+import { generateQuiet } from './st_api.js';
+import { applyRefreshData } from '../modules/worldsim.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 
@@ -1565,46 +1567,42 @@ async function showQuestsModal() {
     card.className = 'nt-quest-main';
     const title = document.createElement('div');
     title.className = 'nt-quest-title';
-    title.textContent = main['标题'] || '主线未生成';
+    title.textContent = '主线';
     card.appendChild(title);
 
-    const pct = clampProgress(main['进度']);
+    const fields = {};
+    const addField = (key, placeholder = '') => {
+        const row = document.createElement('label');
+        row.className = 'nt-quest-edit-row';
+        const l = document.createElement('span');
+        l.className = 'nt-quest-label';
+        l.textContent = key;
+        const input = document.createElement('input');
+        input.className = 'nt-quest-input';
+        input.placeholder = placeholder;
+        input.value = key === '进度' ? String(clampProgress(main[key])) : (main[key] || '');
+        fields[key] = input;
+        row.appendChild(l);
+        row.appendChild(input);
+        card.appendChild(row);
+    };
+    addField('标题');
+    addField('目标');
+    addField('阶段');
+    addField('进度', '0–100');
+    fields['进度'].type = 'number';
+    fields['进度'].min = '0';
+    fields['进度'].max = '100';
+    addField('失败代价');
+    addField('下一步');
+
     const bar = document.createElement('div');
     bar.className = 'nt-quest-bar';
     const fill = document.createElement('div');
     fill.className = 'nt-quest-bar-fill';
-    fill.style.width = `${pct}%`;
+    fill.style.width = `${clampProgress(main['进度'])}%`;
     bar.appendChild(fill);
     card.appendChild(bar);
-    const pctText = document.createElement('div');
-    pctText.className = 'nt-quest-pct';
-    pctText.textContent = `进度 ${pct}%`;
-    card.appendChild(pctText);
-
-    const addField = (label, value) => {
-        if (!value) return;
-        const row = document.createElement('div');
-        row.className = 'nt-quest-field';
-        const l = document.createElement('span');
-        l.className = 'nt-quest-label';
-        l.textContent = label;
-        const v = document.createElement('span');
-        v.className = 'nt-quest-value';
-        v.textContent = value;
-        row.appendChild(l);
-        row.appendChild(v);
-        card.appendChild(row);
-    };
-    addField('目标', main['目标']);
-    addField('阶段', main['阶段']);
-    addField('失败代价', main['失败代价']);
-    addField('下一步', main['下一步']);
-    if (!main['目标'] && !main['阶段'] && !main['下一步']) {
-        const note = document.createElement('div');
-        note.className = 'nt-quest-empty';
-        note.textContent = '发一轮消息，AI 会自动生成主线与支线。';
-        card.appendChild(note);
-    }
     body.appendChild(card);
 
     const head = document.createElement('div');
@@ -1612,36 +1610,304 @@ async function showQuestsModal() {
     head.textContent = `支线（${Object.keys(quests).length}）`;
     body.appendChild(head);
 
-    const names = Object.keys(quests);
-    if (!names.length) {
-        const note = document.createElement('div');
-        note.className = 'nt-quest-empty';
-        note.textContent = '暂无支线。';
-        body.appendChild(note);
-    } else {
-        for (const name of names) {
-            const parts = String(quests[name] || '').split('｜').map(s => s.trim());
-            const row = document.createElement('div');
-            row.className = 'nt-quest-side';
-            const n = document.createElement('div');
-            n.className = 'nt-quest-side-name';
-            n.textContent = name;
-            row.appendChild(n);
-            const meta = document.createElement('div');
-            meta.className = 'nt-quest-side-meta';
-            meta.textContent = parts.slice(0, 3).filter(Boolean).join(' · ');
-            row.appendChild(meta);
-            if (parts[3]) {
-                const hook = document.createElement('div');
-                hook.className = 'nt-quest-side-hook';
-                hook.textContent = `钩子：${parts[3]}`;
-                row.appendChild(hook);
-            }
-            body.appendChild(row);
-        }
+    const rows = document.createElement('div');
+    rows.className = 'nt-quest-edit-list';
+    body.appendChild(rows);
+
+    const addQuestRow = (name = '', value = '') => {
+        const row = document.createElement('div');
+        row.className = 'nt-quest-edit-row nt-quest-edit-side';
+        const nameEl = document.createElement('input');
+        nameEl.className = 'nt-quest-input nt-quest-name';
+        nameEl.placeholder = '支线名';
+        nameEl.value = name;
+        if (name) nameEl.readOnly = true;
+        const valueEl = document.createElement('input');
+        valueEl.className = 'nt-quest-input';
+        valueEl.placeholder = '类型｜目标｜状态｜钩子';
+        valueEl.value = value;
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'nt-quest-del';
+        del.textContent = '删除';
+        del.addEventListener('click', () => row.remove());
+        row.appendChild(nameEl);
+        row.appendChild(valueEl);
+        row.appendChild(del);
+        rows.appendChild(row);
+    };
+    for (const [name, value] of Object.entries(quests)) addQuestRow(name, value);
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'nt-quest-add';
+    addBtn.textContent = '＋ 新增支线';
+    addBtn.addEventListener('click', () => addQuestRow());
+    body.appendChild(addBtn);
+
+    const save = async () => {
+        const nextMain = {};
+        for (const [key, input] of Object.entries(fields)) nextMain[key] = input.value.trim();
+        await saveMain(book, nextMain);
+
+        const nextQuests = {};
+        rows.querySelectorAll('.nt-quest-edit-side').forEach(row => {
+            const nameEl = row.querySelector('.nt-quest-name');
+            const valueEl = row.querySelectorAll('.nt-quest-input')[1];
+            const name = String(nameEl?.value || '').trim();
+            const value = String(valueEl?.value || '').trim();
+            if (name && value) nextQuests[name] = value;
+        });
+        await saveQuests(book, nextQuests);
+        toast('可办事项已保存', 'success');
+        return true;
+    };
+
+    openModal({
+        title: '可办事项',
+        body,
+        wide: true,
+        footer: [
+            { label: '保存', primary: true, onClick: save },
+            { label: '关闭' },
+        ],
+    });
+}
+
+
+async function showRefreshModal() {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
     }
 
-    openModal({ title: '任务', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+    const body = document.createElement('div');
+    body.className = 'nt-refresh';
+    const intro = document.createElement('div');
+    intro.className = 'nt-refresh-note';
+    intro.textContent = '会额外发一次静默请求（不进聊天记录），只更新勾选的类别。内容由模型生成，保存前请自己看一眼。';
+    body.appendChild(intro);
+
+    const cats = [
+        ['chars', '角色状态'],
+        ['world', '世界局势'],
+        ['map', '地图'],
+        ['quests', '主线 / 支线'],
+        ['items', '道具'],
+        ['foreshadow', '伏笔'],
+        ['plot', '计划'],
+    ];
+    const checks = {};
+    for (const [key, label] of cats) {
+        const lab = document.createElement('label');
+        lab.className = 'nt-refresh-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = true;
+        cb.dataset.key = key;
+        checks[key] = cb;
+        const span = document.createElement('span');
+        span.textContent = label;
+        lab.appendChild(cb);
+        lab.appendChild(span);
+        body.appendChild(lab);
+    }
+
+    const quick = document.createElement('div');
+    quick.className = 'nt-refresh-quick';
+    const allBtn = document.createElement('button');
+    allBtn.type = 'button';
+    allBtn.className = 'nt-quest-add';
+    allBtn.textContent = '全选';
+    allBtn.addEventListener('click', () => Object.values(checks).forEach(cb => { cb.checked = true; }));
+    const noneBtn = document.createElement('button');
+    noneBtn.type = 'button';
+    noneBtn.className = 'nt-quest-add';
+    noneBtn.textContent = '清空';
+    noneBtn.addEventListener('click', () => Object.values(checks).forEach(cb => { cb.checked = false; }));
+    quick.appendChild(allBtn);
+    quick.appendChild(noneBtn);
+    body.appendChild(quick);
+
+    const modeRow = document.createElement('label');
+    modeRow.className = 'nt-refresh-item';
+    const modeLabel = document.createElement('span');
+    modeLabel.textContent = '方式';
+    const mode = document.createElement('select');
+    mode.className = 'nt-edit-select';
+    for (const [value, text] of [['fill', '补全当前状态'], ['advance', '推进到下一阶段']]) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = text;
+        mode.appendChild(opt);
+    }
+    modeRow.appendChild(modeLabel);
+    modeRow.appendChild(mode);
+    body.appendChild(modeRow);
+
+    const save = async () => {
+        const selected = Object.entries(checks).filter(([, cb]) => cb.checked).map(([k]) => k);
+        if (!selected.length) {
+            toast('至少勾选一个类别', 'warning');
+            return false;
+        }
+        const bookData = await stBridge.loadWorldInfoAsync(book);
+        const get = (title) => {
+            const entry = bookData && bookData.entries
+                ? Object.values(bookData.entries).find(e => e && e.comment === title)
+                : null;
+            return entry ? String(entry.content || '').slice(0, 6000) : '';
+        };
+        const blocks = [];
+        if (selected.includes('chars')) blocks.push(`【索引】\n${get('索引') || '（空）'}`);
+        if (selected.includes('world')) blocks.push(`【世界局势】\n${get('世界局势') || '（空）'}`);
+        if (selected.includes('map')) blocks.push(`【地图】\n${get('地图') || '（空）'}`);
+        if (selected.includes('quests')) {
+            blocks.push(`【主线】\n${get('主线') || '（空）'}`);
+            blocks.push(`【支线】\n${get('支线') || '（空）'}`);
+        }
+        if (selected.includes('items')) blocks.push(`【道具】\n${get('道具') || '（空）'}`);
+        if (selected.includes('foreshadow')) blocks.push(`【伏笔】\n${get('伏笔') || '（空）'}`);
+        if (selected.includes('plot')) blocks.push(`【计划】\n${get('计划') || '（空）'}`);
+
+        const schema = [];
+        if (selected.includes('chars')) schema.push('"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"<user>":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}');
+        if (selected.includes('world')) schema.push('"world": {"国家":{"名称":"方位｜类型｜描述"},"势力":{"名称":"目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}');
+        if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜可交互：...｜常驻：..."}}}');
+        if (selected.includes('quests')) {
+            schema.push('"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}');
+            schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜钩子"}, "del":["支线名"]}');
+        }
+        if (selected.includes('items')) schema.push('"items": {"add": {"道具名":"[类别] 描述"}, "del":["道具名"]}');
+        if (selected.includes('foreshadow')) schema.push('"foreshadow": {"add": {"伏笔名":"[线索 | 指向] 描述"}, "del":["伏笔名"]}');
+        if (selected.includes('plot')) schema.push('"plot": {"add": {"计划名":"[谁 | 做什么 | 状态] 描述"}, "del":["计划名"]}');
+
+        const prompt = `你是 NEKOTOOL 的后台世界更新器。只输出一个 JSON 对象，不要正文、不要 markdown 代码块、不要解释。
+方式：${mode.value === 'advance' ? '推进到下一阶段（让时间/事件往前走，可新增支线与人物变化）' : '补全当前状态（把缺的细节补全，不主动推进时间）'}。
+当前数据：
+${blocks.join('\n\n')}
+
+请只更新这些类别，只写本轮需要变化/新增的内容：
+${schema.join('\n')}
+要求：人物位置用地图小地点名；没有变化就留空对象；不要编造与当前数据冲突的内容。`;
+
+        try {
+            toast('正在生成更新…', 'info');
+            const raw = await generateQuiet(prompt);
+            const text = String(raw || '');
+            const a = text.indexOf('{');
+            const b = text.lastIndexOf('}');
+            if (a < 0 || b <= a) throw new Error('模型没有返回 JSON');
+            const data = JSON.parse(text.slice(a, b + 1));
+            const summary = await applyRefreshData(book, data, currentLayerNo());
+            const bits = [
+                summary.chars ? `角色 ${summary.chars}` : '',
+                summary.world ? `世界 ${summary.world}` : '',
+                summary.map ? `地图 ${summary.map}` : '',
+                summary.main ? '主线' : '',
+                summary.quests ? `支线 ${summary.quests}` : '',
+                summary.items ? `道具 ${summary.items}` : '',
+                summary.foreshadow ? `伏笔 ${summary.foreshadow}` : '',
+                summary.plot ? `计划 ${summary.plot}` : '',
+            ].filter(Boolean);
+            toast(bits.length ? `更新完成：${bits.join(' / ')}` : '更新完成（没有变化）', 'success');
+            return true;
+        } catch (e) {
+            console.warn('[nekotools] 请求更新失败', e);
+            toast(e && e.message ? `更新失败：${e.message}` : '更新失败', 'error');
+            return false;
+        }
+    };
+
+    openModal({
+        title: '请求更新',
+        body,
+        footer: [
+            { label: '开始更新', primary: true, onClick: save },
+            { label: '取消' },
+        ],
+    });
+}
+
+async function showEditModal() {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+    const bookData = await stBridge.loadWorldInfoAsync(book);
+    if (!bookData || !bookData.entries) {
+        toast('追踪书不存在', 'error');
+        return;
+    }
+
+    const titles = ['主线', '支线', '世界局势', '地图', '索引', '道具', '伏笔', '计划', '小总结', '剧情推演'];
+    const body = document.createElement('div');
+    body.className = 'nt-edit';
+    const select = document.createElement('select');
+    select.className = 'nt-edit-select';
+    for (const title of titles) {
+        const opt = document.createElement('option');
+        opt.value = title;
+        opt.textContent = title;
+        select.appendChild(opt);
+    }
+    const area = document.createElement('textarea');
+    area.className = 'nt-edit-area';
+    area.rows = 18;
+    body.appendChild(select);
+    body.appendChild(area);
+
+    const find = (title) => Object.values(bookData.entries).find(e => e && e.comment === title) || null;
+    const load = () => {
+        const entry = find(select.value);
+        area.value = entry ? String(entry.content || '') : '';
+    };
+    select.addEventListener('change', load);
+    load();
+
+    const defaults = {
+        '主线': { order: 810, pos: 0, constant: true },
+        '支线': { order: 812, pos: 0, constant: true },
+        '世界局势': { order: 800, pos: 0, constant: true },
+        '地图': { order: 830, pos: 0, constant: true },
+        '索引': { order: 850, pos: 0, constant: true },
+        '道具': { order: 900, pos: 0, constant: false },
+        '伏笔': { order: 920, pos: 0, constant: false },
+        '计划': { order: 910, pos: 0, constant: true },
+        '小总结': { order: 999, pos: 4, constant: true },
+        '剧情推演': { order: 999, pos: 0, constant: true },
+    };
+
+    const save = async () => {
+        const title = select.value;
+        const entry = find(title);
+        const fallback = defaults[title] || { order: 999, pos: 0, constant: true };
+        const extra = {
+            position: entry ? entry.position : fallback.pos,
+            depth: entry ? entry.depth : 0,
+            order: entry ? entry.order : fallback.order,
+        };
+        stBridge.upsertEntryInBook(bookData, title, area.value, {
+            isConstant: entry ? Boolean(entry.constant) : fallback.constant,
+            keywords: entry && Array.isArray(entry.key) ? entry.key : [],
+            extra,
+        });
+        await stBridge.persistLorebook(book, bookData);
+        toast(`已保存「${title}」`, 'success');
+        return true;
+    };
+
+    openModal({
+        title: '手动修改',
+        body,
+        wide: true,
+        footer: [
+            { label: '保存', primary: true, onClick: save },
+            { label: '关闭' },
+        ],
+    });
 }
 
 function buildPop() {
@@ -1682,10 +1948,10 @@ function buildPop() {
         { key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
         { key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪 / 跳时间', enabled: true },
         { key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
-        { key: 'refresh', label: '请求更新', hint: '角色 / 世界 / 地图', enabled: false },
+        { key: 'refresh', label: '请求更新', hint: '角色 / 世界 / 地图 / 任务', enabled: true },
         { key: 'map', label: '地图', hint: '大地图 / 中地图 / 小地点', enabled: true },
-        { key: 'quests', label: '任务', hint: '主线进度 / 支线', enabled: true },
-        { key: 'edit', label: '手动修改', hint: '主线 / 白名单 / 黑名单', enabled: false },
+        { key: 'quests', label: '可办事项', hint: '主线 / 支线，可查看和修改', enabled: true },
+        { key: 'edit', label: '手动修改', hint: '直接编辑追踪书条目', enabled: true },
     ];
 
     for (const item of items) {
@@ -1712,6 +1978,8 @@ function buildPop() {
             else if (item.key === 'action') showActionModal();
             else if (item.key === 'map') showMapModal();
             else if (item.key === 'quests') showQuestsModal();
+            else if (item.key === 'refresh') showRefreshModal();
+            else if (item.key === 'edit') showEditModal();
             else if (item.key === 'slots') showSlotsModal();
             else showSoon(item.label);
         });
