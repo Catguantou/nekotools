@@ -1,4 +1,4 @@
-﻿/* =========================================
+/* =========================================
    NEKOTOOL Glitch / Glassmorphism / Noise
    ========================================= */
 #nt-ws-panel {
@@ -4423,15 +4423,17 @@ body {
     display: none;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
+    width: 28px;
+    height: 76px;
+    border-radius: 10px;
     background: #101116;
     border: 1px solid rgba(255, 255, 255, 0.2);
     color: #e7ebf7;
     font-family: "Bahnschrift", "Segoe UI", sans-serif;
-    font-size: 9px;
-    letter-spacing: 0.5px;
+    font-size: 8.5px;
+    letter-spacing: 1px;
+    writing-mode: vertical-rl;
+    text-orientation: upright;
     z-index: 100003;
     touch-action: none;
     user-select: none;
@@ -4442,9 +4444,9 @@ body {
 #nt-float-btn::before {
     content: '';
     position: absolute;
-    inset: 5px;
+    inset: 4px;
     border: 1px solid rgba(47, 91, 215, 0.5);
-    border-radius: 50%;
+    border-radius: 7px;
     pointer-events: none;
 }
 #nt-float-btn.nt-dragging {
@@ -4470,3 +4472,7 @@ body {
     }
 }
 
+
+/* ============================================================
+   手机悬浮 TOOL：竖条，可拖动，拖到边缘半隐藏
+   ============================================================ */

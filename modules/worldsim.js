@@ -1355,6 +1355,24 @@ registry.register({
         };
         setTimeout(() => tryEnsure(1), 1200);
 
+        // 兜底轮询：玩家在扩展初始化 30 秒后才点进角色卡时，CHAT_CHANGED 不一定补建世界书
+        let lastPolledChar = '';
+        setInterval(async () => {
+            if (!settings.enabled) return;
+            try {
+                const char = stBridge.getCurrentCharacter();
+                const charName = char && char.name ? char.name : '';
+                if (!charName || charName === lastPolledChar) return;
+                lastPolledChar = charName;
+                const name = getLorebookName();
+                if (!name) return;
+                const book = await stBridge.ensureWorldbook(name);
+                if (book) console.log('[worldsim] 检测到角色切换，已确保追踪书:', name);
+            } catch (e) {
+                console.warn('[worldsim] 角色切换补建追踪书失败', e);
+            }
+        }, 3000);
+
         // 换角色/换会话时，追踪库要跟着换，并保证它处于全局激活状态
         const ctx = stBridge.getContext();
 

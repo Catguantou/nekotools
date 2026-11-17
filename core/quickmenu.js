@@ -350,9 +350,9 @@ function saveFloatState(patch) {
 
 function applyFloatPosition(btn, state, animate = false) {
     if (!btn) return state;
-    const size = btn.offsetWidth || 48;
-    const visibleLeft = state.side === 'left' ? 8 : window.innerWidth - size - 8;
-    const hiddenLeft = state.side === 'left' ? -(size - 14) : window.innerWidth - 14;
+    const size = btn.offsetWidth || 28;
+    const visibleLeft = state.side === 'left' ? 6 : window.innerWidth - size - 6;
+    const hiddenLeft = state.side === 'left' ? -(size - 10) : window.innerWidth - 10;
     const top = Math.max(60, Math.min(Number(state.top) || 300, window.innerHeight - 150));
     btn.style.left = `${state.hidden ? hiddenLeft : visibleLeft}px`;
     btn.style.top = `${top}px`;
@@ -397,8 +397,8 @@ function initFloatDrag(btn) {
         const dy = e.clientY - drag.startY;
         if (Math.hypot(dx, dy) > 6) drag.moved = true;
         if (!drag.moved) return;
-        const size = btn.offsetWidth || 48;
-        const left = Math.max(-(size - 14), Math.min(window.innerWidth - 14, drag.startLeft + dx));
+        const size = btn.offsetWidth || 28;
+        const left = Math.max(-(size - 10), Math.min(window.innerWidth - 10, drag.startLeft + dx));
         const top = Math.max(60, Math.min(window.innerHeight - 150, drag.startTop + dy));
         btn.style.left = `${left}px`;
         btn.style.top = `${top}px`;
@@ -414,7 +414,7 @@ function initFloatDrag(btn) {
             return;
         }
         suppressClickUntil = Date.now() + 400;
-        const size = btn.offsetWidth || 48;
+        const size = btn.offsetWidth || 28;
         const left = parseFloat(btn.style.left) || 0;
         const top = parseFloat(btn.style.top) || d.startTop;
         const side = left + size / 2 < window.innerWidth / 2 ? 'left' : 'right';
