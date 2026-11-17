@@ -6,7 +6,7 @@ import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, refreshBriefs, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
 import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent } from '../core/worldquest.js';
-import { deriveGreenKeys, deriveNewsKeys, extractEntityKeys, parseKeywordSpec, isAbstractName } from '../core/worldkeys.js';
+import { deriveGreenKeys, deriveNewsKeys, parseKeywordSpec, isAbstractName } from '../core/worldkeys.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -766,7 +766,7 @@ function writeWorldEntries(book, data) {
         const names = Object.keys(map);
         stBridge.upsertEntryInBook(book, title, `【以下为${title}】\n${formatAggregate(map)}`, {
             isConstant: false,
-            keywords: section === '社会新闻' ? socialNewsKeys(map) : deriveGreenKeys(names),
+            keywords: section === '社会新闻' ? socialNewsKeys(map, book) : deriveGreenKeys(names),
             extra: { position: 0, depth: 0, order: WORLD_ORDERS[section] },
         });
     }
@@ -836,25 +836,65 @@ function fixRosterValue(value) {
     return parts.join('｜');
 }
 
-function deriveKeys(map, title) {
+/** 当前世界里真实存在的名字：角色、地点、道具/伏笔/计划名、国家/势力 */
+function collectKnownNames(book) {
+    const set = new Set();
+    if (book && book.entries) {
+        for (const entry of Object.values(book.entries)) {
+            if (!entry || !entry.comment) continue;
+            const c = entry.comment;
+            if (c.startsWith('角色·')) set.add(c.slice(3));
+            else if (c === MAP_TITLE) {
+                const data = parseMap(entry.content);
+                for (const key of ['regions', 'cities', 'sites']) {
+                    for (const name of Object.keys(data[key] || {})) set.add(name);
+                }
+            } else if (['计划', '伏笔', '道具'].includes(c)) {
+                for (const name of Object.keys(readAggregate(entry.content))) {
+                    if (!isAbstractName(name)) set.add(name);
+                }
+            } else if (['世界·国家', '世界·势力'].includes(c)) {
+                for (const name of Object.keys(readAggregate(entry.content))) set.add(name);
+            }
+        }
+        const idx = Object.values(book.entries).find(e => e && e.comment === INDEX_TITLE);
+        if (idx) {
+            for (const c of parseIndex(idx.content).chars) set.add(c.name);
+        }
+    }
+    return [...set].filter(n => n.length >= 2 && n.length <= 8).sort((a, b) => b.length - a.length);
+}
+
+function knownKeysIn(text, known) {
+    const out = [];
+    const source = String(text || '');
+    for (const name of known) {
+        if (source.includes(name)) out.push(name);
+    }
+    return out;
+}
+
+/** 聚合条目：优先显式关键词，其次正文里真实存在的名字，最后才用具体条目名 */
+function deriveAggregateKeys(map, book) {
+    const known = collectKnownNames(book);
     const out = [];
     for (const [name, value] of Object.entries(map || {})) {
-        const spec = parseKeywordSpec(value);
-        if (spec.length) {
-            out.push(...spec);
-            continue;
-        }
-        const entities = extractEntityKeys(value);
-        if (entities.length) out.push(...entities);
-        else if (!isAbstractName(name)) out.push(name);
+        out.push(...parseKeywordSpec(value));
+        out.push(...knownKeysIn(value, known));
     }
     return deriveGreenKeys(out, { max: 16 });
 }
 
-/** 社会新闻标题通常很长，key 优先从「事件/影响」里抽实体，不直接拿整句标题 */
-function socialNewsKeys(map) {
-    const fromValues = deriveNewsKeys(Object.values(map || {}));
-    return fromValues.length ? fromValues : deriveNewsKeys(Object.keys(map || {}));
+/** 社会新闻：关键词来自真实实体；没有实体才退回短标题词 */
+function socialNewsKeys(map, book) {
+    const known = collectKnownNames(book);
+    const out = [];
+    for (const [title, value] of Object.entries(map || {})) {
+        out.push(...parseKeywordSpec(value));
+        out.push(...knownKeysIn(`${title} ${value}`, known));
+    }
+    if (!out.length) return deriveNewsKeys(Object.values(map || {}));
+    return deriveGreenKeys(out, { max: 16 });
 }
 
 /** 解析增量指令：{ add: {名:描述}, del: [名] }；兼容旧的整表格式 */
@@ -894,7 +934,7 @@ async function applyAggregateOps(bookName, title, raw, order = 900, { keyword = 
     // 就地改这一条，再整本存一次；避免 updateEntry 再读一遍盘
     stBridge.upsertEntryInBook(book, title, renderAggregate(title, map), {
         isConstant: !keyword,
-        keywords: keyword ? deriveKeys(map, title) : [],
+        keywords: keyword ? deriveAggregateKeys(map, book) : [],
         extra: { position: 0, depth: 0, order },
     });
     await stBridge.persistLorebook(bookName, book);
@@ -1057,7 +1097,7 @@ async function normalizeEntryLayout(bookName) {
             }
 
             const keys = layout.keyword
-                ? (isChar ? [c.slice(3)] : (c === '地图' ? mapEntryKeys(entry.content) : (c === '社会新闻' ? socialNewsKeys(readAggregate(entry.content)) : deriveKeys(readAggregate(entry.content), c))))
+                ? (isChar ? [c.slice(3)] : (c === '地图' ? mapEntryKeys(entry.content) : (c === '社会新闻' ? socialNewsKeys(readAggregate(entry.content), book) : deriveAggregateKeys(readAggregate(entry.content), book))))
                 : [];
             if (JSON.stringify(entry.key || []) !== JSON.stringify(keys)) {
                 entry.key = keys;

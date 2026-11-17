@@ -53,7 +53,8 @@ export function extractEntityKeys(text, { max = 12, maxLen = 6 } = {}) {
 export function parseKeywordSpec(value) {
     const m = String(value || '').match(/关键词[：:]\s*([^；;。\n]+)/);
     if (!m) return [];
-    return m[1].split(/[、,，/]/).map(clean).filter(k => k.length >= 2 && k.length <= 6);
+    return m[1].split(/[、,，/]/).map(clean)
+        .filter(k => k.length >= 2 && k.length <= 6 && !isAbstractName(k));
 }
 
 /** 通用绿灯：名字短就直接用；长名字取实体词、拆段、首尾短词 */
