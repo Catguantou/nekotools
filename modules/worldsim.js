@@ -41,12 +41,12 @@ function buildGenesisPrompt() {
     const tagClose = '</nekotools:genesis>';
     let p = `${tagOpen}
 【开局世界生成】这是本局第一次运行。先不要只盯着眼前场景，请基于角色卡、世界书设定、用户角色，补全一个完整的世界快照。
-必须在本轮 ws_update 里输出 "world": {"add": {...}}，至少 6 条，覆盖：
-- 国家 / 政权 / 城邦，以及彼此关系
-- 主要势力 / 组织 / 宗教 / 商会 / 军队
-- 政治、经济、文化现状，政策、战争或变革、舆论新闻
-- 与主角当前所在地区直接相关的局势
-每条格式："名称": "现状｜正在发生的变化或矛盾｜与主角的关系（若有）"
+必须在本轮 ws_update 里输出 "world": {
+  "国家": {"名称": "政体｜领袖｜经济｜军事｜外交｜文化｜当前动向"},
+  "势力": {"名称": "目标｜资源｜与主角关系｜当前动作"},
+  "社会新闻": {"标题": "事件｜影响｜来源"}
+}
+至少 3 个国家、3 个势力、3 条社会新闻；国家之间要有建交/贸易/冲突/文化渗透等关系，势力要有自己的目标。
 沿用已有设定，不要另起炉灶；不要只写当前文本里已经出现的东西。
 ${tagClose}`;
     const custom = (settings.customPrompts.genesis || '').trim();
@@ -60,7 +60,8 @@ function markWorldReady(bookName, book) {
     const entry = book && book.entries
         ? Object.values(book.entries).find(e => e && e.comment === '世界局势')
         : null;
-    const hasWorld = Boolean(entry) && /(^|\n)\s*-\s*\S+[｜|]/.test(String(entry.content || ''));
+    const data = entry ? parseWorldContent(entry.content) : null;
+    const hasWorld = worldHasStructure(data);
     worldReady.set(bookName, hasWorld);
     if (hasWorld) genesisTries.delete(bookName);
 }
@@ -203,7 +204,7 @@ chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：c
 
     if (settings.enableChars) {
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":"...","特殊变化":"..."}}
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"<user>":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
 要求：记录活跃 NPC（严禁记录 user）。六个字段全部必填，每个字段写完整的句子，不要合并成一句话：
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
 - 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
@@ -258,9 +259,9 @@ chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：c
 
     if (settings.enableWorld) {
         let c = `<nekotools:track.world>
-【世界局势】JSON 字段 "world": {"add": {"局势名": "描述"}, "del": ["局势名"]}
-要求：只写本轮**变化**的局势，不要重复未变的内容。add 新增或覆盖；过时/淡化/被合并的局势用 del。没有变化就写 "world": {}。
-内容为国家、势力、政治经济文化、舆论争端风向、大人物动向等，模拟真实世界运转，不要围着主角转。
+【世界局势】JSON 字段 "world": {"国家": {"名称":"政体｜领袖｜经济｜军事｜外交｜文化｜当前动向"}, "势力": {"名称":"目标｜资源｜与主角关系｜当前动作"}, "社会新闻": {"标题":"事件｜影响｜来源"}, "del": {"国家":["名称"], "势力":["名称"], "社会新闻":["标题"]}}
+要求：只写本轮**变化**；国家、势力、社会新闻分开维护，不要把所有东西都塞进社会新闻。没有变化就写 "world": {}。
+世界要自己运转：国家之间会建交/断交/战争/贸易/文化渗透，势力有自己的目标和动作，不要围着主角转。
 `;
         const custom = (settings.customPrompts.world || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
@@ -358,7 +359,13 @@ async function updateCharacterEntry(bookName, name, info, book) {
     }
     finalInfo['关键记忆'] = merged;
     if (Object.keys(mergedRel).length) finalInfo['人际关系'] = mergedRel;
-    else delete finalInfo['人际关系'];
+    else {
+        // 至少给用户角色一条中性关系，模型下轮再细化
+        mergedRel['<user>'] = '好感 50｜信任 50｜中性：尚未建立明确关系';
+        finalInfo['人际关系'] = mergedRel;
+    }
+    if (!String(finalInfo['性别'] ?? '').trim()) finalInfo['性别'] = '未定';
+    if (!String(finalInfo['外貌'] ?? '').trim()) finalInfo['外貌'] = '暂无描述';
 
     const content = formatCharacterYaml(name, finalInfo);
     stBridge.upsertEntryInBook(target, `角色·${name}`, content, {
@@ -367,6 +374,134 @@ async function updateCharacterEntry(bookName, name, info, book) {
         extra: { position: 0, depth: 0, order: 860 },
     });
     await stBridge.persistLorebook(bookName, target);
+}
+
+/** 世界局势固定三段 */
+const WORLD_SECTIONS = ['国家', '势力', '社会新闻'];
+
+/** 至少有一个国家 + 一个势力，才算世界结构建立起来 */
+function worldHasStructure(data) {
+    if (!data) return false;
+    return Object.keys(data.国家 || {}).length > 0 && Object.keys(data.势力 || {}).length > 0;
+}
+
+function parseWorldContent(content) {
+    const data = { 国家: {}, 势力: {}, 社会新闻: {} };
+    let section = '社会新闻';
+    for (const raw of String(content || '').split('\n')) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (line === '【国家】') { section = '国家'; continue; }
+        if (line === '【势力】') { section = '势力'; continue; }
+        if (line === '【社会新闻】') { section = '社会新闻'; continue; }
+        if (line.startsWith('【')) continue;
+        const m = line.match(/^-\s*([^｜|]+)[｜|]([\s\S]*)$/);
+        if (m) data[section][m[1].trim()] = m[2].trim();
+    }
+    return data;
+}
+
+function renderWorldContent(data) {
+    const src = { 国家: {}, 势力: {}, 社会新闻: {}, ...(data || {}) };
+    const lines = ['【以下为世界局势】'];
+    for (const section of WORLD_SECTIONS) {
+        lines.push(`【${section}】`);
+        const map = src[section] || {};
+        const names = Object.keys(map);
+        if (!names.length) lines.push('（暂无）');
+        for (const name of names) {
+            const desc = String(map[name] ?? '').trim();
+            if (desc) lines.push(`- ${name}｜${desc}`);
+        }
+    }
+    return lines.join('\n');
+}
+
+/** 兼容：新结构（国家/势力/社会新闻）+ 旧的 add/del 平铺 */
+function normalizeWorldRaw(raw) {
+    const out = { 国家: {}, 势力: {}, 社会新闻: {}, del: { 国家: [], 势力: [], 社会新闻: [] } };
+    if (!raw || typeof raw !== 'object') return out;
+
+    const hasSections = WORLD_SECTIONS.some(s => raw[s] && typeof raw[s] === 'object');
+    if (hasSections) {
+        for (const section of WORLD_SECTIONS) {
+            const block = raw[section];
+            if (block && typeof block === 'object' && !Array.isArray(block)) {
+                for (const [name, value] of Object.entries(block)) {
+                    const n = String(name || '').trim();
+                    if (!n) continue;
+                    out[section][n] = String(value ?? '').trim();
+                }
+            }
+            if (raw.del && Array.isArray(raw.del[section])) {
+                out.del[section] = raw.del[section].map(String);
+            }
+        }
+        // 新闻 是 社会新闻 的简写
+        if (raw['新闻'] && typeof raw['新闻'] === 'object' && !Array.isArray(raw['新闻'])) {
+            for (const [name, value] of Object.entries(raw['新闻'])) {
+                out.社会新闻[String(name).trim()] = String(value ?? '').trim();
+            }
+        }
+        if (raw.del && Array.isArray(raw.del['新闻'])) out.del.社会新闻.push(...raw.del['新闻'].map(String));
+        return out;
+    }
+
+    // 旧平铺：全部归到社会新闻，模型之后可以再分到国家/势力
+    const source = (raw.add && typeof raw.add === 'object') || Array.isArray(raw.del)
+        ? raw
+        : { add: raw, del: [] };
+    for (const [name, value] of Object.entries(source.add || {})) {
+        const n = String(name || '').trim();
+        if (!n) continue;
+        out.社会新闻[n] = String(value ?? '').trim();
+    }
+    if (Array.isArray(source.del)) out.del.社会新闻 = source.del.map(String);
+    return out;
+}
+
+async function applyWorldUpdate(bookName, raw) {
+    const book = await stBridge.loadWorldInfoAsync(bookName);
+    if (!book || !book.entries) return null;
+    const entry = Object.values(book.entries).find(e => e && e.comment === '世界局势');
+    const data = parseWorldContent(entry?.content);
+    const ops = normalizeWorldRaw(raw);
+
+    for (const section of WORLD_SECTIONS) {
+        for (const name of ops.del[section] || []) delete data[section][name];
+        for (const [name, value] of Object.entries(ops[section])) {
+            if (!value) delete data[section][name];
+            else data[section][name] = value;
+        }
+    }
+
+    stBridge.upsertEntryInBook(book, '世界局势', renderWorldContent(data), {
+        isConstant: true,
+        extra: { position: 0, depth: 0, order: 800, key: [] },
+    });
+    await stBridge.persistLorebook(bookName, book);
+    return data;
+}
+
+/** 旧平铺世界局势迁移成「国家/势力/社会新闻」三段 */
+async function migrateWorld(bookName) {
+    try {
+        const book = await stBridge.loadWorldInfoAsync(bookName, true);
+        if (!book || !book.entries) return;
+        const entry = Object.values(book.entries).find(e => e && e.comment === '世界局势');
+        if (!entry) return;
+        const content = String(entry.content || '');
+        if (WORLD_SECTIONS.some(s => content.includes(`【${s}】`))) return;
+        const data = parseWorldContent(content);
+        stBridge.upsertEntryInBook(book, '世界局势', renderWorldContent(data), {
+            isConstant: true,
+            extra: { position: 0, depth: 0, order: 800, key: [] },
+        });
+        await stBridge.persistLorebook(bookName, book);
+        console.log('[worldsim] 世界局势已迁移为 国家/势力/社会新闻 三段');
+    } catch (e) {
+        console.warn('[worldsim] 世界局势迁移失败', e);
+    }
 }
 
 /** 非角色分类：合并成一条，一行一个对象 */
@@ -692,6 +827,7 @@ registry.register({
                     // 清掉旧版本留在书里的「世界时钟」和自动扫描名册；合并混合索引；条目布局归位
                     await cleanupLegacyEntries(name);
                     await loadConfig(name);
+                    await migrateWorld(name);
                     await migrateIndex(name);
                     await normalizeEntryLayout(name);
                     await stBridge.deactivateStaleAutoBooks(name);
@@ -734,6 +870,7 @@ registry.register({
                         await stBridge.deactivateStaleAutoBooks(name);
                         await loadConfig(name);
                         await cleanupLegacyEntries(name);
+                        await migrateWorld(name);
                         await migrateIndex(name);
                         await normalizeEntryLayout(name);
                     } catch (e) {
@@ -959,13 +1096,9 @@ registry.register({
                     await applyAggregateOps(currentLorebook, '计划', data.plot, 910);
                 }
                 if (data.world && settings.enableWorld) {
-                    const worldRaw = data.world;
-                    const ops = (worldRaw && (Array.isArray(worldRaw.del) || worldRaw.add))
-                        ? worldRaw
-                        : { add: worldRaw };
-                    const worldMap = await applyAggregateOps(currentLorebook, '世界局势', ops, 800);
-                    if (worldMap) {
-                        const ready = Object.keys(worldMap).length > 0;
+                    const worldData = await applyWorldUpdate(currentLorebook, data.world);
+                    if (worldData) {
+                        const ready = worldHasStructure(worldData);
                         worldReady.set(currentLorebook, ready);
                         if (ready) genesisTries.delete(currentLorebook);
                     }
