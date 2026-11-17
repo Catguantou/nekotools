@@ -21,6 +21,10 @@ function briefLine(name, text, max = 70) {
     return `- ${n}｜${t.slice(0, max)}`;
 }
 
+function stripKeywords(value) {
+    return String(value || '').replace(/[；;]\s*关键词[：:][\s\S]*$/, '').trim();
+}
+
 /** 从条目内容提取「- 名称｜内容」 */
 function entryLines(content) {
     const out = [];
@@ -50,13 +54,13 @@ export function buildBriefs(book) {
     }
 
     const plans = entryLines(find('计划')?.content);
-    if (plans.length) briefs['计划'] = plans.map(p => briefLine(p.name, p.value, 60)).filter(Boolean);
+    if (plans.length) briefs['计划'] = plans.map(p => briefLine(p.name, stripKeywords(p.value), 60)).filter(Boolean);
 
     const fores = entryLines(find('伏笔')?.content);
-    if (fores.length) briefs['伏笔'] = fores.map(p => briefLine(p.name, p.value, 60)).filter(Boolean);
+    if (fores.length) briefs['伏笔'] = fores.map(p => briefLine(p.name, stripKeywords(p.value), 60)).filter(Boolean);
 
     const items = entryLines(find('道具')?.content);
-    if (items.length) briefs['道具'] = items.map(p => briefLine(p.name, p.value, 60)).filter(Boolean);
+    if (items.length) briefs['道具'] = items.map(p => briefLine(p.name, stripKeywords(p.value), 60)).filter(Boolean);
 
     const worldSections = [
         ['世界·国家', '国家', 0, 6],

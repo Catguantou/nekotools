@@ -6,7 +6,7 @@ import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, refreshBriefs, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
 import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent } from '../core/worldquest.js';
-import { deriveGreenKeys, deriveNewsKeys } from '../core/worldkeys.js';
+import { deriveGreenKeys, deriveNewsKeys, extractEntityKeys, parseKeywordSpec, isAbstractName } from '../core/worldkeys.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -230,6 +230,7 @@ function buildQuestPrompt() {
 只写本轮变化的字段；主线要自动推进，不要让玩家选择。这里只维护长期目标/阶段/进度，不写本轮三种走向或概率。
 【支线】JSON 字段 "quests": {"add": {"支线名":"类型｜目标｜状态｜期限｜失败条件｜钩子"}, "del": ["支线名"]}
 只写新增/完成/失败/删除的支线；这里只维护支线状态，不写本轮短期走向；支线是**可执行的目标/钩子**，已经发生的公开事件写进「社会新闻」条目，不要重复。可以自然生成新的支线钩子，但不要围着玩家转。
+支线名要具体（2-8 字，用目标/物件/地点），不要写“XX疑云、XX寻踪”这种标题式抽象名。
 「期限」写绝对日期（如 2009年11月05日），没有期限写“无”；「失败条件」一句话写清怎样算失败。期限已过且状态未完成、或状态写失败的支线，插件会自动删除。
 支线期限要和地图路程一致：如果从当前地点赶过去需要的时间已经超过期限，就不能写成“来得及”。
 </nekotools:track.quest>`;
@@ -459,9 +460,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
-【道具追踪】JSON 字段 "items": {"add": {"道具名": "[持有者 | 作用 | 来源] 描述"}, "del": ["道具名"]}
+【道具追踪】JSON 字段 "items": {"add": {"道具名": "[持有者 | 作用 | 来源] 描述；关键词：具体词1、具体词2"}, "del": ["道具名"]}
 要求：只写本轮**变化**的道具，不要重复未变的条目。add 新增或覆盖同名项；del 删除已失去/已用掉的道具。没有变化就写 "items": {}。
-道具名要短（2-8 字），必须能在正文里原样出现——这条按名字做绿灯激活。
+道具名要短（2-8 字），最好就是物品名。
+关键词写 1–3 个 2–6 字、**正文里会原样出现**的具体词（人名/地名/物件/动作），不要写“XX疑云、XX寻踪”这种标题式抽象词。
 重点保留未来剧情可能召回的道具。
 `;
         const custom = (settings.customPrompts.items || '').trim();
@@ -472,8 +474,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 
     if (settings.enablePlot) {
         let c = `<nekotools:track.plot>
-【计划追踪】JSON 字段 "plot": {"add": {"计划名": "[执行者 | 目标 | 进度 | 状态] 描述"}, "del": ["计划名"]}
+【计划追踪】JSON 字段 "plot": {"add": {"计划名": "[执行者 | 目标 | 进度 | 状态] 描述；关键词：具体词1、具体词2"}, "del": ["计划名"]}
 要求：只写本轮**变化**的计划，不要重复未变的条目。add 新增或覆盖；计划结束/作废用 del。没有变化就写 "plot": {}。
+计划名用具体动作/目标短词，不要诗化标题。
+关键词写 1–3 个 2–6 字、**正文里会原样出现**的具体词（人名/地名/物件/动作），不要写“XX疑云、XX寻踪”这种标题式抽象词。
 重要：此条目与角色后台动向联动。暗中进行的计划必须严守认知隔离，绝不能提前在正文中让用户或无关角色得知
 `;
         const custom = (settings.customPrompts.plot || '').trim();
@@ -498,9 +502,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 
     if (settings.enableForeshadow) {
         let c = `<nekotools:track.foreshadow>
-【草蛇伏笔】JSON 字段 "foreshadow": {"add": {"伏笔名": "[线索 | 指向/可能的作用] 描述"}, "del": ["伏笔名"]}
+【草蛇伏笔】JSON 字段 "foreshadow": {"add": {"伏笔名": "[线索 | 指向/可能的作用] 描述；关键词：具体词1、具体词2"}, "del": ["伏笔名"]}
 要求：只写本轮**新增或修改**的伏笔，不要重复未变的条目。已触发/废弃的伏笔用 del。没有变化就写 "foreshadow": {}。与计划追踪严格分开。
-伏笔名要短（2-8 字），用正文里可能出现的词——这条按名字做绿灯激活。
+伏笔名要短（2-8 字），用正文里可能出现的具体物/地/人，不要抽象标题。
+关键词写 1–3 个 2–6 字、**正文里会原样出现**的具体词（人名/地名/物件/动作），不要写“XX疑云、XX寻踪”这种标题式抽象词。
 `;
         const custom = (settings.customPrompts.foreshadow || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
@@ -761,7 +766,7 @@ function writeWorldEntries(book, data) {
         const names = Object.keys(map);
         stBridge.upsertEntryInBook(book, title, `【以下为${title}】\n${formatAggregate(map)}`, {
             isConstant: false,
-            keywords: section === '社会新闻' ? deriveNewsKeys(names) : deriveGreenKeys(names),
+            keywords: section === '社会新闻' ? socialNewsKeys(map) : deriveGreenKeys(names),
             extra: { position: 0, depth: 0, order: WORLD_ORDERS[section] },
         });
     }
@@ -832,7 +837,24 @@ function fixRosterValue(value) {
 }
 
 function deriveKeys(map, title) {
-    return deriveGreenKeys(Object.keys(map || {}));
+    const out = [];
+    for (const [name, value] of Object.entries(map || {})) {
+        const spec = parseKeywordSpec(value);
+        if (spec.length) {
+            out.push(...spec);
+            continue;
+        }
+        const entities = extractEntityKeys(value);
+        if (entities.length) out.push(...entities);
+        else if (!isAbstractName(name)) out.push(name);
+    }
+    return deriveGreenKeys(out, { max: 16 });
+}
+
+/** 社会新闻标题通常很长，key 优先从「事件/影响」里抽实体，不直接拿整句标题 */
+function socialNewsKeys(map) {
+    const fromValues = deriveNewsKeys(Object.values(map || {}));
+    return fromValues.length ? fromValues : deriveNewsKeys(Object.keys(map || {}));
 }
 
 /** 解析增量指令：{ add: {名:描述}, del: [名] }；兼容旧的整表格式 */
@@ -1035,7 +1057,7 @@ async function normalizeEntryLayout(bookName) {
             }
 
             const keys = layout.keyword
-                ? (isChar ? [c.slice(3)] : (c === '地图' ? mapEntryKeys(entry.content) : (c === '社会新闻' ? deriveNewsKeys(Object.keys(readAggregate(entry.content))) : deriveKeys(readAggregate(entry.content), c))))
+                ? (isChar ? [c.slice(3)] : (c === '地图' ? mapEntryKeys(entry.content) : (c === '社会新闻' ? socialNewsKeys(readAggregate(entry.content)) : deriveKeys(readAggregate(entry.content), c))))
                 : [];
             if (JSON.stringify(entry.key || []) !== JSON.stringify(keys)) {
                 entry.key = keys;
