@@ -6,7 +6,7 @@ import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, refreshBriefs, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
 import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent } from '../core/worldquest.js';
-import { deriveGreenKeys, deriveNewsKeys, parseKeywordSpec, isAbstractName } from '../core/worldkeys.js';
+import { deriveGreenKeys, deriveNewsKeys, parseKeywordSpec, extractStructuredKeys, isAbstractName } from '../core/worldkeys.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -460,10 +460,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
-【道具追踪】JSON 字段 "items": {"add": {"道具名": "[持有者 | 作用 | 来源] 描述；关键词：具体词1、具体词2"}, "del": ["道具名"]}
+【道具追踪】JSON 字段 "items": {"add": {"道具名": {"描述": "[持有者 | 作用 | 来源] 描述", "关键词": ["具体词1", "具体词2"]}}, "del": ["道具名"]}
 要求：只写本轮**变化**的道具，不要重复未变的条目。add 新增或覆盖同名项；del 删除已失去/已用掉的道具。没有变化就写 "items": {}。
 道具名要短（2-8 字），最好就是物品名。
-关键词写 1–3 个 2–6 字、**正文里会原样出现**的具体词（人名/地名/物件/动作），不要写“XX疑云、XX寻踪”这种标题式抽象词。
+关键词必填 1–3 个，2–6 字，**正文里会原样出现**的具体词（人名/地名/物件/动作）；不要写“XX疑云、XX寻踪”这种标题式抽象词。
 重点保留未来剧情可能召回的道具。
 `;
         const custom = (settings.customPrompts.items || '').trim();
@@ -474,10 +474,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 
     if (settings.enablePlot) {
         let c = `<nekotools:track.plot>
-【计划追踪】JSON 字段 "plot": {"add": {"计划名": "[执行者 | 目标 | 进度 | 状态] 描述；关键词：具体词1、具体词2"}, "del": ["计划名"]}
+【计划追踪】JSON 字段 "plot": {"add": {"计划名": {"描述": "[执行者 | 目标 | 进度 | 状态] 描述", "关键词": ["具体词1", "具体词2"]}}, "del": ["计划名"]}
 要求：只写本轮**变化**的计划，不要重复未变的条目。add 新增或覆盖；计划结束/作废用 del。没有变化就写 "plot": {}。
 计划名用具体动作/目标短词，不要诗化标题。
-关键词写 1–3 个 2–6 字、**正文里会原样出现**的具体词（人名/地名/物件/动作），不要写“XX疑云、XX寻踪”这种标题式抽象词。
+关键词必填 1–3 个，2–6 字，**正文里会原样出现**的具体词（人名/地名/物件/动作）；不要写“XX疑云、XX寻踪”这种标题式抽象词。
 重要：此条目与角色后台动向联动。暗中进行的计划必须严守认知隔离，绝不能提前在正文中让用户或无关角色得知
 `;
         const custom = (settings.customPrompts.plot || '').trim();
@@ -502,10 +502,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 
     if (settings.enableForeshadow) {
         let c = `<nekotools:track.foreshadow>
-【草蛇伏笔】JSON 字段 "foreshadow": {"add": {"伏笔名": "[线索 | 指向/可能的作用] 描述；关键词：具体词1、具体词2"}, "del": ["伏笔名"]}
+【草蛇伏笔】JSON 字段 "foreshadow": {"add": {"伏笔名": {"描述": "[线索 | 指向/可能的作用] 描述", "关键词": ["具体词1", "具体词2"]}}, "del": ["伏笔名"]}
 要求：只写本轮**新增或修改**的伏笔，不要重复未变的条目。已触发/废弃的伏笔用 del。没有变化就写 "foreshadow": {}。与计划追踪严格分开。
 伏笔名要短（2-8 字），用正文里可能出现的具体物/地/人，不要抽象标题。
-关键词写 1–3 个 2–6 字、**正文里会原样出现**的具体词（人名/地名/物件/动作），不要写“XX疑云、XX寻踪”这种标题式抽象词。
+关键词必填 1–3 个，2–6 字，**正文里会原样出现**的具体词（人名/地名/物件/动作）；不要写“XX疑云、XX寻踪”这种标题式抽象词。
 `;
         const custom = (settings.customPrompts.foreshadow || '').trim();
         if (custom) c += `【附加要求】\n${custom}\n`;
@@ -881,6 +881,7 @@ function deriveAggregateKeys(map, book) {
     for (const [name, value] of Object.entries(map || {})) {
         out.push(...parseKeywordSpec(value));
         out.push(...knownKeysIn(value, known));
+        out.push(...extractStructuredKeys(value));
     }
     return deriveGreenKeys(out, { max: 16 });
 }
@@ -926,7 +927,7 @@ async function applyAggregateOps(bookName, title, raw, order = 900, { keyword = 
 
     for (const key of ops.del) delete map[key];
     for (const [key, value] of Object.entries(ops.add)) {
-        const text = (value === null || value === undefined) ? '' : String(value).trim();
+        const text = aggregateText(value);
         if (!text) { delete map[key]; continue; } // 传空值等同删除
         map[key] = text;
     }
@@ -939,6 +940,21 @@ async function applyAggregateOps(bookName, title, raw, order = 900, { keyword = 
     });
     await stBridge.persistLorebook(bookName, book);
     return map;
+}
+
+/** 聚合条目值：兼容字符串和 {描述, 关键词} 对象 */
+function aggregateText(value) {
+    if (value === null || value === undefined) return '';
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const desc = String(value['描述'] ?? value.desc ?? value.text ?? '').trim();
+        const keys = value['关键词'] ?? value.keys;
+        const keyText = Array.isArray(keys)
+            ? keys.map(k => String(k || '').trim()).filter(Boolean).join('、')
+            : String(keys || '').trim();
+        const text = `${desc}${keyText ? `；关键词：${keyText}` : ''}`.trim();
+        return text;
+    }
+    return String(value).trim();
 }
 
 /** 兜底：模型没按契约包标签时，把漏到正文的未闭合 tag / 推演块切掉 */

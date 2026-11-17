@@ -5,6 +5,7 @@ const STOP_WORDS = new Set([
     '国家', '势力', '社会新闻', '新闻', '事件', '影响', '来源',
     '计划', '伏笔', '道具', '支线', '主线', '地图', '索引',
     '当前', '地点', '未知', '暂无', '以下', '内容', '描述',
+    '进行中', '目标', '状态', '进度', '执行者', '持有者', '作用', '来源',
 ]);
 
 const ENTITY_SUFFIX = /([\u4e00-\u9fa5]{1,5}(?:区|城|镇|街|港|州|国|山|河|湖|海|盟|府|宫|门|塔|会|党|军|团|教|公司|商会|码头|监狱|车站|市场|广场|医院|学院|森林|荒原|冻土|王国|王都))/g;
@@ -37,6 +38,23 @@ function addEntities(out, text, maxLen, max) {
     for (const m of String(text || '').matchAll(ENTITY_SUFFIX)) {
         addKey(out, m[1], maxLen, max);
     }
+}
+
+/** 从结构化字段 [执行者 | 目标 | ...] 或引号里取关键词，不切自由文本 */
+export function extractStructuredKeys(value, { max = 10, maxLen = 6 } = {}) {
+    const out = [];
+    const text = String(value || '');
+    for (const m of text.matchAll(/\[([^\]]+)\]/g)) {
+        for (const part of m[1].split(/[｜|、,，/]/)) {
+            addKey(out, part, maxLen, max);
+            if (out.length >= max) break;
+        }
+    }
+    for (const m of text.matchAll(/[「“"]([^」”"]{2,12})[」”"]/g)) {
+        addKey(out, m[1], maxLen, max);
+        if (out.length >= max) break;
+    }
+    return out;
 }
 
 /** 解析条目里显式写的「关键词：A、B」 */
