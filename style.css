@@ -3892,10 +3892,10 @@ body {
     bottom: 0;
     width: 100px;
     background-image:
-        radial-gradient(circle, rgba(255, 255, 255, 0.35) 1px, transparent 1.2px),
-        radial-gradient(circle, rgba(115, 145, 225, 0.4) 1.1px, transparent 1.35px);
+        radial-gradient(circle, rgba(255, 255, 255, 0.26) 1px, transparent 1.2px),
+        radial-gradient(circle, rgba(115, 145, 225, 0.26) 1.1px, transparent 1.35px);
     background-size: 6px 6px, 13px 13px;
-    opacity: 0.42;
+    opacity: 0.3;
     -webkit-mask-image: linear-gradient(90deg, transparent, #000 70%);
     mask-image: linear-gradient(90deg, transparent, #000 70%);
     pointer-events: none;
@@ -3966,11 +3966,11 @@ body {
     width: 46%;
     height: 100%;
     background-image:
-        radial-gradient(circle, rgba(255, 255, 255, 0.55) 1px, transparent 1.25px),
-        radial-gradient(circle, rgba(130, 150, 195, 0.38) 1.2px, transparent 1.45px);
+        radial-gradient(circle, rgba(255, 255, 255, 0.34) 1px, transparent 1.25px),
+        radial-gradient(circle, rgba(130, 150, 195, 0.24) 1.2px, transparent 1.45px);
     background-size: 6px 6px, 17px 17px;
     background-position: 0 0, 3px 3px;
-    opacity: 0.5;
+    opacity: 0.32;
     -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 58%);
     mask-image: linear-gradient(90deg, transparent 0%, #000 58%);
     pointer-events: none;
