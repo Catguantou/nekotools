@@ -337,6 +337,17 @@ function closePop() {
     if (pop) pop.hidden = true;
 }
 
+function updateQuickStatus() {
+    const pop = $(POP_ID);
+    if (!pop) return;
+    const name = stBridge.currentTrackerName();
+    const books = stBridge.listTrackerBooksForCurrentChar();
+    const tracking = pop.querySelector('.nt-quick-status-tracking');
+    if (tracking) tracking.classList.toggle('on', Boolean(name));
+    const book = pop.querySelector('.nt-quick-status-book');
+    if (book) book.textContent = `${books.length} ACTIVE BOOK`;
+}
+
 function placePop() {
     const btn = $(BTN_ID);
     const pop = $(POP_ID);
@@ -353,6 +364,7 @@ function openPop() {
     if (!pop) return;
     updateJumpUi();
     updateClockUi();
+    updateQuickStatus();
     pop.hidden = false;
     placePop();
 }
@@ -2107,6 +2119,14 @@ function buildPop() {
     head.className = 'nt-quick-pop-head';
     head.innerHTML = '<span class="nt-quick-dot"></span><div class="nt-quick-pop-titles"><span class="nt-quick-pop-title">NEKOTOOL</span><span class="nt-quick-pop-sub">WORLD SIMULATION / QUICK ACCESS</span></div><span class="nt-quick-pop-tag">QUICK</span>';
 
+    const status = document.createElement('div');
+    status.className = 'nt-quick-status';
+    status.innerHTML = '<span class="nt-quick-status-tag nt-quick-status-tracking"><span class="nt-quick-status-square"></span>TRACKING</span><span class="nt-quick-status-tag nt-quick-status-book">0 ACTIVE BOOK</span><button type="button" class="nt-quick-status-collapse">收起</button>';
+    status.querySelector('.nt-quick-status-collapse').addEventListener('click', (e) => {
+        e.stopPropagation();
+        closePop();
+    });
+
     const banner = document.createElement('div');
     banner.id = 'nt-quick-jump';
     banner.className = 'nt-quick-jump';
@@ -2182,6 +2202,7 @@ function buildPop() {
     }
 
     pop.appendChild(head);
+    pop.appendChild(status);
     pop.appendChild(banner);
     pop.appendChild(list);
     const foot = document.createElement('div');
@@ -2189,6 +2210,7 @@ function buildPop() {
     foot.innerHTML = '<span class="nt-quick-foot-line"></span><span>NEKOTOOL // WORLD SIM</span><span class="nt-quick-foot-dots"></span>';
     pop.appendChild(foot);
     document.body.appendChild(pop);
+    updateQuickStatus();
 
     document.addEventListener('click', (e) => {
         const popEl = $(POP_ID);
