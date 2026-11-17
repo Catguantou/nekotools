@@ -19,6 +19,7 @@ import {
 import { slotLabel, parseStatusFields, parseCharacterYaml } from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
 import { readMap, findPath } from './worldmap.js';
+import { readMain, readQuests, clampProgress } from './worldquest.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 
@@ -1548,6 +1549,101 @@ async function showMapModal(opts = {}) {
     render();
 }
 
+async function showQuestsModal() {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+    const main = await readMain(book);
+    const quests = await readQuests(book);
+
+    const body = document.createElement('div');
+    body.className = 'nt-quests';
+
+    const card = document.createElement('div');
+    card.className = 'nt-quest-main';
+    const title = document.createElement('div');
+    title.className = 'nt-quest-title';
+    title.textContent = main['标题'] || '主线未生成';
+    card.appendChild(title);
+
+    const pct = clampProgress(main['进度']);
+    const bar = document.createElement('div');
+    bar.className = 'nt-quest-bar';
+    const fill = document.createElement('div');
+    fill.className = 'nt-quest-bar-fill';
+    fill.style.width = `${pct}%`;
+    bar.appendChild(fill);
+    card.appendChild(bar);
+    const pctText = document.createElement('div');
+    pctText.className = 'nt-quest-pct';
+    pctText.textContent = `进度 ${pct}%`;
+    card.appendChild(pctText);
+
+    const addField = (label, value) => {
+        if (!value) return;
+        const row = document.createElement('div');
+        row.className = 'nt-quest-field';
+        const l = document.createElement('span');
+        l.className = 'nt-quest-label';
+        l.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'nt-quest-value';
+        v.textContent = value;
+        row.appendChild(l);
+        row.appendChild(v);
+        card.appendChild(row);
+    };
+    addField('目标', main['目标']);
+    addField('阶段', main['阶段']);
+    addField('失败代价', main['失败代价']);
+    addField('下一步', main['下一步']);
+    if (!main['目标'] && !main['阶段'] && !main['下一步']) {
+        const note = document.createElement('div');
+        note.className = 'nt-quest-empty';
+        note.textContent = '发一轮消息，AI 会自动生成主线与支线。';
+        card.appendChild(note);
+    }
+    body.appendChild(card);
+
+    const head = document.createElement('div');
+    head.className = 'nt-quest-section';
+    head.textContent = `支线（${Object.keys(quests).length}）`;
+    body.appendChild(head);
+
+    const names = Object.keys(quests);
+    if (!names.length) {
+        const note = document.createElement('div');
+        note.className = 'nt-quest-empty';
+        note.textContent = '暂无支线。';
+        body.appendChild(note);
+    } else {
+        for (const name of names) {
+            const parts = String(quests[name] || '').split('｜').map(s => s.trim());
+            const row = document.createElement('div');
+            row.className = 'nt-quest-side';
+            const n = document.createElement('div');
+            n.className = 'nt-quest-side-name';
+            n.textContent = name;
+            row.appendChild(n);
+            const meta = document.createElement('div');
+            meta.className = 'nt-quest-side-meta';
+            meta.textContent = parts.slice(0, 3).filter(Boolean).join(' · ');
+            row.appendChild(meta);
+            if (parts[3]) {
+                const hook = document.createElement('div');
+                hook.className = 'nt-quest-side-hook';
+                hook.textContent = `钩子：${parts[3]}`;
+                row.appendChild(hook);
+            }
+            body.appendChild(row);
+        }
+    }
+
+    openModal({ title: '任务', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+}
+
 function buildPop() {
     if ($(POP_ID)) return;
 
@@ -1588,6 +1684,7 @@ function buildPop() {
         { key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
         { key: 'refresh', label: '请求更新', hint: '角色 / 世界 / 地图', enabled: false },
         { key: 'map', label: '地图', hint: '大地图 / 中地图 / 小地点', enabled: true },
+        { key: 'quests', label: '任务', hint: '主线进度 / 支线', enabled: true },
         { key: 'edit', label: '手动修改', hint: '主线 / 白名单 / 黑名单', enabled: false },
     ];
 
@@ -1614,6 +1711,7 @@ function buildPop() {
             else if (item.key === 'roster') showRosterModal();
             else if (item.key === 'action') showActionModal();
             else if (item.key === 'map') showMapModal();
+            else if (item.key === 'quests') showQuestsModal();
             else if (item.key === 'slots') showSlotsModal();
             else showSoon(item.label);
         });

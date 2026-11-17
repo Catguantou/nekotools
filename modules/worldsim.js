@@ -5,6 +5,7 @@ import { touchSlot, getSlotClock, setSlotClock } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
+import { applyMain, applyQuests, parseMain, mainHasContent } from '../core/worldquest.js';
 import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -16,6 +17,7 @@ const defaultSettings = {
     enablePlot: true,
     enableWorld: true,
     enableMap: true,
+    enableQuests: true,
     enableForeshadow: true,
     enableSummary: true,
     enableBigSummary: true,
@@ -33,7 +35,7 @@ const defaultSettings = {
     enableAntiLazy: true,
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '',
     }
 };
 
@@ -44,6 +46,8 @@ const worldReady = new Map();
 const genesisTries = new Map();
 const mapReady = new Map();
 const mapTries = new Map();
+const questReady = new Map();
+const questTries = new Map();
 
 /** 开局世界生成：第一次运行时补全整个世界，而不是只提取当前文本 */
 function buildGenesisPrompt() {
@@ -79,6 +83,7 @@ function buildTickPrompt({ needCharTick, needWorldTick }) {
     }
     if (needWorldTick) {
         lines.push('- 本轮同时做世界 tick：只更新国家/势力/社会新闻里发生的变化，输出 world。');
+        lines.push('- 顺带检查主线/支线：推进主线一步，完成/失败/新增 0–1 条支线（写 main / quests）。');
     }
     if (antiLazy) {
         lines.push(`- 索引里超过 ${staleAfter} 层没更新的角色，本轮必须至少结算 1 个。`);
@@ -141,6 +146,44 @@ function markMapReady(bookName, book) {
     mapReady.set(bookName, ready);
     if (ready) mapTries.delete(bookName);
 }
+
+/** 开局主线/支线生成 */
+function buildQuestGenesisPrompt() {
+    const tagOpen = '<nekotools:questgen>';
+    const tagClose = '</nekotools:questgen>';
+    let p = `${tagOpen}
+【开局主线生成】基于角色卡、世界书设定、用户角色，生成本局的长期主线 + 2 条支线，必须写在本轮 ws_update 的 JSON 里：
+"main": {"标题": "...", "目标": "...", "阶段": "开局", "进度": 0, "失败代价": "...", "下一步": "..."}
+"quests": {"add": {"支线名": "类型｜目标｜状态｜钩子"}}
+- 主线必须是能长期推进的目标，由世界和 NPC 推动，**不要让玩家做选择**。
+- 支线要能在当前地区自然触发，和 NPC/势力/新闻有关。
+${tagClose}`;
+    const custom = (settings.customPrompts.quest || '').trim();
+    if (custom) p += `\n【附加要求】\n${custom}`;
+    return p;
+}
+
+/** 每轮的主线/支线增量契约 */
+function buildQuestPrompt() {
+    return `<nekotools:track.quest>
+【主线】JSON 字段 "main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}
+只写本轮变化的字段；主线要自动推进，不要让玩家选择。
+【支线】JSON 字段 "quests": {"add": {"支线名":"类型｜目标｜状态｜钩子"}, "del": ["支线名"]}
+只写新增/完成/失败/删除的支线；可以自然生成新的支线钩子，但不要围着玩家转。
+</nekotools:track.quest>`;
+}
+
+function markQuestReady(bookName, book) {
+    if (!bookName) return;
+    const entry = book && book.entries
+        ? Object.values(book.entries).find(e => e && e.comment === '主线')
+        : null;
+    const main = entry ? parseMain(entry.content) : {};
+    const ready = mainHasContent(main);
+    questReady.set(bookName, ready);
+    if (ready) questTries.delete(bookName);
+}
+
 function markWorldReady(bookName, book) {
     if (!bookName) return;
     const entry = book && book.entries
@@ -275,7 +318,7 @@ ${tagClose}
 function buildTrackingMessages(bookName = '') {
     const list = [];
     const anyEnabled = settings.enableChars || settings.enableItems || settings.enablePlot
-        || settings.enableWorld || settings.enableForeshadow || settings.enableMap;
+        || settings.enableWorld || settings.enableForeshadow || settings.enableMap || settings.enableQuests;
     if (!anyEnabled) return list;
 
     const tagOpen = '<ws_' + 'update>';
@@ -284,7 +327,7 @@ function buildTrackingMessages(bookName = '') {
         role: 'system',
         content: `<nekotools:update>
 【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略，标签内含合法 JSON（不要代码块包裹，标签外不加任何其它字符）。
-chars / tick / items / plot / world / map / foreshadow / roster 都只写**本轮变化**：chars 写有变化的角色；tick 写离屏角色的后台行动；其余分类只写增量（add/del），绝不重复输出未变化的内容。
+chars / tick / items / plot / world / map / main / quests / foreshadow / roster 都只写**本轮变化**：chars 写有变化的角色；tick 写离屏角色的后台行动；其余分类只写增量（add/del），绝不重复输出未变化的内容。
 </nekotools:update>`
     });
 
@@ -322,6 +365,7 @@ chars / tick / items / plot / world / map / foreshadow / roster 都只写**本�
     list.push({ role: 'system', content: buildRosterPrompt(bookName) });
 
     if (settings.enableMap) list.push({ role: 'system', content: buildMapPrompt() });
+    if (settings.enableQuests) list.push({ role: 'system', content: buildQuestPrompt() });
 
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
@@ -397,10 +441,11 @@ function buildBigSummaryPrompt() {
     return p;
 }
 
-function buildSystemMessages(needBig, includeTracking = true, bookName = '', needGenesis = false, needMapGenesis = false) {
+function buildSystemMessages(needBig, includeTracking = true, bookName = '', needGenesis = false, needMapGenesis = false, needQuestGenesis = false) {
     const list = [];
     if (needGenesis) list.push({ role: 'system', content: buildGenesisPrompt() });
     if (needMapGenesis) list.push({ role: 'system', content: buildMapGenesisPrompt(bookName) });
+    if (needQuestGenesis) list.push({ role: 'system', content: buildQuestGenesisPrompt() });
     list.push({ role: 'system', content: DIRECTOR_PROMPT });
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
@@ -793,6 +838,8 @@ async function cleanupLegacyEntries(bookName) {
 /** 固定条目布局：位置一律「角色定义之前」，order 决定先后 */
 const ENTRY_LAYOUT = {
     '世界局势': { order: 800, constant: true, keyword: false },
+    '主线': { order: 810, constant: true, keyword: false },
+    '支线': { order: 812, constant: true, keyword: false },
     '地图': { order: 830, constant: true, keyword: false },
     '索引': { order: 850, constant: true, keyword: false },
     '道具': { order: 900, constant: false, keyword: true },
@@ -868,6 +915,7 @@ async function normalizeEntryLayout(bookName) {
         }
         markWorldReady(bookName, book);
         markMapReady(bookName, book);
+        markQuestReady(bookName, book);
     } catch (e) {
         console.warn('[worldsim] 条目布局迁移失败', e);
     }
@@ -1046,9 +1094,17 @@ registry.register({
             mapTries.set(bookName, mapTriesNow + 1);
             console.log(`[worldsim] 注入开局地图生成（第 ${mapTriesNow + 1} 次）`);
         }
+
+        // 开局主线/支线生成
+        const questTriesNow = questTries.get(bookName) || 0;
+        const needQuestGenesis = includeTracking && settings.enableQuests && !questReady.get(bookName) && questTriesNow < 5;
+        if (needQuestGenesis) {
+            questTries.set(bookName, questTriesNow + 1);
+            console.log(`[worldsim] 注入开局主线生成（第 ${questTriesNow + 1} 次）`);
+        }
         ctx.__nt_includeTracking = includeTracking;
 
-        for (const msg of buildSystemMessages(needBig, includeTracking, bookName, needGenesis, needMapGenesis)) {
+        for (const msg of buildSystemMessages(needBig, includeTracking, bookName, needGenesis, needMapGenesis, needQuestGenesis)) {
             ctx.__nt_pendingSystems.push(msg);
         }
 
@@ -1256,6 +1312,17 @@ registry.register({
                 if (data.map && settings.enableMap) {
                     const mapData = await applyMapOps(currentLorebook, data.map);
                     if (mapData) mapReady.set(currentLorebook, mapHasStructure(mapData));
+                }
+                if (data.main && settings.enableQuests) {
+                    const mainData = await applyMain(currentLorebook, data.main);
+                    if (mainData) {
+                        const ready = mainHasContent(mainData);
+                        questReady.set(currentLorebook, ready);
+                        if (ready) questTries.delete(currentLorebook);
+                    }
+                }
+                if (data.quests && settings.enableQuests) {
+                    await applyQuests(currentLorebook, data.quests);
                 }
                 if (data.foreshadow && settings.enableForeshadow) {
                     const foreMap = await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow, 920, { keyword: true });

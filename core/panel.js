@@ -111,6 +111,7 @@ export function mountPanel() {
             ['genesis', 'P_11', '开局世界生成'],
             ['tick', 'P_12', '后台 tick'],
             ['map', 'P_13', '开局地图生成'],
+            ['quest', 'P_14', '开局主线生成'],
         ];
         return map.map(([key, code, name]) => {
             const val = (s.customPrompts && s.customPrompts[key]) || '';
@@ -320,6 +321,7 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-foreshadow" class="nt-hidden-cb" ${s.enableForeshadow ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">草蛇伏笔</span><span class="nt-code">T_07</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-summary" class="nt-hidden-cb" ${s.enableSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">小总结</span><span class="nt-code">T_08</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-bigsummary" class="nt-hidden-cb" ${s.enableBigSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">大总结</span><span class="nt-code">T_09</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quests" class="nt-hidden-cb" ${s.enableQuests ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">主线支线</span><span class="nt-code">T_10</span></label>
                         </div>
                     </div>
 
@@ -1133,6 +1135,7 @@ export function mountPanel() {
         s.enableItems = wrap.querySelector('#nt-ws-items').checked;
         s.enablePlot = wrap.querySelector('#nt-ws-plot').checked;
         s.enableWorld = wrap.querySelector('#nt-ws-world').checked;
+        s.enableQuests = wrap.querySelector('#nt-ws-quests').checked;
         s.enableForeshadow = wrap.querySelector('#nt-ws-foreshadow').checked;
         s.enableSummary = wrap.querySelector('#nt-ws-summary').checked;
         s.enableBigSummary = wrap.querySelector('#nt-ws-bigsummary').checked;
