@@ -175,6 +175,12 @@ export const stBridge = {
         return char ? char.name : null;
     },
 
+    /** 当前用户角色名（ST 里是 name1） */
+    getUserName() {
+        const ctx = this.getContext();
+        return String(ctx.name1 || ctx.userName || ctx.user_name || '').trim();
+    },
+
     getCurrentCharacter() {
         const ctx = this.getContext();
         const list = Array.isArray(ctx.characters) ? ctx.characters : [];

@@ -162,6 +162,19 @@ export async function migrateIndex(bookName) {
 
     const sections = idxEntry ? parseIndex(idxEntry.content) : emptySections();
 
+    // 修复模型把「T1核心」写进位置、把真实地点写进行动的情况
+    for (const c of sections.chars) {
+        const loc = String(c.location || '').trim();
+        const action = String(c.action || '').trim();
+        if (/^(T\d|核心|重要|次要|主要)/i.test(loc)
+            && /([·街城鎮村区市巷广场酒馆王都]|市场|广场)/.test(action)) {
+            c.location = action;
+            c.action = loc;
+            c.raw = formatRosterLine(c);
+            changed = true;
+        }
+    }
+
     if (oldEntry) {
         const oldChars = parseIndex(`${SEC_CHARS}\n${oldEntry.content}`).chars;
         const map = new Map(sections.chars.map(c => [c.name, c.raw || `- ${c.name}`]));

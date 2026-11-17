@@ -347,9 +347,10 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
     });
 
     if (settings.enableChars) {
+        const userName = stBridge.getUserName() || '用户';
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"<user>":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
-要求：记录活跃 NPC（严禁记录 user）。六个字段全部必填，每个字段写完整的句子，不要合并成一句话：
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
+要求：记录活跃 NPC（不要记录用户角色${userName}本身）。六个字段全部必填，每个字段写完整的句子，不要合并成一句话：
 - 位置：优先使用「地图」里的小地点名；没有就写当前地点
 - 日程：早晨/白天/夜晚 各写「地点｜做什么」，地点同样用地图小地点名
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
@@ -360,7 +361,7 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
 可选：身份。
 必填基础：性别 / 外貌（简单一句）/ 人际关系。
-人际关系是对象，键写对方名字。只写已经见过/认识的人；<user> 要在第一次正式遇见之后才写，没遇见就不要写。
+人际关系是对象，键写对方真实名字。用户角色就叫「${userName}」，不要写 <user>、{{user}} 这类占位符；第一次正式遇见之后才写，没遇见就不要写。
 值的格式："好感 X｜信任 Y｜标签：一句原因"。
 好感/信任都是 0-100：好感 0-20 敌意 / 21-40 冷淡 / 41-60 中性 / 61-80 亲近 / 81-100 信赖或爱慕；
 信任 0-20 提防 / 21-40 保留 / 41-60 一般 / 61-80 信任 / 81-100 生死托付。
@@ -502,9 +503,22 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
     const mergedKnown = mergeList(normalizeMemories(old['已知']), normalizeMemories(info && info['已知']));
 
     // 人际关系/日程按 key 合并：本轮没写到的人保留旧状态
+    const userName = stBridge.getUserName() || '';
+    const canonicalRel = (rel) => {
+        const out = {};
+        for (const [key, value] of Object.entries(rel || {})) {
+            const name = String(key || '').trim();
+            if (/^(<user>|\{\{user\}\}|user)$/i.test(name)) {
+                if (userName) out[userName] = value;
+                continue;
+            }
+            if (name) out[name] = value;
+        }
+        return out;
+    };
     const mergedRel = {
-        ...normalizeRelationships(old['人际关系']),
-        ...normalizeRelationships(info && info['人际关系']),
+        ...canonicalRel(normalizeRelationships(old['人际关系'])),
+        ...canonicalRel(normalizeRelationships(info && info['人际关系'])),
     };
     const mergedSchedule = {
         ...normalizeRelationships(old['日程']),
@@ -688,6 +702,20 @@ function readAggregate(content) {
 }
 
 /** 绿灯激活词：短词根优先（ST 是精确匹配，长名字基本等不到原样出现） */
+/** 模型有时把「T1核心」写进位置、把真实地点写进行动，这里换回来 */
+function fixRosterValue(value) {
+    const parts = String(value || '').split('｜').map(s => s.trim());
+    if (parts.length >= 3) {
+        const [tier, location, ...rest] = parts;
+        const action = rest.join('｜');
+        if (/^(T\d|核心|重要|次要|主要)/i.test(location)
+            && /([·街城鎮村区市巷广场酒馆王都]|市场|广场)/.test(action)) {
+            return [tier, action, location].join('｜');
+        }
+    }
+    return parts.join('｜');
+}
+
 function deriveKeys(map, title) {
     const keys = [];
     for (const name of Object.keys(map || {})) {
@@ -909,7 +937,27 @@ async function normalizeEntryLayout(bookName) {
             // 旧的角色档案（- 字段：值）升级成 YAML；认不出字段的不动，避免误删内容
             if (isChar) {
                 const parsed = parseCharacterYaml(entry.content);
+                let charChanged = false;
                 if (Object.keys(parsed).length && !parsed.姓名) {
+                    parsed.姓名 = c.slice(3);
+                    charChanged = true;
+                }
+                const rel = parsed['人际关系'];
+                if (rel && typeof rel === 'object' && !Array.isArray(rel)) {
+                    const userName = stBridge.getUserName() || '';
+                    const next = {};
+                    for (const [key, value] of Object.entries(rel)) {
+                        const name = String(key || '').trim();
+                        if (/^(<user>|\{\{user\}\}|user)$/i.test(name)) {
+                            if (userName) next[userName] = value;
+                            charChanged = true;
+                            continue;
+                        }
+                        if (name) next[name] = value;
+                    }
+                    parsed['人际关系'] = next;
+                }
+                if (charChanged) {
                     entry.content = formatCharacterYaml(c.slice(3), parsed);
                     changed = true;
                 }
@@ -942,6 +990,7 @@ function buildRosterPrompt(bookName = '') {
     const tagClose = '</nekotools:track.roster>';
     let p = `${tagOpen}
 【角色索引】JSON 字段 "roster": {"add": {"角色名": "等级｜位置｜最近行动"}, "del": ["角色名"]}
+要求：等级只写 T1/T2/T3/T4；位置必须写「地图」里的小地点名，不要写 T1核心、核心成员、身份这类东西；最近行动写具体动作。
 - 等级：T1 核心 / T2 重要 / T3 配角 / T4 背景
 - 位置：现在在哪
 - 最近行动：最近在做什么（一句话，别写成长篇）
@@ -1370,7 +1419,7 @@ registry.register({
                     for (const [name, value] of Object.entries(source.add || {})) {
                         const n = String(name || '').trim();
                         if (!n || blockedNow.has(n)) continue;
-                        const base = stripRosterLayer(String(value ?? '')) || 'T3';
+                        const base = fixRosterValue(stripRosterLayer(String(value ?? ''))) || 'T3';
                         add[n] = `${base}｜第 ${replyLayer} 层`;
                     }
                     // 黑名单允许 del（把旧行删掉）；钉住的保护，不让模型删

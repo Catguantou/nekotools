@@ -486,6 +486,7 @@ async function showRosterModal() {
     let editing = false;
     let renderSeq = 0;
     let clockNow = readClock();
+    let mapData = await readMap(book);
 
     const updateHeader = () => {
         const place = clockNow && clockNow.place ? clockNow.place : '未知地点';
@@ -499,6 +500,7 @@ async function showRosterModal() {
     const refresh = async () => {
         cfg = await loadConfig(book, { force: true });
         clockNow = readClock();
+        mapData = await readMap(book);
         updateHeader();
         list = await readRoster(book);
         if (!selected || !list.some(x => x.name === selected)) selected = list[0] ? list[0].name : '';
@@ -617,7 +619,8 @@ async function showRosterModal() {
             name.textContent = item.name;
             const meta = document.createElement('span');
             meta.className = 'nt-quick-char-meta';
-            const here = clockNow && clockNow.place && item.location === clockNow.place ? '在场' : '';
+            const curSite = (findPath(mapData, (clockNow && clockNow.place) || '').site) || (clockNow && clockNow.place) || '';
+            const here = curSite && charPlace(mapData, item) === curSite ? '在场' : '';
             meta.textContent = [here, item.tier, item.location, charAge(item)].filter(Boolean).join(' · ');
             main.appendChild(name);
             main.appendChild(meta);
@@ -984,8 +987,18 @@ function mapNodePosition(place, name, index) {
     };
 }
 
-function currentMapPath(data) {
-    const parts = String(data.current || '').split('｜').map(s => s.trim()).filter(Boolean);
+/** 角色实际所在地：兼容 location 写成「T1核心」、真实地点写在 action 里的情况 */
+function charPlace(data, c) {
+    for (const text of [c && c.location, c && c.action]) {
+        const value = String(text || '').trim();
+        if (!value) continue;
+        const p = findPath(data, value);
+        if (p && p.site && data.sites && data.sites[p.site]) return p.site;
+    }
+    return String((c && c.location) || '').trim();
+}
+
+function currentMapPath(data) {    const parts = String(data.current || '').split('｜').map(s => s.trim()).filter(Boolean);
     const valid = (p) => p && (
         (p.site && data.sites && data.sites[p.site])
         || (p.city && data.cities && data.cities[p.city])
@@ -1286,7 +1299,7 @@ async function showMapModal(opts = {}) {
             if (!(site.exits || []).length) exits.appendChild(note('没有记录出口。'));
             detail.appendChild(exits);
 
-            const present = roster.filter(c => c.location === state.site);
+            const present = roster.filter(c => charPlace(data, c) === state.site);
             detail.appendChild(section(`在场角色 · ${present.length}`));
             if (!present.length) detail.appendChild(note('暂无记录到角色在这里。'));
             else {
@@ -1492,7 +1505,7 @@ async function showMapModal(opts = {}) {
 
             const byLoc = new Map();
             for (const c of roster) {
-                const loc = String(c.location || '').trim();
+                const loc = charPlace(data, c) || String(c.location || '').trim();
                 if (!byLoc.has(loc)) byLoc.set(loc, []);
                 byLoc.get(loc).push(c);
             }
@@ -1736,8 +1749,9 @@ async function showRefreshModal() {
     body.className = 'nt-refresh';
     const intro = document.createElement('div');
     intro.className = 'nt-refresh-note';
-    intro.textContent = '会额外发一次静默请求（不进聊天记录），只更新勾选的类别。内容由模型生成，保存前请自己看一眼。';
+    intro.textContent = '会额外发一次静默请求（不进聊天记录），只更新勾选的类别/角色。内容由模型生成，保存前请自己看一眼。';
     body.appendChild(intro);
+    const roster = await readRoster(book);
 
     const cats = [
         ['chars', '角色状态'],
@@ -1764,18 +1778,58 @@ async function showRefreshModal() {
         body.appendChild(lab);
     }
 
+    const charWrap = document.createElement('div');
+    charWrap.className = 'nt-refresh-chars';
+    const charHead = document.createElement('div');
+    charHead.className = 'nt-refresh-section';
+    charHead.textContent = '角色（可单独勾选要更新的）';
+    charWrap.appendChild(charHead);
+    const charChecks = {};
+    if (!roster.length) {
+        const empty = document.createElement('div');
+        empty.className = 'nt-refresh-note';
+        empty.textContent = '角色索引为空，暂时没有可单独勾选的角色。';
+        charWrap.appendChild(empty);
+    } else {
+        for (const c of roster) {
+            const row = document.createElement('label');
+            row.className = 'nt-refresh-char';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = true;
+            charChecks[c.name] = cb;
+            const name = document.createElement('span');
+            name.className = 'nt-refresh-char-name';
+            name.textContent = c.name;
+            const meta = document.createElement('span');
+            meta.className = 'nt-refresh-char-meta';
+            meta.textContent = [c.tier, c.location].filter(Boolean).join(' · ');
+            row.appendChild(cb);
+            row.appendChild(name);
+            row.appendChild(meta);
+            charWrap.appendChild(row);
+        }
+    }
+    body.appendChild(charWrap);
+
     const quick = document.createElement('div');
     quick.className = 'nt-refresh-quick';
     const allBtn = document.createElement('button');
     allBtn.type = 'button';
     allBtn.className = 'nt-quest-add';
     allBtn.textContent = '全选';
-    allBtn.addEventListener('click', () => Object.values(checks).forEach(cb => { cb.checked = true; }));
+    allBtn.addEventListener('click', () => {
+        Object.values(checks).forEach(cb => { cb.checked = true; });
+        Object.values(charChecks).forEach(cb => { cb.checked = true; });
+    });
     const noneBtn = document.createElement('button');
     noneBtn.type = 'button';
     noneBtn.className = 'nt-quest-add';
     noneBtn.textContent = '清空';
-    noneBtn.addEventListener('click', () => Object.values(checks).forEach(cb => { cb.checked = false; }));
+    noneBtn.addEventListener('click', () => {
+        Object.values(checks).forEach(cb => { cb.checked = false; });
+        Object.values(charChecks).forEach(cb => { cb.checked = false; });
+    });
     quick.appendChild(allBtn);
     quick.appendChild(noneBtn);
     body.appendChild(quick);
@@ -1802,6 +1856,17 @@ async function showRefreshModal() {
             toast('至少勾选一个类别', 'warning');
             return false;
         }
+        const selectedChars = Object.keys(charChecks).filter(name => charChecks[name].checked);
+        if (selected.includes('chars')) {
+            if (!roster.length) {
+                toast('角色索引为空，不能单独更新角色', 'warning');
+                return false;
+            }
+            if (!selectedChars.length) {
+                toast('至少勾选一个要更新的角色', 'warning');
+                return false;
+            }
+        }
         const bookData = await stBridge.loadWorldInfoAsync(book);
         const get = (title) => {
             const entry = bookData && bookData.entries
@@ -1822,7 +1887,8 @@ async function showRefreshModal() {
         if (selected.includes('plot')) blocks.push(`【计划】\n${get('计划') || '（空）'}`);
 
         const schema = [];
-        if (selected.includes('chars')) schema.push('"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"<user>":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}');
+        const userName = stBridge.getUserName() || '用户';
+        if (selected.includes('chars')) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`);
         if (selected.includes('world')) schema.push('"world": {"国家":{"名称":"方位｜类型｜描述"},"势力":{"名称":"目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}');
         if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜可交互：...｜常驻：..."}}}');
         if (selected.includes('quests')) {
@@ -1833,8 +1899,12 @@ async function showRefreshModal() {
         if (selected.includes('foreshadow')) schema.push('"foreshadow": {"add": {"伏笔名":"[线索 | 指向] 描述"}, "del":["伏笔名"]}');
         if (selected.includes('plot')) schema.push('"plot": {"add": {"计划名":"[谁 | 做什么 | 状态] 描述"}, "del":["计划名"]}');
 
+        const charLine = selected.includes('chars')
+            ? `本轮只更新这些角色：${selectedChars.join('、')}；不要输出其他人。`
+            : '';
         const prompt = `你是 NEKOTOOL 的后台世界更新器。只输出一个 JSON 对象，不要正文、不要 markdown 代码块、不要解释。
 方式：${mode.value === 'advance' ? '推进到下一阶段（让时间/事件往前走，可新增支线与人物变化）' : '补全当前状态（把缺的细节补全，不主动推进时间）'}。
+${charLine}
 当前数据：
 ${blocks.join('\n\n')}
 
@@ -1850,6 +1920,13 @@ ${schema.join('\n')}
             const b = text.lastIndexOf('}');
             if (a < 0 || b <= a) throw new Error('模型没有返回 JSON');
             const data = JSON.parse(text.slice(a, b + 1));
+            if (data.chars && typeof data.chars === 'object' && !Array.isArray(data.chars)) {
+                const filtered = {};
+                for (const name of selectedChars) {
+                    if (data.chars[name]) filtered[name] = data.chars[name];
+                }
+                data.chars = filtered;
+            }
             const summary = await applyRefreshData(book, data, currentLayerNo());
             const bits = [
                 summary.chars ? `角色 ${summary.chars}` : '',
@@ -1994,21 +2071,33 @@ function buildPop() {
     list.className = 'nt-quick-pop-list';
 
     const items = [
-        { key: 'clock', label: '世界时钟', hint: '读状态栏', enabled: true },
-        { key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
-        { key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪 / 跳时间', enabled: true },
-        { key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
-        { key: 'refresh', label: '请求更新', hint: '角色 / 世界 / 地图 / 任务', enabled: true },
-        { key: 'map', label: '地图', hint: '大地图 / 中地图 / 小地点', enabled: true },
-        { key: 'quests', label: '可办事项', hint: '主线 / 支线，可查看和修改', enabled: true },
-        { key: 'edit', label: '手动修改', hint: '直接编辑追踪书条目', enabled: true },
+        { group: '世界', icon: '🕰', key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气', enabled: true },
+        { group: '世界', icon: '🗺', key: 'map', label: '地图', hint: '区域 / 城市 / 小地点', enabled: true },
+        { group: '角色', icon: '👥', key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
+        { group: '角色', icon: '📋', key: 'quests', label: '可办事项', hint: '主线 / 支线，可编辑', enabled: true },
+        { group: '行动', icon: '🎯', key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪', enabled: true },
+        { group: '行动', icon: '🔄', key: 'refresh', label: '请求更新', hint: '按角色/类别静默更新', enabled: true },
+        { group: '系统', icon: '💾', key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
+        { group: '系统', icon: '✏️', key: 'edit', label: '手动修改', hint: '直接编辑追踪书条目', enabled: true },
     ];
 
+    let lastGroup = '';
     for (const item of items) {
+        if (item.group !== lastGroup) {
+            lastGroup = item.group;
+            const groupEl = document.createElement('div');
+            groupEl.className = 'nt-quick-group';
+            groupEl.textContent = item.group;
+            list.appendChild(groupEl);
+        }
         const row = document.createElement('button');
         row.type = 'button';
         row.className = 'nt-quick-item' + (item.enabled ? '' : ' disabled');
         row.dataset.key = item.key;
+
+        const icon = document.createElement('span');
+        icon.className = 'nt-quick-item-icon';
+        icon.textContent = item.icon || '·';
 
         const label = document.createElement('span');
         label.className = 'nt-quick-item-label';
@@ -2018,6 +2107,7 @@ function buildPop() {
         hint.className = 'nt-quick-item-hint';
         hint.textContent = item.enabled ? item.hint : '后续版本';
 
+        row.appendChild(icon);
         row.appendChild(label);
         row.appendChild(hint);
 
