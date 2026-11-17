@@ -298,10 +298,10 @@ export const stBridge = {
             // 激活时会报 No world found named，表现就是「书建出来了但挂不上」。
             await refreshWorldList();
 
-            // 复核：文件真的落盘了吗？曾出现过「接口返回 ok 但文件不存在」的情况
-            const check = await this.loadWorldInfoAsync(name, true);
-            if (!check) {
-                console.error('[nekotools] 世界书写入后读不回来，判定创建失败:', name);
+            // 复核：文件真的落盘了吗？/get 会返回假书，必须用文件列表判断
+            const ok = await this.bookExists(name);
+            if (!ok) {
+                console.error('[nekotools] 世界书写入后文件仍不存在，判定创建失败:', name);
                 return false;
             }
             return true;
@@ -309,6 +309,17 @@ export const stBridge = {
             console.error('[nekotools] 创建世界书失败', e);
             return false;
         }
+    },
+
+    /**
+     * 权威的存在性判断：/api/worldinfo/list 是真实文件列表。
+     * 不能用 /get——它对不存在的书会返回 { entries: {} } 这个「假书」，
+     * 看起来有对象，实际磁盘上什么都没有。
+     */
+    async bookExists(name) {
+        if (!name) return false;
+        const names = await this.fetchWorldNamesFromApi();
+        return Array.isArray(names) && names.includes(name);
     },
 
     /** 清掉「激活列表里有、磁盘上却没有」的幽灵追踪书（否则 ST 每次生成都报 does not exist） */
@@ -330,19 +341,23 @@ export const stBridge = {
     async ensureWorldbook(name, initContent = '') {
         if (!name) return null;
 
-        let book = await this.loadWorldInfoAsync(name, true);
-        if (!book) {
+        // 先按真实文件列表判断存在性，再决定是否创建
+        const exists = await this.bookExists(name);
+        if (!exists) {
             console.log('[nekotools] 追踪书不存在，开始创建:', name);
             const created = await this.createWorldbook(name, initContent);
             if (!created) {
                 console.error('[nekotools] 追踪书创建失败:', name);
                 return null;
             }
-            book = await this.loadWorldInfoAsync(name, true);
-            if (!book) {
-                console.error('[nekotools] 创建成功但读不回来:', name);
-                return null;
-            }
+        }
+
+        const book = await this.loadWorldInfoAsync(name, true);
+        if (!book) {
+            console.error('[nekotools] 追踪书读取失败:', name);
+            return null;
+        }
+        if (exists === false) {
             console.log('[nekotools] 追踪书已创建:', name);
         }
 
