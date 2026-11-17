@@ -206,11 +206,11 @@ try {
     const yaml2 = wf.formatCharacterYaml('艾达', {
         性别: '女',
         外貌: '短发，工装',
-        人际关系: { '<user>': '好感 40｜信任 30｜观望：愿意合作但觉得你太神秘' },
+        人际关系: { '菜月昴': '好感 40｜信任 30｜观望：愿意合作但觉得你太神秘' },
     });
     const parsed2 = wf.parseCharacterYaml(yaml2);
     assert(parsed2.性别 === '女' && parsed2.外貌.includes('短发'), '性别/外貌 YAML 往返失败');
-    assert(parsed2.人际关系 && parsed2.人际关系['<user>'].includes('好感 40'), '人际关系 YAML 往返失败');
+    assert(parsed2.人际关系 && parsed2.人际关系['菜月昴'].includes('好感 40'), '人际关系 YAML 往返失败');
     assert(wf.normalizeRelationships({ a: '好感 1', b: '' }).a === '好感 1', '人际关系归一化失败');
 
     const yaml3 = wf.formatCharacterYaml('艾达', {

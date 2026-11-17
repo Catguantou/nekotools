@@ -361,7 +361,7 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
 可选：身份。
 必填基础：性别 / 外貌（简单一句）/ 人际关系。
-人际关系是对象，键写对方真实名字。用户角色就叫「${userName}」，不要写 <user>、{{user}} 这类占位符；第一次正式遇见之后才写，没遇见就不要写。
+人际关系是对象，键写对方真实名字。用户角色就叫「${userName}」；第一次正式遇见之后才写，没遇见就不要写。
 值的格式："好感 X｜信任 Y｜标签：一句原因"。
 好感/信任都是 0-100：好感 0-20 敌意 / 21-40 冷淡 / 41-60 中性 / 61-80 亲近 / 81-100 信赖或爱慕；
 信任 0-20 提防 / 21-40 保留 / 41-60 一般 / 61-80 信任 / 81-100 生死托付。
@@ -503,22 +503,9 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
     const mergedKnown = mergeList(normalizeMemories(old['已知']), normalizeMemories(info && info['已知']));
 
     // 人际关系/日程按 key 合并：本轮没写到的人保留旧状态
-    const userName = stBridge.getUserName() || '';
-    const canonicalRel = (rel) => {
-        const out = {};
-        for (const [key, value] of Object.entries(rel || {})) {
-            const name = String(key || '').trim();
-            if (/^(<user>|\{\{user\}\}|user)$/i.test(name)) {
-                if (userName) out[userName] = value;
-                continue;
-            }
-            if (name) out[name] = value;
-        }
-        return out;
-    };
     const mergedRel = {
-        ...canonicalRel(normalizeRelationships(old['人际关系'])),
-        ...canonicalRel(normalizeRelationships(info && info['人际关系'])),
+        ...normalizeRelationships(old['人际关系']),
+        ...normalizeRelationships(info && info['人际关系']),
     };
     const mergedSchedule = {
         ...normalizeRelationships(old['日程']),
@@ -941,21 +928,6 @@ async function normalizeEntryLayout(bookName) {
                 if (Object.keys(parsed).length && !parsed.姓名) {
                     parsed.姓名 = c.slice(3);
                     charChanged = true;
-                }
-                const rel = parsed['人际关系'];
-                if (rel && typeof rel === 'object' && !Array.isArray(rel)) {
-                    const userName = stBridge.getUserName() || '';
-                    const next = {};
-                    for (const [key, value] of Object.entries(rel)) {
-                        const name = String(key || '').trim();
-                        if (/^(<user>|\{\{user\}\}|user)$/i.test(name)) {
-                            if (userName) next[userName] = value;
-                            charChanged = true;
-                            continue;
-                        }
-                        if (name) next[name] = value;
-                    }
-                    parsed['人际关系'] = next;
                 }
                 if (charChanged) {
                     entry.content = formatCharacterYaml(c.slice(3), parsed);
