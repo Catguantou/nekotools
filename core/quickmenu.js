@@ -2398,8 +2398,8 @@ async function showRefreshModal(preselectName = '') {
             return false;
         }
         const selectedChars = Object.keys(charChecks).filter(name => charChecks[name].checked);
-        // 角色索引为空时直接跳过角色类别，不要让整次更新失败
-        const doChars = selected.includes('chars') && charList.length > 0 && selectedChars.length > 0;
+        const doChars = selected.includes('chars');
+        const effectiveChars = selectedChars.length ? selectedChars : charList.map(c => c.name);
         if (!(await backupBeforeWrite())) return false;
         const bookData = await stBridge.loadWorldInfoAsync(book);
         const get = (title) => {
@@ -2409,7 +2409,22 @@ async function showRefreshModal(preselectName = '') {
             return entry ? String(entry.content || '').slice(0, 6000) : '';
         };
         const blocks = [];
-        if (doChars) blocks.push(`【索引】\n${get('索引') || '（空）'}`);
+        if (doChars) {
+            if (effectiveChars.length) {
+                blocks.push(`【索引】\n${get('索引') || '（空）'}`);
+            } else {
+                // 初始更新：索引为空时把角色卡和当前追踪书喂给模型，让它自己建初始角色
+                const cur = stBridge.getCurrentCharacter?.();
+                const card = cur
+                    ? [cur.name, cur.description, cur.personality, cur.scenario].filter(Boolean).join('\n')
+                    : '';
+                if (card) blocks.push(`【角色卡】\n${card.slice(0, 3000)}`);
+                const all = bookData && bookData.entries
+                    ? Object.values(bookData.entries).filter(e => e && e.comment).map(e => `【${e.comment}】\n${String(e.content || '').slice(0, 800)}`).join('\n')
+                    : '';
+                if (all) blocks.push(`【当前追踪书】\n${all.slice(0, 5000)}`);
+            }
+        }
         if (selected.includes('world')) {
             blocks.push(`【世界·国家】\n${get('世界·国家') || '（空）'}`);
             blocks.push(`【世界·势力】\n${get('世界·势力') || '（空）'}`);
@@ -2439,7 +2454,9 @@ async function showRefreshModal(preselectName = '') {
         if (selected.includes('plot')) schema.push('"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}');
 
         const charLine = doChars
-            ? `本轮只更新这些角色：${selectedChars.join('、')}；不要输出其他人。`
+            ? (effectiveChars.length
+                ? `本轮只更新这些角色：${effectiveChars.join('、')}；不要输出其他人。`
+                : '角色索引为空：请根据角色卡和当前追踪书初始化主要角色（包括必要 NPC），不要留空。')
             : '';
         const userLine = recordUserChar
             ? `用户角色「${userName}」也可以作为一条角色档案更新。`
@@ -2466,10 +2483,10 @@ ${schema.join('\n')}
             const data = JSON.parse(text.slice(a, b + 1));
             if (data.chars && typeof data.chars === 'object' && !Array.isArray(data.chars)) {
                 const filtered = {};
-                for (const name of selectedChars) {
+                for (const name of effectiveChars) {
                     if (data.chars[name]) filtered[name] = data.chars[name];
                 }
-                data.chars = doChars ? filtered : {};
+                data.chars = !doChars ? {} : (effectiveChars.length ? filtered : data.chars);
             }
             const summary = await applyRefreshData(book, data, currentLayerNo());
             const bits = [
