@@ -18,7 +18,8 @@ function briefLine(name, text, max = 70) {
     const n = String(name || '').trim();
     const t = String(text || '').trim().replace(/\s+/g, ' ');
     if (!n || !t) return '';
-    return `- ${n}｜${t.slice(0, max)}`;
+    const shown = n.length > 14 ? `${n.slice(0, 14)}…` : n;
+    return `- ${shown}｜${t.slice(0, max)}`;
 }
 
 /** 从条目内容提取「- 名称｜内容」 */
