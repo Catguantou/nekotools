@@ -185,9 +185,10 @@ chars / items / plot / world / foreshadow / roster 都只写**本轮变化**：c
         if (custom) c += `【附加要求】\n${custom}\n`;
         c += `</nekotools:track.chars>`;
         list.push({ role: 'system', content: c });
-        // 角色索引：让模型自己增删，插件只负责写进书里
-        list.push({ role: 'system', content: buildRosterPrompt() });
     }
+
+    // 角色索引：不依赖「角色追踪」开关，只要有追踪就维护
+    list.push({ role: 'system', content: buildRosterPrompt() });
 
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
@@ -695,7 +696,7 @@ registry.register({
                         await stBridge.updateEntry(currentLorebook, `角色·${n}`, formatCharEntry(info), false, [n]);
                     }
                 }
-                if (data.roster && settings.enableChars) {
+                if (data.roster) {
                     // 索引由模型自己增删，插件只做 add/del 合并
                     await applyAggregateOps(currentLorebook, '角色索引', data.roster, 998);
                 }

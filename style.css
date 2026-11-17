@@ -1592,6 +1592,24 @@ body {
     word-break: break-all;
 }
 
+#nt-quick-modal .nt-quick-roster-row {
+    display: flex;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--ntq-line);
+}
+#nt-quick-modal .nt-quick-roster-row:last-child {
+    border-bottom: 0;
+}
+#nt-quick-modal .nt-quick-roster-name {
+    flex: 0 0 110px;
+    color: #fff;
+}
+#nt-quick-modal .nt-quick-roster-note {
+    flex: 1;
+    color: var(--ntq-dim);
+}
+
 #nt-quick-modal .nt-quick-slots {
     display: flex;
     flex-direction: column;

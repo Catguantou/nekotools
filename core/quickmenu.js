@@ -9,8 +9,9 @@ import {
     exportCurrent,
     importCurrent,
     getSlotClock,
+    readRoster,
 } from './slots.js';
-import { slotLabel } from './worldfmt.js';
+import { slotLabel, parseStatusFields } from './worldfmt.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 
@@ -356,9 +357,27 @@ function showSoon(label) {
     toast(`${label}：后续版本接入`);
 }
 
-function showClockModal() {
+function readClock() {
+    // 优先读最后一条 AI 消息里的状态栏（最实时）；读不到再用存下来的
+    const chat = stBridge.getContext().chat || [];
+    for (let i = chat.length - 1; i >= 0; i--) {
+        const msg = chat[i];
+        if (!msg || msg.is_user) continue;
+        const text = String(msg.mes || '');
+        const idx = text.indexOf('[[NT_STATUS]]');
+        if (idx === -1) continue;
+        const line = text.slice(idx + '[[NT_STATUS]]'.length).split('\n')[0];
+        const fields = parseStatusFields(line);
+        if (fields && (fields.time || fields.place)) return { ...fields, layer: i + 1 };
+    }
+
     const name = stBridge.currentTrackerName();
-    const clock = name ? getSlotClock(name) : null;
+    const stored = name ? getSlotClock(name) : null;
+    return stored && (stored.time || stored.place) ? stored : null;
+}
+
+function showClockModal() {
+    const clock = readClock();
 
     const body = document.createElement('div');
     if (!clock || !(clock.time || clock.place)) {
@@ -394,11 +413,42 @@ function showClockModal() {
 function updateClockUi() {
     const hint = document.querySelector('#nt-quick-pop .nt-quick-item[data-key="clock"] .nt-quick-item-hint');
     if (!hint) return;
-    const name = stBridge.currentTrackerName();
-    const clock = name ? getSlotClock(name) : null;
+    const clock = readClock();
     hint.textContent = clock && (clock.time || clock.place)
         ? `${clock.time || '—'} · ${clock.place || '—'}`
         : '还没有时钟';
+}
+
+async function showRosterModal() {
+    const body = document.createElement('div');
+    body.textContent = '读取中…';
+    openModal({ title: '角色索引', body });
+
+    const name = stBridge.currentTrackerName();
+    const list = name ? await readRoster(name) : [];
+    body.textContent = '';
+
+    if (!list.length) {
+        const note = document.createElement('div');
+        note.className = 'nt-quick-note';
+        note.textContent = '还没有角色索引。发几轮消息，模型会按 P_10 契约自己写；如果一直不写，去面板把 P_10 提示词改得更明确。';
+        body.appendChild(note);
+        return;
+    }
+
+    for (const item of list) {
+        const row = document.createElement('div');
+        row.className = 'nt-quick-roster-row';
+        const n = document.createElement('span');
+        n.className = 'nt-quick-roster-name';
+        n.textContent = item.name;
+        const note = document.createElement('span');
+        note.className = 'nt-quick-roster-note';
+        note.textContent = item.note;
+        row.appendChild(n);
+        row.appendChild(note);
+        body.appendChild(row);
+    }
 }
 
 function buildPop() {
@@ -436,6 +486,7 @@ function buildPop() {
 
     const items = [
         { key: 'clock', label: '世界时钟', hint: '读状态栏', enabled: true },
+        { key: 'roster', label: '角色索引', hint: '由 AI 维护', enabled: true },
         { key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
         { key: 'refresh', label: '请求更新', hint: '角色 / 世界 / 地图', enabled: false },
         { key: 'map', label: '地图', hint: '周边可交互节点', enabled: false },
@@ -462,6 +513,7 @@ function buildPop() {
         row.addEventListener('click', () => {
             closePop();
             if (item.key === 'clock') showClockModal();
+            else if (item.key === 'roster') showRosterModal();
             else if (item.key === 'slots') showSlotsModal();
             else showSoon(item.label);
         });

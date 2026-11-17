@@ -60,6 +60,23 @@ export function setSlotClock(bookName, clock) {
     setSlotMeta(bookName, { clock: clock || null });
 }
 
+/** 读取当前档的「角色索引」条目（AI 维护），返回 [{ name, note }] */
+export async function readRoster(bookName) {
+    if (!bookName) return [];
+    const book = await stBridge.loadWorldInfoAsync(bookName, true);
+    if (!book || !book.entries) return [];
+    const entry = Object.values(book.entries).find(e => e && e.comment === '角色索引');
+    if (!entry) return [];
+    return String(entry.content || '')
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map(line => {
+            const m = line.match(/^[-·]\s*([^｜|\n]+)\s*｜\s*([\s\S]*)$/);
+            return m ? { name: m[1].trim(), note: m[2].trim() } : { name: line, note: '' };
+        });
+}
+
 /** 当前角色的所有档；没有档时返回一个“第 1 档（未创建）”的占位 */
 export function listSlots() {
     const charName = stBridge.getCharacterName();
