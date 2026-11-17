@@ -1,4 +1,4 @@
-﻿/* =========================================
+/* =========================================
    NEKOTOOL Glitch / Glassmorphism / Noise
    ========================================= */
 #nt-ws-panel {
@@ -4416,31 +4416,30 @@ body {
     margin-bottom: 4px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
-#nt-quick-pop .nt-quick-mobile-actions button {
+#nt-quick-pop .nt-quick-mobile-actions > * {
     flex: 1 1 28%;
     min-width: 62px;
-    padding: 8px 6px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    height: 34px;
+    margin: 0 !important;
+    padding: 8px 6px !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.035);
     color: #dfe4f2;
     font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
     font-size: 11px;
     line-height: 1;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
 }
-#nt-quick-pop .nt-quick-mobile-actions button:active {
+#nt-quick-pop .nt-quick-mobile-actions > *:active {
     background: rgba(93, 111, 174, 0.28);
-    border-color: rgba(120, 150, 240, 0.8);
+    border-color: rgba(120, 150, 240, 0.8) !important;
 }
 
 @media (max-width: 640px) {
-    #leftSendForm #options_button,
-    #leftSendForm #extensionsMenuButton,
-    #rightSendForm #stscript_continue,
-    #rightSendForm #stscript_pause,
-    #rightSendForm #stscript_stop {
-        display: none !important;
-    }
     #nt-quick-pop {
         z-index: 100000;
         border-radius: 6px;

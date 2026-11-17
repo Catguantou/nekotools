@@ -333,9 +333,45 @@ function showSlotsModal() {
 
 // ========== 菜单 ==========
 
+const MOBILE_CONTROL_SPECS = [
+    ['#options_button', '#leftSendForm'],
+    ['#extensionsMenuButton', '#leftSendForm'],
+    ['#stscript_continue', '#rightSendForm'],
+    ['#stscript_pause', '#rightSendForm'],
+    ['#stscript_stop', '#rightSendForm'],
+];
+const mobileControlHomes = new Map();
+
+function parkMobileControls() {
+    if (!window.matchMedia('(max-width: 640px)').matches) return;
+    const bar = document.querySelector('#nt-quick-pop .nt-quick-mobile-actions');
+    if (!bar) return;
+    for (const [selector, fallbackParent] of MOBILE_CONTROL_SPECS) {
+        const el = document.querySelector(selector);
+        if (!el || el.closest('#nt-quick-pop')) continue;
+        mobileControlHomes.set(el, {
+            parent: el.parentElement || document.querySelector(fallbackParent) || document.body,
+            next: el.nextSibling,
+        });
+        el.classList.add('nt-in-mobile-menu');
+        bar.appendChild(el);
+    }
+}
+
+function restoreMobileControls() {
+    for (const [el, home] of mobileControlHomes) {
+        el.classList.remove('nt-in-mobile-menu');
+        const parent = home.parent && home.parent.isConnected ? home.parent : document.body;
+        if (home.next && home.next.parentNode === parent) parent.insertBefore(el, home.next);
+        else parent.appendChild(el);
+    }
+    mobileControlHomes.clear();
+}
+
 function closePop() {
     const pop = $(POP_ID);
     if (pop) pop.hidden = true;
+    restoreMobileControls();
 }
 
 function updateQuickStatus() {
@@ -387,6 +423,7 @@ function openPop() {
     }
     // 先显示，再刷新内容；任何刷新异常都不能导致菜单打不开
     pop.hidden = false;
+    parkMobileControls();
     try { updateJumpUi(); } catch (err) { console.warn('[nekotools] 刷新跳时提示失败', err); }
     try { updateClockUi(); } catch (err) { console.warn('[nekotools] 刷新时钟失败', err); }
     try { updateQuickStatus(); } catch (err) { console.warn('[nekotools] 刷新追踪状态失败', err); }
@@ -2475,28 +2512,6 @@ async function showEditModal() {
     });
 }
 
-function triggerMobileAction(selector) {
-    const el = document.querySelector(selector);
-    if (!el) return;
-    try { el.click(); } catch (err) { console.warn('[nekotools] 手机快捷操作失败', err); }
-    if (selector === '#extensionsMenuButton') {
-        setTimeout(() => {
-            const menu = document.querySelector('#extensionsMenu');
-            if (!menu) return;
-            menu.style.setProperty('position', 'fixed', 'important');
-            menu.style.setProperty('left', '8px', 'important');
-            menu.style.setProperty('right', '8px', 'important');
-            menu.style.setProperty('top', '70px', 'important');
-            menu.style.setProperty('bottom', 'auto', 'important');
-            menu.style.setProperty('transform', 'none', 'important');
-            menu.style.setProperty('max-width', 'calc(100vw - 16px)', 'important');
-            menu.style.setProperty('max-height', 'calc(100vh - 170px)', 'important');
-            menu.style.setProperty('overflow-y', 'auto', 'important');
-            menu.style.setProperty('z-index', '100001', 'important');
-        }, 30);
-    }
-}
-
 function buildPop() {
     if ($(POP_ID)) return;
 
@@ -2540,23 +2555,6 @@ function buildPop() {
 
     const mobileBar = document.createElement('div');
     mobileBar.className = 'nt-quick-mobile-actions';
-    for (const [label, selector] of [
-        ['选项', '#options_button'],
-        ['扩展', '#extensionsMenuButton'],
-        ['继续', '#stscript_continue'],
-        ['暂停', '#stscript_pause'],
-        ['停止', '#stscript_stop'],
-    ]) {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = label;
-        b.addEventListener('click', (e) => {
-            e.stopPropagation();
-            closePop();
-            triggerMobileAction(selector);
-        });
-        mobileBar.appendChild(b);
-    }
 
     const items = [
         { group: '世界', icon: '🕰', key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气', enabled: true },
