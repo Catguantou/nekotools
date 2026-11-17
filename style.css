@@ -3947,6 +3947,37 @@ body {
     border-color: rgba(80, 115, 225, 0.6);
 }
 
+/* 面板与 TOOL 抬头：渐隐点阵 */
+#nt-ws-panel .nt-header,
+#nt-quick-pop .nt-quick-pop-head {
+    position: relative;
+    overflow: hidden;
+}
+#nt-ws-panel .nt-header::after,
+#nt-quick-pop .nt-quick-pop-head::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: auto;
+    bottom: auto;
+    width: 42%;
+    height: 100%;
+    background-image: radial-gradient(circle, #2f5bd7 1px, transparent 1.2px);
+    background-size: 8px 8px;
+    opacity: 0.16;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 72%);
+    mask-image: linear-gradient(90deg, transparent 0%, #000 72%);
+    pointer-events: none;
+    z-index: 0;
+}
+#nt-ws-panel .nt-header > *,
+#nt-quick-pop .nt-quick-pop-head > * {
+    position: relative;
+    z-index: 1;
+}
+
+
 
 
 
