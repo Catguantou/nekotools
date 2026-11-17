@@ -484,14 +484,21 @@ function placePop() {
     if (!btn || !pop) return;
     const mobile = window.matchMedia('(max-width: 640px)').matches;
     if (mobile) {
-        // 手机 WebView 里 body 是 fixed，底部定位会算到视口上方；改成从顶部定位
-        pop.style.top = '70px';
-        pop.style.bottom = 'auto';
-        pop.style.left = '8px';
-        pop.style.right = '8px';
-        pop.style.width = 'auto';
+        // 手机：做成靠边的小面板，不铺满屏幕
+        const state = floatState();
+        const width = Math.min(286, window.innerWidth - 24);
+        const maxHeight = Math.min(440, window.innerHeight - 120);
+        const left = state.side === 'left'
+            ? 42
+            : Math.max(12, window.innerWidth - width - 42);
+        const top = Math.max(60, Math.min(state.top - 50, window.innerHeight - maxHeight - 80));
+        pop.style.left = `${left}px`;
+        pop.style.right = 'auto';
+        pop.style.width = `${width}px`;
         pop.style.maxWidth = 'none';
-        pop.style.maxHeight = 'calc(100vh - 150px)';
+        pop.style.top = `${top}px`;
+        pop.style.bottom = 'auto';
+        pop.style.maxHeight = `${maxHeight}px`;
         pop.style.overflowY = 'auto';
         return;
     }
@@ -516,11 +523,11 @@ function openPop() {
     }
     // 先显示，再刷新内容；任何刷新异常都不能导致菜单打不开
     pop.hidden = false;
-    hideFloatButton();
     try { updateJumpUi(); } catch (err) { console.warn('[nekotools] 刷新跳时提示失败', err); }
     try { updateClockUi(); } catch (err) { console.warn('[nekotools] 刷新时钟失败', err); }
     try { updateQuickStatus(); } catch (err) { console.warn('[nekotools] 刷新追踪状态失败', err); }
     try { placePop(); } catch (err) { console.warn('[nekotools] 计算菜单位置失败', err); }
+    hideFloatButton();
 }
 
 function togglePop() {
