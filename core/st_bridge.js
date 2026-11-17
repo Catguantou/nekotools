@@ -30,8 +30,6 @@ function cleanAndDedupeList(arr) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-CN'));
 }
 
-const loreCache = new Map();
-
 export const stBridge = {
     getContext() {
         return window.SillyTavern?.getContext?.() || window.getContext?.() || {};
@@ -191,17 +189,15 @@ export const stBridge = {
         }
     },
 
-    async loadWorldInfoAsync(name, forceApi = false) {
-        if (!forceApi && loreCache.has(name)) return loreCache.get(name);
-
+    /**
+     * 读世界书：**不做任何本地缓存**，每次直接读服务端文件。
+     * 世界书是唯一事实来源；缓存过就会在用户删书后拿旧内容写回去（复活已删的书）。
+     */
+    async loadWorldInfoAsync(name) {
+        if (!name) return null;
         const ctx = this.getContext();
-        if (!forceApi && typeof ctx.loadWorldInfo === 'function') {
-            try {
-                const book = await ctx.loadWorldInfo(name);
-                // ST 对不存在的书会返回空对象，不能当成功
-                if (book && book.entries) { loreCache.set(name, book); return book; }
-            } catch (e) {}
-        }
+
+        // 先走 /api/worldinfo/get：服务端每次都读盘
         try {
             const headers = {
                 ...(typeof ctx.getRequestHeaders === 'function' ? ctx.getRequestHeaders() : {}),
@@ -212,19 +208,22 @@ export const stBridge = {
                 headers,
                 body: JSON.stringify({ name })
             });
-            if (!res.ok) return null;
-            const book = await res.json();
-            // 关键：ST 的 /get 对不存在的书返回 200 + {}，没有 entries 就当不存在
-            if (!book || typeof book !== 'object' || !book.entries) return null;
-            loreCache.set(name, book);
-            return book;
+            if (res.ok) {
+                const book = await res.json();
+                if (book && typeof book === 'object' && book.entries) return book;
+            }
         } catch (e) {
-            return null;
+            console.warn('[nekotools] 读取世界书失败，尝试 ST API', e);
         }
-    },
 
-    getLorebook(name) {
-        return loreCache.get(name) || null;
+        // 兜底：ST 的 loadWorldInfo（它自己有内存缓存，仅在 API 不可用时用）
+        if (typeof ctx.loadWorldInfo === 'function') {
+            try {
+                const book = await ctx.loadWorldInfo(name);
+                if (book && typeof book === 'object' && book.entries) return book;
+            } catch (e) {}
+        }
+        return null;
     },
 
     getGloballyActivatedWorlds() {
@@ -292,7 +291,6 @@ export const stBridge = {
 
             if (!res.ok) throw new Error(`API 失败: ${res.status}`);
 
-            loreCache.delete(name);
             const wInfo = ctx.world_info || ctx.worldInfo;
             if (wInfo) wInfo[name] = initData;
 
@@ -408,7 +406,6 @@ export const stBridge = {
             }
 
             if (ok) {
-                loreCache.delete(name);
                 const wInfo = ctx.world_info || ctx.worldInfo;
                 if (wInfo && wInfo[name]) delete wInfo[name];
                 this.forgetAutoActive(name);
@@ -578,8 +575,7 @@ export const stBridge = {
                 body: JSON.stringify({ name: targetName, data: initData })
             });
             if (!res.ok) return false;
-            
-            loreCache.set(targetName, initData);
+
             const wInfo = ctx.world_info || ctx.worldInfo;
             if (wInfo) wInfo[targetName] = initData;
 
@@ -665,7 +661,6 @@ export const stBridge = {
 
     async persistLorebook(bookName, bookData) {
         const ctx = this.getContext();
-        loreCache.set(bookName, bookData);
         try {
             if (ctx && typeof ctx.saveWorldInfo === 'function' && bookData) {
                 await ctx.saveWorldInfo(bookName, bookData, true);

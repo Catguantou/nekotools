@@ -278,13 +278,13 @@ registry.register({
         loadSettings();
         if (!settings.enabled) return;
 
-        const turnCount = parseInt(localStorage.getItem('nt_worldsim_turn') || '0') + 1;
-        localStorage.setItem('nt_worldsim_turn', turnCount.toString());
+        // 轮数直接从聊天记录里数，不再写 localStorage（除了剧情推演缓存，不保留任何本地状态）
+        const chat = ctx.chat || [];
+        const aiCount = chat.filter(m => m && !m.is_user && !m.is_system).length;
 
         let needBig = false;
         const bigLimit = Number(settings.bigSummaryLimit) || 0;
-        // limit 为 0 时 %0 会得到 NaN，大总结永远不触发；先挡掉
-        if (settings.enableBigSummary && bigLimit > 0 && turnCount % bigLimit === 0) {
+        if (settings.enableBigSummary && bigLimit > 0 && aiCount > 0 && aiCount % bigLimit === 0) {
             needBig = true;
         }
         ctx.__ntNeedBig = needBig;
@@ -339,7 +339,6 @@ registry.register({
                 if (entry.comment === '小总结') entry.content = '（已浓缩入大总结）';
             }
             await stBridge.persistLorebook(currentLorebook, book);
-            localStorage.removeItem('nt_worldsim_turn');
         }
 
         if (captured.ws_summary && settings.enableSummary && !captured.ws_big_summary) {

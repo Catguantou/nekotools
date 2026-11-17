@@ -902,7 +902,6 @@ export function mountPanel() {
 
     wrap.querySelector('#nt-ws-reset').onclick = () => {
         if (!confirm('确定要重置轮数统计与预演缓存吗？')) return;
-        localStorage.removeItem('nt_worldsim_turn');
         localStorage.removeItem('nt_preview_cache');
         if (window.toastr) toastr.info('系统已重置');
     };
@@ -911,7 +910,6 @@ export function mountPanel() {
         wrap.querySelector('#nt-ws-save').click();
         const extra = {
             nt_preview_cache: localStorage.getItem('nt_preview_cache'),
-            nt_worldsim_turn: localStorage.getItem('nt_worldsim_turn'),
         };
         const payload = settings.exportAll(extra);
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -938,7 +936,6 @@ export function mountPanel() {
                 const obj = JSON.parse(text);
                 const state = settings.importAll(obj);
                 if (state && state.nt_preview_cache) localStorage.setItem('nt_preview_cache', state.nt_preview_cache);
-                if (state && state.nt_worldsim_turn) localStorage.setItem('nt_worldsim_turn', state.nt_worldsim_turn);
 
                 for (const m of registry.list()) {
                     if (typeof m.loadSettings === 'function') m.loadSettings();

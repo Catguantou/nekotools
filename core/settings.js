@@ -29,19 +29,21 @@ export const settings = {
             return;
         }
         try {
+            // 一次性迁移：把旧版本写在 localStorage 里的设置搬进 ST，然后清掉本地副本
             const raw = localStorage.getItem(LS_KEY);
             if (raw) {
                 this.data = JSON.parse(raw);
                 if (st) st[ST_KEY] = this.data;
                 this.save();
+                localStorage.removeItem(LS_KEY);
             }
         } catch { this.data = {}; }
     },
 
     save() {
         const st = getSTStore();
+        // 只写 ST 的 settings.json，不再保留 localStorage 副本
         if (st) st[ST_KEY] = this.data;
-        try { localStorage.setItem(LS_KEY, JSON.stringify(this.data)); } catch {}
         try {
             const ctx = window.SillyTavern?.getContext?.()
                 || (typeof window.getContext === 'function' ? window.getContext() : null);
