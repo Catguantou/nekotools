@@ -183,7 +183,7 @@ const CHAR_BASE_FIELDS = [
     '姓名', '性别', '外貌', '身份', '位置', '心情',
     '日程', '当前行动', '下一步', '长期目标', '近期打算',
     '状态', '后台运行', '关键记忆', '特殊变化',
-    '人际关系', '已知', '秘密', '更新于',
+    '人际关系', '已知', '秘密', '关键词', '更新于',
 ];
 
 function yamlQuote(value) {
@@ -248,7 +248,7 @@ export function formatCharacterYaml(name, info = {}) {
             for (const person of keys) lines.push(`  ${yamlQuote(person)}: ${yamlQuote(rel[person])}`);
             continue;
         }
-        if (key === '关键记忆' || key === '已知') {
+        if (key === '关键记忆' || key === '已知' || key === '关键词') {
             const list = normalizeMemories(v);
             used.add(key);
             if (!list.length) continue;

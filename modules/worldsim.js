@@ -428,7 +428,7 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
         const userName = stBridge.getUserName() || '用户';
         const recordUserChar = settings.recordUserCharacter === true;
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"..."}}
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}
 要求：记录活跃角色${recordUserChar ? `（包括用户角色${userName}）` : `（不包括用户角色${userName}）`}。以下字段尽量写完整，每个字段写完整的句子，不要合并成一句话：
 - 位置：优先使用「地图」里的小地点名；没有就写当前地点
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
@@ -437,6 +437,7 @@ chars / tick / items / plot / world / map / main / quests / foreshadow / roster 
 - 近期打算：短期内最可能采取的下一个具体行动
 - 关键记忆：【事件】→ 导致了什么转变（本轮只写新增的 1-2 条，用数组或换行分隔；插件会追加到旧记忆，不会覆盖）
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
+- 关键词：写 1–6 个正文可能出现的叫法，2–20 字：昵称/小名/外号、西式名字拆开的姓和名、尊称（Mr. Smith、Ms. Smith、Dr. Smith、王先生、李小姐、队长、老板）。不要只写全名，不要写抽象标题。
 可选：身份。
 必填基础：性别 / 外貌（简单一句）/ 人际关系。
 ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输出档案。` : `不要输出用户角色「${userName}」的档案。`}
@@ -583,6 +584,53 @@ function normalizeSchedule(value) {
 }
 
 /** 角色条目：YAML 格式，姓名写进正文；关键记忆追加不覆盖 */
+/** 角色绿灯关键词：全名 + 昵称/别名 + 西式姓名拆段 + 尊称 */
+function characterKeys(name, content) {
+    const yaml = parseCharacterYaml(content || '') || {};
+    const out = [];
+    const add = (value) => {
+        const key = String(value ?? '').trim().replace(/^[「『【]+|[」』】]+$/g, '').trim();
+        if (key.length < 2 || key.length > 20) return;
+        if (/^[A-Za-z]\.?$/.test(key)) return;
+        if (isAbstractName(key)) return;
+        if (!out.includes(key)) out.push(key);
+    };
+
+    add(name);
+    for (const field of ['关键词', '昵称', '别名', '称呼']) {
+        const value = yaml[field];
+        const list = Array.isArray(value)
+            ? value
+            : String(value || '').split(/[、,，;；/|\n]+/);
+        for (const item of list) add(item);
+    }
+
+    const tokens = String(name || '').split(/[·•.\s_\-]+/).filter(t => t.length >= 2);
+    if (tokens.length > 1) {
+        for (const token of tokens) add(token);
+        const first = tokens[0];
+        const last = tokens[tokens.length - 1];
+        const gender = String(yaml['性别'] || '');
+        const female = /女|female|^f/i.test(gender);
+        const male = /男|male|^m/i.test(gender);
+        const titles = female
+            ? ['Ms.', 'Mrs.', 'Miss', 'Dr.', 'Prof.']
+            : (male ? ['Mr.', 'Dr.', 'Prof.'] : ['Mx.', 'Dr.']);
+        for (const title of titles) add(`${title} ${last}`);
+        if (female) add(`Madam ${first}`);
+        else if (male) add(`Sir ${first}`);
+    } else if (/^[\u4e00-\u9fa5]{2,4}$/.test(String(name || ''))) {
+        const surname = String(name)[0];
+        const gender = String(yaml['性别'] || '');
+        const female = /女|female|^f/i.test(gender);
+        const male = /男|male|^m/i.test(gender);
+        const titles = female ? ['女士', '小姐', '夫人'] : (male ? ['先生', '少爷'] : ['阁下']);
+        for (const title of titles) add(`${surname}${title}`);
+        add(`${name}${female ? '女士' : (male ? '先生' : '阁下')}`);
+    }
+    return out.slice(0, 20);
+}
+
 async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) {
     const target = book || await stBridge.loadWorldInfoAsync(bookName);
     if (!target || !target.entries) return;
@@ -632,7 +680,7 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
     const content = formatCharacterYaml(name, finalInfo);
     stBridge.upsertEntryInBook(target, `角色·${name}`, content, {
         isConstant: false,
-        keywords: [name],
+        keywords: characterKeys(name, content),
         extra: { position: 0, depth: 0, order: 860 },
     });
     await stBridge.persistLorebook(bookName, target);
@@ -1119,7 +1167,7 @@ async function normalizeEntryLayout(bookName) {
             }
 
             const keys = layout.keyword
-                ? (isChar ? [c.slice(3)] : (c === '地图' ? mapEntryKeys(entry.content) : (c === '社会新闻' ? socialNewsKeys(readAggregate(entry.content), book) : deriveAggregateKeys(readAggregate(entry.content), book))))
+                ? (isChar ? characterKeys(c.slice(3), entry.content) : (c === '地图' ? mapEntryKeys(entry.content) : (c === '社会新闻' ? socialNewsKeys(readAggregate(entry.content), book) : deriveAggregateKeys(readAggregate(entry.content), book))))
                 : [];
             if (JSON.stringify(entry.key || []) !== JSON.stringify(keys)) {
                 entry.key = keys;
@@ -1256,8 +1304,9 @@ export function buildRefreshContract({
     const parts = [];
     if (chars) {
         parts.push(`【角色契约】
-"chars": {"角色名": {"性别":"...","外貌":"一句话","位置":"地图小地点名","人际关系":{"对方真名":"好感 0-100｜信任 0-100｜标签：一句原因"},"状态":"动作/衣着/生理状态/本次剧情时间","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["1-2条具体事件"],"特殊变化":"..."}}
-要求：只写本轮有变化的角色；每个字段写完整，不要合并；位置必须用地图小地点名；人际关系是对象，键是对方真名；用户角色名是「${userName}」，${recordUserChar ? '可以作为一条普通角色档案输出' : '不要输出它的档案'}；角色索引为空时，按角色卡和当前追踪书初始化主要角色（包括必要 NPC）。`);
+"chars": {"角色名": {"性别":"...","外貌":"一句话","位置":"地图小地点名","人际关系":{"对方真名":"好感 0-100｜信任 0-100｜标签：一句原因"},"状态":"动作/衣着/生理状态/本次剧情时间","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["1-2条具体事件"],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}
+要求：只写本轮有变化的角色；每个字段写完整，不要合并；位置必须用地图小地点名；人际关系是对象，键是对方真名；用户角色名是「${userName}」，${recordUserChar ? '可以作为一条普通角色档案输出' : '不要输出它的档案'}；角色索引为空时，按角色卡和当前追踪书初始化主要角色（包括必要 NPC）。
+关键词写正文里可能出现的叫法：昵称/小名/外号、西式姓和名分开、尊称（Mr. Smith、Ms. Smith、Dr. Smith、王先生、李小姐、队长、老板等）；2–20 字，不要只写全名，不要写抽象标题。`);
     }
     if (items) {
         parts.push(`【道具契约】
