@@ -1697,6 +1697,18 @@ export function mountPanel() {
         wrap.querySelector('#nt-prompt-count').textContent = `约 ${chars} 字符 / ${Math.ceil(chars / 2)} token（粗估）`;
     };
 
+    wrap.querySelectorAll('select[data-prompt-mode]').forEach(sel => {
+        sel.addEventListener('change', () => {
+            if (!s.promptModes) s.promptModes = {};
+            s.promptModes[sel.dataset.promptMode] = sel.value;
+            mod.saveSettings();
+            const out = wrap.querySelector('#nt-prompt-preview-out');
+            if (out && out.style.display === 'block') {
+                wrap.querySelector('#nt-prompt-preview')?.click();
+            }
+        });
+    });
+
     wrap.querySelector('#nt-ws-save').onclick = () => {
         wrap.querySelectorAll('.nt-mod-cb').forEach(cb => {
             const id = cb.dataset.modId;
