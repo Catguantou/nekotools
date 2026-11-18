@@ -62,7 +62,14 @@ function mapEntryKeys(data) {
         ...Object.keys((data && data.cities) || {}),
         ...Object.keys((data && data.sites) || {}),
     ].filter(Boolean);
-    return deriveGreenKeys(names, { max: 24 });
+    const keys = deriveGreenKeys(names, { max: 24 });
+    if (keys.length) return keys;
+    // 全被关键词规则过滤时，退一步用清理过的原始地点名（2–6 字）兜底，
+    // 避免写 key=[] 让这条绿灯永远不激活；没有合格名字就留空，不拿「地图」这种元词硬顶。
+    const fallback = [...new Set(names
+        .map(n => String(n || '').replace(/[「」『』【】\[\]《》<>"'“”‘’\s]/g, '').trim())
+        .filter(n => n.length >= 2 && n.length <= 6))].slice(0, 6);
+    return fallback;
 }
 
 /** 解析「A=1天、B=10分钟」这类路程字段 */
@@ -290,6 +297,12 @@ function ensureCity(data, regionName, cityName) {
 /** 合并模型给的地图增量；regions/cities/sites 可嵌套，也兼容旧的 add/del 平铺 */
 export async function applyMapOps(bookName, raw) {
     if (!raw || typeof raw !== 'object') return null;
+    if (!bookName) return null;
+    // 快捷菜单「世界快照/请求更新」会直接调用这里：书被删掉后不能靠 /get 的假书又写回来
+    if (!(await stBridge.bookKnown(bookName))) {
+        console.warn('[nekotools] 世界书不存在，跳过写入:', bookName);
+        return null;
+    }
     const book = await stBridge.loadWorldInfoAsync(bookName, true);
     if (!book || !book.entries) return null;
 

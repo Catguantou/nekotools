@@ -9,10 +9,12 @@
  *
  * 检查项：
  *   1. 所有 .js 能否被解析（ESM 语法检查，复制成 .mjs 再 node --check）
- *   2. 文件是否为合法 UTF-8（有没有出现替换字符 U+FFFD）
+ *   2. 所有 .js / .css 是否为合法 UTF-8（有没有替换字符 U+FFFD）
  *   3. 所有 js 里引用的 #nt-* DOM id 是否真的有模板声明
  *   4. core/worldfmt.js 的档名/存档格式样例测试
- *   5. manifest.json 是否是合法 JSON 且含必需字段
+ *   5. core/worldkeys.js 的绿灯关键词样例测试
+ *   6. 所有 .css 的大括号配对与字符串闭合（跳过注释，字符串内裸换行＝未闭合）
+ *   7. manifest.json 是否是合法 JSON 且含必需字段
  */
 import { readFileSync, readdirSync, statSync, mkdtempSync, copyFileSync, rmSync } from 'node:fs';
 import { join, extname, dirname } from 'node:path';
@@ -22,7 +24,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const failures = [];
-const checked = { syntax: 0, encoding: 0, worldfmt: 0 };
+const checked = { syntax: 0, encoding: 0, css: 0, worldfmt: 0, worldkeys: 0 };
 
 function walk(dir) {
     const out = [];
@@ -62,6 +64,91 @@ for (const file of jsFiles) {
         failures.push(`[语法] ${rel} → ${msg.trim()}`);
     }
     checked.syntax++;
+}
+
+// 样式表：UTF-8 + 大括号配对 + 字符串闭合
+// 只做轻量扫描：跳过 /* */ 注释；' 或 " 内出现裸换行即视为引号没闭合。
+// url(...) 里的内容（data URI 等）先替换成等长空格，避免把里面的引号/括号当成样式语法。
+function stripUrlContents(text) {
+    const out = text.split('');
+    const lower = text.toLowerCase();
+    for (let i = 0; i < text.length; i++) {
+        if (lower.startsWith('url(', i)) {
+            let depth = 1;
+            let j = i + 4;
+            for (; j < text.length && depth > 0; j++) {
+                if (text[j] === '(') depth++;
+                else if (text[j] === ')') depth--;
+                else if (text[j] === '\n') break;
+            }
+            for (let k = i + 4; k < Math.min(j, text.length); k++) {
+                if (out[k] !== '\n') out[k] = ' ';
+            }
+            i = j - 1;
+        }
+    }
+    return out.join('');
+}
+
+const cssFiles = files.filter(f => extname(f) === '.css');
+for (const file of cssFiles) {
+    const rel = file.slice(ROOT.length + 1);
+    const rawText = readFileSync(file, 'utf8');
+    if (rawText.includes('\uFFFD')) {
+        failures.push(`[CSS 编码] ${rel} 含替换字符 U+FFFD（文件被非 UTF-8 写过）`);
+    }
+    checked.encoding++;
+    checked.css++;
+    const text = stripUrlContents(rawText);
+
+    let line = 1;
+    let depth = 0;
+    let mode = 'code'; // code | comment | string
+    let quote = '';
+    let stringStart = 0;
+    for (let i = 0; i < text.length; i++) {
+        const ln = line;
+        const ch = text[i];
+        const next = text[i + 1];
+        if (ch === '\n') line++;
+        if (mode === 'comment') {
+            if (ch === '*' && next === '/') { mode = 'code'; i++; }
+            continue;
+        }
+        if (mode === 'string') {
+            if (ch === '\\') {
+                i++;
+                if (text[i] === '\n') line++;
+                continue;
+            }
+            if (ch === '\n' || ch === '\r') {
+                failures.push(`[CSS] ${rel}:${stringStart} 字符串出现裸换行，引号未闭合`);
+                mode = 'code';
+                quote = '';
+                continue;
+            }
+            if (ch === quote) { mode = 'code'; quote = ''; }
+            continue;
+        }
+        if (ch === '/' && next === '*') { mode = 'comment'; i++; continue; }
+        if (ch === "'" || ch === '"') {
+            mode = 'string';
+            quote = ch;
+            stringStart = ln;
+            continue;
+        }
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+            depth--;
+            if (depth < 0) {
+                failures.push(`[CSS] ${rel}:${ln} 多了一个右大括号 }`);
+                depth = 0;
+            }
+        }
+    }
+    if (mode === 'string') failures.push(`[CSS] ${rel}:${stringStart} 文件结束时字符串仍未闭合`);
+    if (mode === 'comment') failures.push(`[CSS] ${rel} 文件结束时 /* 注释仍未闭合`);
+    if (depth !== 0) failures.push(`[CSS] ${rel} 大括号不配对：文件结束仍有 ${depth} 个 { 未闭合`);
 }
 
 // DOM id 引用：扫所有 js，只认本插件自己的 nt-* 前缀
@@ -227,6 +314,34 @@ try {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }
 
+// core/worldkeys.js 样例测试（纯函数、无 import，复制成 .mjs 后动态 import）
+const worldkeysPath = join(ROOT, 'core', 'worldkeys.js');
+try {
+    const wkTmp = join(tmp, 'worldkeys_test.mjs');
+    copyFileSync(worldkeysPath, wkTmp);
+    const wk = await import(pathToFileURL(wkTmp).href);
+
+    const assertWk = (ok, msg) => {
+        checked.worldkeys++;
+        if (!ok) failures.push(`[worldkeys] ${msg}`);
+    };
+
+    // 正常专名/短词必须通过
+    for (const key of ['王都', '要塞', '议会', '和平', '共和国', '有间客栈', '商会', '常织', '的黎波里', '和平饭店', '公爵府', '黑森林', '被遗忘者']) {
+        assertWk(wk.isValidKey(key) === true, `isValidKey('${key}') 应为 true`);
+    }
+    // 句子碎片/非专名必须拒绝
+    for (const key of ['她会知道', '默认她晚上会', '老妇人的家门', '属匣被开阳府', '与商会谈判', '和商会谈判', '能救下商会吗', '会来', '要去王都', '去酒馆', '来酒馆', '往北走', '与公爵谈判']) {
+        assertWk(wk.isValidKey(key) === false, `isValidKey('${key}') 应为 false`);
+    }
+    // 抽象标题不生成 key，具体地名保留
+    const green = wk.deriveGreenKeys(['王都', '冷光疑云']);
+    assertWk(green.includes('王都'), 'deriveGreenKeys 未保留「王都」');
+    assertWk(!green.includes('冷光疑云'), 'deriveGreenKeys 仍把抽象标题「冷光疑云」当 key');
+} catch (e) {
+    failures.push(`[worldkeys] 样例测试无法执行：${e.message}`);
+}
+
 // manifest
 try {
     const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
@@ -239,7 +354,7 @@ try {
 
 rmSync(tmp, { recursive: true, force: true });
 
-console.log(`检查文件：${checked.syntax} 个 JS，编码校验 ${checked.encoding} 个，DOM id ${ids.length} 个，worldfmt 样例 ${checked.worldfmt} 条`);
+console.log(`检查文件：${checked.syntax} 个 JS，编码校验 ${checked.encoding} 个（含 CSS ${checked.css} 个），DOM id ${ids.length} 个，worldfmt 样例 ${checked.worldfmt} 条，worldkeys 样例 ${checked.worldkeys} 条`);
 if (failures.length) {
     console.error(`\n发现 ${failures.length} 个问题：`);
     for (const f of failures) console.error('  ✗ ' + f);

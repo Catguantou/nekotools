@@ -142,11 +142,8 @@ export async function toggleFavoriteFloor(index) {
     if (!msg.extra) msg.extra = {};
     msg.extra.nekotool_favorite = !msg.extra.nekotool_favorite;
 
-    if (typeof ctx.saveChatConditional === 'function') {
-        ctx.saveChatConditional();
-    } else if (typeof ctx.saveChat === 'function') {
-        ctx.saveChat();
-    }
+    // ST 的 context 只有 saveChat（底层是 saveChatConditional），没有 saveChatConditional
+    await ctx.saveChat?.();
 
     // 更新DOM显示
     const mesEl = document.querySelector(`#chat .mes[mesid="${index}"]`);
@@ -199,16 +196,18 @@ export function exportPureStoryTxt({ favoritesOnly = false, from = 0, to = null 
 
     const chat = ctx.chat || [];
     const start = Math.max(0, Number(from) || 0);
-    const end = (to === null || to === undefined)
-        ? chat.length - 1
-        : Math.min(chat.length - 1, Math.max(0, Number(to)));
+    // 结束楼层非法（NaN/非数字）时按「到末尾」处理：导出是只读操作，宁可多导也不要整段作废
+    const toNum = (to === null || to === undefined) ? null : Number(to);
+    const end = Number.isFinite(toNum)
+        ? Math.min(chat.length - 1, Math.max(0, toNum))
+        : chat.length - 1;
 
     const blocks = [];
     chat.forEach((msg, idx) => {
         if (idx < start || idx > end) return;
         if (favoritesOnly && !msg.extra?.nekotool_favorite) return;
-        // 系统消息不是剧情；隐藏楼层按「数据层 hidden」判断，不再只看系统消息
-        if (skipSystem && msg.is_system) return;
+        // 系统消息不是剧情；插件为省 token 隐藏的楼层不是系统消息，导出时照常当剧情楼层
+        if (skipSystem && msg.is_system && !msg.extra?.nekotool_hidden_by_plugin) return;
         if (skipHidden && msg.extra?.hidden) return;
         if (!msg.mes) return;
 
@@ -349,6 +348,7 @@ export async function cleanChatSlop({ rangeCount = 0, includeUser = false, from 
         const msg = chat[i];
         if (!msg.mes || (msg.is_user && !includeUser)) continue;
 
+        const oldMes = msg.mes;
         let cleaned = msg.mes;
         let changed = false;
 
@@ -370,7 +370,17 @@ export async function cleanChatSlop({ rangeCount = 0, includeUser = false, from 
                 .replace(/\n{3,}/g, '\n\n')
                 .trim();
 
-            backup.push({ i, mes: msg.mes });
+            // 同步当前 swipe 和 display_text，否则切 swipe / 重新渲染后看到的还是没清洗的旧文本
+            const swipeId = msg.swipe_id;
+            const oldSwipe = (Array.isArray(msg.swipes)
+                && Number.isInteger(swipeId)
+                && typeof msg.swipes[swipeId] === 'string') ? msg.swipes[swipeId] : null;
+            const oldDisplay = (msg.extra && typeof msg.extra.display_text === 'string' && msg.extra.display_text === oldMes)
+                ? msg.extra.display_text : null;
+
+            backup.push({ i, mes: oldMes, swipeId, swipe: oldSwipe, display: oldDisplay });
+            if (oldSwipe !== null) msg.swipes[swipeId] = cleaned;
+            if (oldDisplay !== null) msg.extra.display_text = cleaned;
             msg.mes = cleaned;
             msgChanged++;
             refreshMessageDom(i, msg);
@@ -378,8 +388,7 @@ export async function cleanChatSlop({ rangeCount = 0, includeUser = false, from 
     }
 
     if (msgChanged > 0) {
-        if (typeof ctx.saveChat === 'function') ctx.saveChat();
-        else if (typeof ctx.saveChatConditional === 'function') ctx.saveChatConditional();
+        await ctx.saveChat?.();
     }
 
     lastCleanBackup = backup.length ? backup : null;
@@ -392,10 +401,18 @@ export function undoLastClean() {
     const ctx = stBridge.getContext();
     const chat = ctx.chat || [];
     let restored = 0;
-    for (const { i, mes } of lastCleanBackup) {
-        if (!chat[i]) continue;
-        chat[i].mes = mes;
-        refreshMessageDom(i, chat[i]);
+    for (const { i, mes, swipeId, swipe, display } of lastCleanBackup) {
+        const msg = chat[i];
+        if (!msg) continue;
+        msg.mes = mes;
+        // 清洗时同步改过 swipe / display_text，撤销时也要一起还原
+        if (swipe !== null && swipe !== undefined && Array.isArray(msg.swipes) && Number.isInteger(swipeId)) {
+            msg.swipes[swipeId] = swipe;
+        }
+        if (display !== null && display !== undefined && msg.extra && typeof msg.extra.display_text === 'string') {
+            msg.extra.display_text = display;
+        }
+        refreshMessageDom(i, msg);
         restored++;
     }
     if (typeof ctx.saveChat === 'function') ctx.saveChat();

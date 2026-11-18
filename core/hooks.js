@@ -1,10 +1,33 @@
 import { registry } from './registry.js';
 import { StreamGate } from './streamgate.js';
+import { getCtx } from './st_api.js';
 
 const URL_RX = /(\/api\/backends\/(chat-completions|text-completions)\/generate|\/v1\/chat\/completions|:(streamG|g)enerateContent)/;
 
 function getUrl(i) { return typeof i === 'string' ? i : (i && i.url) || ''; }
-function isTarget(u) { try { return URL_RX.test(new URL(u, location.href).pathname); } catch (_) { return URL_RX.test(u); } }
+function isTarget(u) {
+    try {
+        const url = new URL(u, location.href);
+        // 只劫持酒馆同源转发（本机 ST 后端）；插件自己直连外部 API 的请求不碰，
+        // 否则后台更新会被当正常回合注入/结算。
+        if (url.origin !== location.origin) return false;
+        return URL_RX.test(url.pathname);
+    } catch (_) {
+        return URL_RX.test(u);
+    }
+}
+
+/** 插件自己的后台请求带 X-Nekotool-Quiet:1，只跳过这一条，不影响用户同时发的聊天 */
+function isQuietRequest(headers) {
+    try {
+        if (!headers) return false;
+        if (typeof headers.get === 'function') return headers.get('x-nekotool-quiet') === '1';
+        if (Array.isArray(headers)) return headers.some(([k, v]) => String(k).toLowerCase() === 'x-nekotool-quiet' && String(v) === '1');
+        return Object.keys(headers).some(k => k.toLowerCase() === 'x-nekotool-quiet' && String(headers[k]) === '1');
+    } catch (_) {
+        return false;
+    }
+}
 function findLastUser(m) { for (let i = m.length - 1; i >= 0; i--) if (m[i]?.role === 'user') return i; return -1; }
 function extractText(c) { if (typeof c === 'string') return c; if (Array.isArray(c)) return c.filter(p => p && (p.type === 'text' || typeof p.text === 'string')).map(p => p.text || '').join('\n'); return ''; }
 function setText(m, t) {
@@ -20,11 +43,18 @@ function makeCtx(body, url) {
     const msgs = body.messages || [];
     const idx = findLastUser(msgs);
     const userMsgRef = idx >= 0 ? msgs[idx] : null;
+    // 世界模拟靠它数 AI 楼层：请求上下文原本没有聊天记录，不补快照会永远数到 0
+    let chat = [];
+    try {
+        const c = getCtx().chat;
+        if (Array.isArray(c)) chat = c;
+    } catch (_) {}
 
     return {
         url, body, messages: msgs,
         lastUserIndex: idx,
         lastUserText: userMsgRef ? extractText(userMsgRef.content) : '',
+        chat,
         meta: {},
         __nt_pendingSystems: [],
         setLastUserText(t) {
@@ -220,7 +250,9 @@ export function installFetchHook(verbose = false) {
 
         if (input instanceof Request) {
             return input.clone().text().then(b => {
-                const { body, ctx } = processBody(b, url);
+                const { body, ctx } = isQuietRequest(input.headers)
+                    ? { body: b, ctx: null }
+                    : processBody(b, url);
                 return _f.call(this, new Request(input, { body }), init).then(r => wrapResponse(r, ctx));
             }).catch(e => {
                 console.error('[nekotools:hook:read]', e);
@@ -228,7 +260,9 @@ export function installFetchHook(verbose = false) {
             });
         }
         if (init && typeof init.body === 'string') {
-            const { body, ctx } = processBody(init.body, url);
+            const { body, ctx } = isQuietRequest(init.headers) || window.__nt_quiet
+                ? { body: init.body, ctx: null }
+                : processBody(init.body, url);
             return _f.call(this, input, { ...init, body }).then(r => wrapResponse(r, ctx));
         }
         return _f.call(this, input, init);

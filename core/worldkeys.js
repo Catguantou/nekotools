@@ -12,8 +12,20 @@ const ENTITY_SUFFIX = /([\u4e00-\u9fa5]{1,5}(?:区|城|镇|街|港|州|国|山|�
 
 const BAD_PREFIX = /^(居民|市民|百姓|人们|众人|有人|洽谈|谈判|封锁|连夜|已经|正在|开始|继续|发生|出现|造成|导致|引发|抵达|抵京|使节|盟约|使团|商队)/;
 const ABSTRACT_NAME = /(疑云|寻踪|谜团|秘影|暗流|回响|序曲|终章|秘闻|传说|风云|往事|余波|征兆|真相|阴谋|计划|序章|终局)/;
-// 含这些字/词的短句不是专名，不能当绿灯 key
-const KEY_STOP_RX = /(她|他|我|你|您|它|它们|这|那|哪|谁|什么|怎么|为什么|已经|正在|将要|会|能|可以|应该|可能|默认|觉得|认为|知道|看到|听到|说|问|让|被|把|给|从|到|在|是|有|和|与|或|但|而|因为|所以|如果|就|才|再|还|又|很|太|更|最|都|也|只|需要|想|要|开始|继续|然后|同时)/;
+
+// 关键词判定：从「逐字子串」改成按词/位置判断，避免把「王都」「和平」「有间客栈」这类真专名误杀。
+// 多字虚词/代词短语：整词出现即拒
+const KEY_STOP_RX = /(它们|什么|怎么|为什么|已经|正在|将要|可以|应该|可能|默认|觉得|认为|知道|看到|听到|因为|所以|如果|需要|开始|继续|然后|同时)/;
+// 以虚词/介词/指示词/代词/动词开头的不是专名（「去酒馆」「来酒馆」「往北走」「她会知道」）
+const KEY_BAD_START_RX = /^(在|是|把|给|从|到|就|才|再|还|又|很|太|更|最|也|只|想|让|说|问|这|那|哪|谁|但|而|她|他|我|你|您|它|去|来|回|往|进|出)/;
+// 句子碎片里的常见虚词：单个可以出现在「和平/要塞/议会/商会/有间客栈」这类真专名里，
+// 出现 2 个及以上就基本是句子碎片（如「与商会谈判」「能救下商会吗」「会来」「要去王都」）。
+const KEY_STOP_CHARS_ALL = /[和与或能会要有了着过吗呢吧并及去来救谈说问想让被把给从到在是就才再还又很太更最也只这那哪谁]/g;
+
+function stopCharCount(key) {
+    const m = String(key).match(KEY_STOP_CHARS_ALL);
+    return m ? m.length : 0;
+}
 
 export function isValidKey(value) {
     const key = String(value || '').trim();
@@ -21,6 +33,10 @@ export function isValidKey(value) {
     if (STOP_WORDS.has(key)) return false;
     if (ABSTRACT_NAME.test(key)) return false;
     if (KEY_STOP_RX.test(key)) return false;
+    if (KEY_BAD_START_RX.test(key)) return false;
+    // 「被」出现在词中是「属匣被开阳府」这类被动句碎片；开头的「被遗忘者」这类专名放行
+    if (key.indexOf('被') > 0) return false;
+    if (stopCharCount(key) >= 2) return false;
     if (/(家门|家人|时候|之后|之前|上面|下面|里面|外面|后面|前面)$/.test(key)) return false;
     return true;
 }

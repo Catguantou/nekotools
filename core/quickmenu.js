@@ -1059,7 +1059,7 @@ async function showRosterModal(preselectName = '') {
         update.type = 'button';
         update.className = 'nt-quick-btn-text';
         update.textContent = '请求更新';
-        update.addEventListener('click', () => showRefreshModal(item.name));
+        update.addEventListener('click', () => showRefreshModal(item.name).catch(err => toast(`打开请求更新失败：${err && err.message ? err.message : err}`, 'error')));
 
         actions.appendChild(pin);
         actions.appendChild(block);
@@ -1259,7 +1259,7 @@ async function showRelationshipModal(book) {
         meta.textContent = [tierOfName.get(c.name), c.yaml['身份'], c.yaml['位置']].filter(Boolean).join(' · ');
         btn.appendChild(nameEl);
         btn.appendChild(meta);
-        btn.addEventListener('click', () => showRosterModal(c.name));
+        btn.addEventListener('click', () => showRosterModal(c.name).catch(err => toast(`打开角色详情失败：${err && err.message ? err.message : err}`, 'error')));
         nodes.appendChild(btn);
     }
 
@@ -2209,7 +2209,7 @@ async function showQuestsModal() {
         body,
         wide: true,
         footer: [
-            { label: '手动修改', onClick: () => { closeModal(); showEditModal(); } },
+            { label: '手动修改', onClick: () => { closeModal(); showEditModal().catch(err => toast(`打开手动修改失败：${err && err.message ? err.message : err}`, 'error')); } },
             { label: '关闭', primary: true },
         ],
     });
@@ -2237,7 +2237,11 @@ async function showMainCompleteModal(bookName) {
     body.appendChild(card);
 
     const choose = (patch, msg) => async () => {
-        await saveMain(bookName, { ...main, ...patch });
+        const ok = await saveMain(bookName, { ...main, ...patch });
+        if (!ok) {
+            toast('世界书不存在或写入失败，已停止保存', 'error');
+            return false;
+        }
         toast(msg, 'success');
         return true;
     };
@@ -2250,7 +2254,11 @@ async function showMainCompleteModal(bookName) {
             { label: '后日谈', onClick: choose({ 阶段: '后日谈', 进度: 0, 下一步: '日常收尾' }, '已转为后日谈') },
             { label: '新主线', onClick: async () => {
                 mainCompleteShown.delete(bookName);
-                await saveMain(bookName, { 标题: '新主线（待编辑）', 目标: '待定', 阶段: '新主线', 进度: 0, 失败代价: '', 下一步: '在可办事项里编辑' });
+                const ok = await saveMain(bookName, { 标题: '新主线（待编辑）', 目标: '待定', 阶段: '新主线', 进度: 0, 失败代价: '', 下一步: '在可办事项里编辑' });
+                if (!ok) {
+                    toast('世界书不存在或写入失败，已停止保存', 'error');
+                    return false;
+                }
                 toast('已重置为新主线，可在可办事项里改', 'success');
                 return true;
             } },
@@ -2349,9 +2357,11 @@ async function buildAutoRefreshPrompt(book) {
     const roster = (await readRoster(book)).filter(c => String(c.tier || '').toUpperCase() !== 'T4');
     const charNames = roster.map(c => c.name);
     const userCharName = stBridge.getUserName() || '用户';
-    const recordUserChar = settings.recordUserCharacter === true;
+    const recordUserChar = settings.get('worldsim').recordUserCharacter === true;
     const chatNow = stBridge.getContext().chat || [];
-    const aiCount = chatNow.filter(m => m && !m.is_user && !m.is_system).length;
+    const aiCount = chatNow.filter(m => m && !m.is_user && (
+        !m.is_system || m.extra?.nekotool_hidden_by_plugin || m.extra?.nekotool_user_hidden
+    )).length;
     const wsCfg = settings.get('worldsim') || {};
     const bigLimit = Number(wsCfg.bigSummaryLimit) || 0;
     const wantBigSummary = wsCfg.enableBigSummary === true
@@ -2439,14 +2449,14 @@ let autoRefreshEventAt = 0;
 let autoRefreshSig = '';
 let autoRefreshSigAt = 0;
 
-function showAutoUpdateBanner() {
+function showAutoUpdateBanner(text = '正在全量更新，建议更新结束后再继续下一轮') {
     let el = document.getElementById('nt-auto-updating');
     if (!el) {
         el = document.createElement('div');
         el.id = 'nt-auto-updating';
-        el.textContent = '正在全量更新，建议更新结束后再继续下一轮';
         document.body.appendChild(el);
     }
+    el.textContent = text;
     el.style.display = 'flex';
 }
 
@@ -2457,7 +2467,7 @@ function hideAutoUpdateBanner() {
 
 async function runAutoFullRefresh() {
     const api = settings.get('worldsim').refreshApi || {};
-    if (!api.autoFull || !api.url) return;
+    if (!api.autoFull || (!String(api.url || '').trim() && !String(api.source || '').trim())) return;
     if (autoRefreshRunning) {
         autoRefreshPending = true;
         return;
@@ -2479,7 +2489,7 @@ async function runAutoFullRefresh() {
             const data = JSON.parse(text.slice(a, b + 1));
             const summary = await applyRefreshData(book, data, currentLayerNo());
             if (summary.summary || summary.bigSummary) {
-                await stBridge.hideSummarizedMessages(Number(settings.get('worldsim').hideKeepCount) || 0);
+                await stBridge.hideSummarizedMessages(Number(settings.get('worldsim').hideKeepCount) || 0, book);
             }
             const bits = [
                 summary.chars ? `角色 ${summary.chars}` : '',
@@ -2546,30 +2556,45 @@ async function generateViaStRelay(prompt, cfg) {
         payload.vertexai_express_project_id = cfg.vertexProject || undefined;
         payload.vertexai_region = cfg.vertexRegion || 'us-central1';
     }
-    const res = await fetch('/api/backends/chat-completions/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
-        body: JSON.stringify(payload),
-    });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`酒馆转发 API ${res.status}: ${text.slice(0, 300)}`);
-    let data = null;
-    try { data = JSON.parse(text); } catch {
-        const line = text.split('\n').reverse().find(l => l.startsWith('data: ') && !l.includes('[DONE]'));
-        if (line) {
-            try { data = JSON.parse(line.slice(6)); } catch {}
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 180000);
+    try {
+        const res = await fetch('/api/backends/chat-completions/generate', {
+            method: 'POST',
+            // X-Nekotool-Quiet 只让 fetch 钩子跳过这一条后台请求；不设全局静默，
+            // 否则用户在更新期间正常发消息会不被注入/不结算。
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token, 'X-Nekotool-Quiet': '1' },
+            body: JSON.stringify(payload),
+            signal: ctrl.signal,
+        });
+        const text = await res.text();
+        if (!res.ok) throw new Error(`酒馆转发 API ${res.status}: ${text.slice(0, 300)}`);
+        let data = null;
+        try { data = JSON.parse(text); } catch {
+            const line = text.split('\n').reverse().find(l => l.startsWith('data: ') && !l.includes('[DONE]'));
+            if (line) {
+                try { data = JSON.parse(line.slice(6)); } catch {}
+            }
         }
+        if (!data) throw new Error('酒馆转发返回的不是 JSON');
+        return data?.choices?.[0]?.message?.content
+            ?? data?.choices?.[0]?.text
+            ?? data?.content?.[0]?.text
+            ?? data?.content
+            ?? data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('')
+            ?? '';
+    } finally {
+        clearTimeout(timer);
     }
-    if (!data) throw new Error('酒馆转发返回的不是 JSON');
-    return data?.choices?.[0]?.message?.content
-        ?? data?.choices?.[0]?.text
-        ?? data?.content?.[0]?.text
-        ?? data?.content
-        ?? data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('')
-        ?? '';
 }
 
 async function generateRefreshApi(prompt, cfg) {
+    if (!cfg.key && cfg.profileId) {
+        try {
+            const storedKey = await getSecret(cfg.profileId);
+            if (storedKey) cfg = { ...cfg, key: storedKey };
+        } catch (_) {}
+    }
     if ((cfg.transport || 'relay') === 'relay') {
         return await generateViaStRelay(prompt, cfg);
     }
@@ -2591,13 +2616,13 @@ async function generateRefreshApi(prompt, cfg) {
         };
     } else if (type === 'gemini') {
         const base = new URL(url);
-        const key = cfg.key ? `?key=${encodeURIComponent(cfg.key)}` : '';
+        if (cfg.key) headers['x-goog-api-key'] = cfg.key;
         base.pathname = `${base.pathname.replace(/\/+$/, '')}/models/${encodeURIComponent(cfg.model || 'gemini-1.5-flash')}:generateContent`;
-        base.search = key;
+        base.search = '';
         return await (async () => {
             const res = await fetch(base.toString(), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
                     systemInstruction: { parts: [{ text: prompt }] },
                     contents: [{ role: 'user', parts: [{ text: '开始更新。' }] }],
@@ -2663,7 +2688,7 @@ async function showRefreshModal(preselectName = '') {
     const roster = await readRoster(book);
     const userCharName = stBridge.getUserName() || '';
     const charList = [...roster];
-    if (settings.recordUserCharacter === true && userCharName && !charList.some(c => c.name === userCharName)) {
+    if (settings.get('worldsim').recordUserCharacter === true && userCharName && !charList.some(c => c.name === userCharName)) {
         charList.push({ name: userCharName, tier: '用户', location: '当前' });
     }
 
@@ -2816,7 +2841,7 @@ async function showRefreshModal(preselectName = '') {
         settings.set('worldsim', { refreshApi: { ...(settings.get('worldsim').refreshApi || {}), autoFull: autoCb.checked } });
     });
 
-    const save = async () => {
+    const doSave = async () => {
         const selected = Object.entries(checks).filter(([, cb]) => cb.checked).map(([k]) => k);
         if (!selected.length) {
             toast('至少勾选一个类别', 'warning');
@@ -2878,7 +2903,7 @@ async function showRefreshModal(preselectName = '') {
 
         const schema = [];
         const userName = stBridge.getUserName() || '用户';
-        const recordUserChar = settings.recordUserCharacter === true;
+        const recordUserChar = settings.get('worldsim').recordUserCharacter === true;
         if (doChars) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}`);
         if (selected.includes('world')) schema.push('"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}');
         if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}');
@@ -2934,9 +2959,19 @@ ${contract}
             const apiCfg = { ...savedApi, manualChoice: apiChoice.value, autoFull: autoCb.checked };
             settings.set('worldsim', { refreshApi: apiCfg });
             const useSub = apiChoice.value === 'secondary' && Boolean(apiCfg.url || apiCfg.source);
-            const raw = useSub
-                ? await generateRefreshApi(prompt, apiCfg)
-                : await generateQuiet(prompt);
+            let raw;
+            if (useSub) {
+                raw = await generateRefreshApi(prompt, apiCfg);
+            } else {
+                // 主 API 的静默生成走 ST 内部全局静默（无法按请求打标记），
+                // 期间用户发消息会被跳过：用横幅明确提示。
+                showAutoUpdateBanner('正在后台更新（主 API），建议更新结束再继续下一轮');
+                try {
+                    raw = await generateQuiet(prompt);
+                } finally {
+                    hideAutoUpdateBanner();
+                }
+            }
             const text = String(raw || '');
             const a = text.indexOf('{');
             const b = text.lastIndexOf('}');
@@ -2951,7 +2986,7 @@ ${contract}
             }
             const summary = await applyRefreshData(book, data, currentLayerNo());
             if (summary.summary || summary.bigSummary) {
-                await stBridge.hideSummarizedMessages(Number(settings.get('worldsim').hideKeepCount) || 0);
+                await stBridge.hideSummarizedMessages(Number(settings.get('worldsim').hideKeepCount) || 0, book);
             }
             const bits = [
                 summary.chars ? `角色 ${summary.chars}` : '',
@@ -2971,6 +3006,17 @@ ${contract}
             console.warn('[nekotools] 请求更新失败', e);
             toast(e && e.message ? `更新失败：${e.message}` : '更新失败', 'error');
             return false;
+        }
+    };
+
+    let updating = false;
+    const save = async () => {
+        if (updating) return false;
+        updating = true;
+        try {
+            return await doSave();
+        } finally {
+            updating = false;
         }
     };
 
@@ -2996,7 +3042,7 @@ async function showEditModal() {
         return;
     }
 
-    const titles = ['主线', '支线', '世界局势', '地图', '索引', '道具', '伏笔', '计划', '小总结', '剧情推演'];
+    const titles = ['主线', '支线', '世界·国家', '世界·势力', '社会新闻', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
     const body = document.createElement('div');
     body.className = 'nt-edit';
     const select = document.createElement('select');
@@ -3024,13 +3070,16 @@ async function showEditModal() {
     const defaults = {
         '主线': { order: 810, pos: 0, constant: true },
         '支线': { order: 812, pos: 0, constant: true },
-        '世界局势': { order: 800, pos: 0, constant: true },
+        '世界·国家': { order: 999, pos: 0, constant: false },
+        '世界·势力': { order: 999, pos: 0, constant: false },
+        '社会新闻': { order: 999, pos: 0, constant: false },
         '地图': { order: 830, pos: 0, constant: true },
         '索引': { order: 850, pos: 0, constant: true },
         '道具': { order: 900, pos: 0, constant: false },
         '伏笔': { order: 920, pos: 0, constant: false },
         '计划': { order: 910, pos: 0, constant: true },
         '小总结': { order: 999, pos: 4, constant: true },
+        '大总结': { order: 9999, pos: 4, constant: true },
         '剧情推演': { order: 999, pos: 0, constant: true },
     };
 
@@ -3042,8 +3091,6 @@ async function showEditModal() {
             problem = '主线至少要有「标题：」或「目标：」';
         } else if (title === '支线' && !/【以下为支线】/.test(text) && !/^-\s*\S+/m.test(text)) {
             problem = '支线需要「【以下为支线】」或至少一行「- 名称｜…」';
-        } else if (title === '世界局势' && !/【国家】|【势力】|【社会新闻】/.test(text)) {
-            problem = '世界局势需要【国家】/【势力】/【社会新闻】段';
         } else if (title === '地图' && !/【大地图】/.test(text)) {
             problem = '地图需要【大地图】段';
         } else if (title === '索引' && !/【角色】/.test(text)) {
@@ -3053,20 +3100,25 @@ async function showEditModal() {
             toast(`${problem}，已停止保存`, 'error');
             return false;
         }
+        const fresh = await stBridge.loadWorldInfoAsync(book, true);
+        if (!fresh || !fresh.entries || !(await stBridge.bookExists(book))) {
+            toast('追踪书不存在或已被删除，已停止保存', 'error');
+            return false;
+        }
         if (!(await backupBeforeWrite())) return false;
-        const entry = find(title);
+        const entry = Object.values(fresh.entries).find(e => e && e.comment === title) || null;
         const fallback = defaults[title] || { order: 999, pos: 0, constant: true };
         const extra = {
             position: entry ? entry.position : fallback.pos,
             depth: entry ? entry.depth : 0,
             order: entry ? entry.order : fallback.order,
         };
-        stBridge.upsertEntryInBook(bookData, title, area.value, {
+        stBridge.upsertEntryInBook(fresh, title, area.value, {
             isConstant: entry ? Boolean(entry.constant) : fallback.constant,
             keywords: entry && Array.isArray(entry.key) ? entry.key : [],
             extra,
         });
-        await stBridge.persistLorebook(book, bookData);
+        await stBridge.persistLorebook(book, fresh);
         toast(`已保存「${title}」`, 'success');
         return true;
     };
@@ -3168,12 +3220,12 @@ function buildPop() {
             if (item.key === 'clock') showClockModal();
             else if (item.key === 'news') showNewsModal();
             else if (item.key === 'log') showWorldLogModal();
-            else if (item.key === 'roster') showRosterModal();
-            else if (item.key === 'action') showActionModal();
-            else if (item.key === 'map') showMapModal();
-            else if (item.key === 'quests') showQuestsModal();
-            else if (item.key === 'refresh') showRefreshModal();
-            else if (item.key === 'edit') showEditModal();
+            else if (item.key === 'roster') showRosterModal().catch(err => toast(`打开角色管理失败：${err && err.message ? err.message : err}`, 'error'));
+            else if (item.key === 'action') showActionModal().catch(err => toast(`打开快捷行动失败：${err && err.message ? err.message : err}`, 'error'));
+            else if (item.key === 'map') showMapModal().catch(err => toast(`打开地图失败：${err && err.message ? err.message : err}`, 'error'));
+            else if (item.key === 'quests') showQuestsModal().catch(err => toast(`打开可办事项失败：${err && err.message ? err.message : err}`, 'error'));
+            else if (item.key === 'refresh') showRefreshModal().catch(err => toast(`打开请求更新失败：${err && err.message ? err.message : err}`, 'error'));
+            else if (item.key === 'edit') showEditModal().catch(err => toast(`打开手动修改失败：${err && err.message ? err.message : err}`, 'error'));
             else if (item.key === 'slots') showSlotsModal();
             else showSoon(item.label);
         });

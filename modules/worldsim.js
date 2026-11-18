@@ -35,6 +35,7 @@ const defaultSettings = {
     tickMaxChars: 2,
     staleAfter: 5,
     enableAntiLazy: true,
+    recordUserCharacter: false,
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
         world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '',
@@ -312,6 +313,9 @@ function markWorldReady(bookName, book) {
 let lastChatId = null;
 // 上一次已应用的更新快照：重 roll / 删除时回滚
 let lastAppliedUpdate = null;
+// 本轮生成类型（normal/regenerate/swipe/continue…），由 GENERATION_STARTED 记录；
+// swipe/continue 是就地改最后一条消息，层号不能 +1。
+let lastGenerationType = '';
 
 function cloneBook(book) {
     try {
@@ -496,8 +500,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
         list.push({ role: 'system', content: buildRosterPrompt(bookName) });
     }
 
-    if (settings.enableMap) list.push({ role: 'system', content: buildMapPrompt() });
-    if (settings.enableQuests) list.push({ role: 'system', content: buildQuestPrompt() });
+    // 地图/主线的「每轮增量契约」也要走提示词模式：否则面板里把 map/quest
+    // 设成关闭或替换时，只有开局那 5 轮生效，之后仍会照常注入默认契约。
+    if (settings.enableMap) pushTrackedPrompt(list, 'map', buildMapPrompt());
+    if (settings.enableQuests) pushTrackedPrompt(list, 'quest', buildQuestPrompt());
 
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
@@ -568,7 +574,7 @@ function buildBigSummaryPrompt() {
 
 function externalAutoFullActive() {
     const api = coreSettings.get('worldsim').refreshApi;
-    return Boolean(api && api.autoFull && String(api.url || '').trim());
+    return Boolean(api && api.autoFull && (String(api.url || '').trim() || String(api.source || '').trim()));
 }
 
 function buildSystemMessages(needBig, includeTracking = true, bookName = '', needGenesis = false, needMapGenesis = false, needQuestGenesis = false) {
@@ -1568,7 +1574,7 @@ export function getDefaultPrompts() {
             bigSummary: buildBigSummaryPrompt(),
             roster: tagText('nekotools:track.roster'),
             genesis: buildGenesisPrompt(),
-            tick: buildTickPrompt({ worldTick: true, targets: [] }),
+            tick: buildTickPrompt({ needWorldTick: true, targets: [] }),
             map: buildMapPrompt(),
             quest: buildQuestPrompt(),
             cognition: buildCognitionPrompt(),
@@ -1711,6 +1717,7 @@ registry.register({
         if (ctx.eventSource && ctx.eventTypes?.GENERATION_STARTED) {
             ctx.eventSource.on(ctx.eventTypes.GENERATION_STARTED, (type) => {
                 const t = typeof type === 'string' ? type : (type && type.type);
+                lastGenerationType = t || '';
                 if (t === 'regenerate' || t === 'swipe') {
                     restoreLastApplied('重新生成');
                 }
@@ -1731,32 +1738,53 @@ registry.register({
         loadSettings();
         if (!settings.enabled) return;
 
-        // 轮数直接从聊天记录里数，不写任何本地存储
+        // 先取本轮生成类型；impersonate 只是代写用户发言、结果写回输入框，不产生楼层，
+        // 不注入追踪契约、结算也直接跳过（否则会把旧楼层当成新回合写世界书）。
+        const genType = lastGenerationType;
+        lastGenerationType = '';
+        if (genType === 'impersonate') {
+            ctx.__nt_skipSettle = true;
+            return;
+        }
+
+        // 轮数直接从聊天记录里数，不写任何本地存储。
+        // 不排除 is_system：插件自己的小总结会把旧楼 /hide（is_system=true），
+        // 排除后会把 AI 轮数永远卡在保留条数，大总结/世界 tick 永不触发；
+        // 但 ST 原生 system 消息（system-messages.js，is_system=true 且没有插件标记）不算 AI 楼层。
         const chat = ctx.chat || [];
-        const aiCount = chat.filter(m => m && !m.is_user && !m.is_system).length;
+        const aiCount = chat.filter(m => m && !m.is_user && (
+            !m.is_system
+            || m.extra?.nekotool_hidden_by_plugin
+            || m.extra?.nekotool_user_hidden
+        )).length;
 
         let needBig = false;
         const bigLimit = Number(settings.bigSummaryLimit) || 0;
         if (settings.enableBigSummary && bigLimit > 0 && aiCount > 0 && aiCount % bigLimit === 0) {
             needBig = true;
         }
-        ctx.__ntNeedBig = needBig;
 
         // 追踪书确实存在才注入追踪契约；被删掉时不复活、也不让模型空写
         const bookName = getLorebookName();
         // 记下本轮用的是哪一档：生成期间用户切档时，结算仍写回发起时那一档
         ctx.__nt_bookName = bookName;
-        // 本轮回复将落在第几层（1 基）。onResponse 时 chat 可能还没算上这条回复
-        ctx.__nt_replyLayer = chat.length + 1;
+        // 本轮回复将落在第几层（1 基）。onResponse 时 chat 可能还没算上这条回复。
+        // swipe / continue 是就地改最后一条消息，层号不 +1；其余（含 regenerate，ST 会先删旧楼）都 +1。
+        const inPlace = genType === 'swipe' || genType === 'continue';
+        ctx.__nt_replyLayer = chat.length + (inPlace ? 0 : 1);
         const includeTracking = Boolean(bookName) && stBridge.getWorldNames().includes(bookName);
         ctx.__nt_includeTracking = includeTracking;
         if (!includeTracking) {
             console.warn('[worldsim] 追踪书不存在，本轮只注入世界规则与状态栏，跳过追踪契约:', bookName || '(无角色)');
         }
 
+        // 副 API 自动全量开启时，主 API 只写正文：不注入开局生成、不发 tick 更新提示。
+        // 必须放在 genesis 计数之前，否则 externalAuto 下 tries 仍会自增、白白烧掉预算。
+        const externalAuto = externalAutoFullActive();
+
         // 开局世界生成：世界局势还没内容时，前几轮自动补全整个世界
         const tries = genesisTries.get(bookName) || 0;
-        const needGenesis = includeTracking && settings.enableWorld && !worldReady.get(bookName) && tries < 5;
+        const needGenesis = includeTracking && settings.enableWorld && !worldReady.get(bookName) && !externalAuto && tries < 5;
         if (needGenesis) {
             genesisTries.set(bookName, tries + 1);
             console.log(`[worldsim] 注入开局世界生成（第 ${tries + 1} 次）`);
@@ -1764,7 +1792,7 @@ registry.register({
 
         // 开局地图生成：地图还没足够地点时补全
         const mapTriesNow = mapTries.get(bookName) || 0;
-        const needMapGenesis = includeTracking && settings.enableMap && !mapReady.get(bookName) && mapTriesNow < 5;
+        const needMapGenesis = includeTracking && settings.enableMap && !mapReady.get(bookName) && !externalAuto && mapTriesNow < 5;
         if (needMapGenesis) {
             mapTries.set(bookName, mapTriesNow + 1);
             console.log(`[worldsim] 注入开局地图生成（第 ${mapTriesNow + 1} 次）`);
@@ -1772,7 +1800,7 @@ registry.register({
 
         // 开局主线/支线生成
         const questTriesNow = questTries.get(bookName) || 0;
-        const needQuestGenesis = includeTracking && settings.enableQuests && !questReady.get(bookName) && questTriesNow < 5;
+        const needQuestGenesis = includeTracking && settings.enableQuests && !questReady.get(bookName) && !externalAuto && questTriesNow < 5;
         if (needQuestGenesis) {
             questTries.set(bookName, questTriesNow + 1);
             console.log(`[worldsim] 注入开局主线生成（第 ${questTriesNow + 1} 次）`);
@@ -1783,9 +1811,7 @@ registry.register({
             ctx.__nt_pendingSystems.push(msg);
         }
 
-        // 后台 tick：插件硬调度角色 + 世界轮值
-        // 副 API 自动全量开启时，主 API 只写正文，不再发 tick 更新提示。
-        const externalAuto = externalAutoFullActive();
+        // 后台 tick：插件硬调度角色 + 世界轮值（externalAuto 已在上文判断）
         const tickTargets = settings.enableTicks && includeTracking && !externalAuto
             ? computeTickTargets(bookName, ctx.__nt_replyLayer || chat.length + 1)
             : [];
@@ -1801,9 +1827,16 @@ registry.register({
         }
     },
 
-    async onResponse({ captured }) {
+    async onResponse({ captured, ctx }) {
         loadSettings();
         if (!settings.enabled) return;
+
+        const reqCtx = ctx && typeof ctx === 'object' ? ctx : {};
+        // impersonate 代写不产生楼层，onRequest 已标记跳过，这里也不结算
+        if (reqCtx.__nt_skipSettle) {
+            delete reqCtx.__nt_skipSettle;
+            return;
+        }
 
         // 快速重 roll 时排队等待上一次结算写完，而不是直接丢弃本轮内容
         const waitStart = Date.now();
@@ -1818,14 +1851,13 @@ registry.register({
         try {
 
         // 用 onRequest 时记下的那一档，避免生成期间切档把结算写进新档
-        const ctx = stBridge.getContext();
-        const currentLorebook = ctx.__nt_bookName || getLorebookName();
+        const currentLorebook = reqCtx.__nt_bookName || getLorebookName();
         if (!currentLorebook) return;
-        const replyLayer = Number(ctx.__nt_replyLayer) || (Array.isArray(ctx.chat) ? ctx.chat.length : 0);
-        const wasTracking = ctx.__nt_includeTracking === true;
-        delete ctx.__nt_bookName;
-        delete ctx.__nt_replyLayer;
-        delete ctx.__nt_includeTracking;
+        const replyLayer = Number(reqCtx.__nt_replyLayer) || (Array.isArray(stBridge.getContext().chat) ? stBridge.getContext().chat.length : 0);
+        const wasTracking = reqCtx.__nt_includeTracking === true;
+        delete reqCtx.__nt_bookName;
+        delete reqCtx.__nt_replyLayer;
+        delete reqCtx.__nt_includeTracking;
 
         // 先收拾模型漏到正文的标签/推演块
         sanitizeLastMessage();
@@ -1859,7 +1891,7 @@ registry.register({
         // 应用前存一份快照，供重 roll / 删消息时回滚
         lastAppliedUpdate = {
             chatId: stBridge.getContext().chatId ?? null,
-            mesId: (stBridge.getContext().chat || []).length - 1,
+            mesId: Math.max(0, replyLayer - 1),
             bookName: currentLorebook,
             pre: cloneBook(book),
             clockBefore: getSlotClock(currentLorebook),
@@ -1895,7 +1927,7 @@ registry.register({
             });
         }
         if (captured.ws_summary || captured.ws_big_summary) {
-            await stBridge.hideSummarizedMessages(settings.hideKeepCount);
+            await stBridge.hideSummarizedMessages(settings.hideKeepCount, currentLorebook);
         }
 
         if (captured.ws_preview && settings.enablePreview) {
@@ -2076,7 +2108,16 @@ registry.register({
             lines.push(`条目正文合计：${chars} 字（约 ${Math.round(chars / 1.6)} tokens）`);
         }
 
-        const systems = buildSystemMessages(false, exists, bookName);
+        // 预览要与首轮实际注入一致：按 onRequest 的条件（只读内存 Map，不自增计数）算出开局生成段
+        const externalAuto = externalAutoFullActive();
+        const genesisTriesNow = genesisTries.get(bookName) || 0;
+        const mapTriesNow = mapTries.get(bookName) || 0;
+        const questTriesNow = questTries.get(bookName) || 0;
+        const needGenesis = exists && settings.enableWorld && !worldReady.get(bookName) && !externalAuto && genesisTriesNow < 5;
+        const needMapGenesis = exists && settings.enableMap && !mapReady.get(bookName) && !externalAuto && mapTriesNow < 5;
+        const needQuestGenesis = exists && settings.enableQuests && !questReady.get(bookName) && !externalAuto && questTriesNow < 5;
+
+        const systems = buildSystemMessages(false, exists, bookName, needGenesis, needMapGenesis, needQuestGenesis);
         let sysChars = 0;
         lines.push(`\n注入契约：${systems.length} 段`);
         for (const s of systems) {

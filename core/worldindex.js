@@ -184,6 +184,11 @@ export async function readIndex(bookName) {
 
 export async function writeIndex(bookName, sections) {
     if (!bookName) return false;
+    // 快捷菜单的钉住/调级/花名册操作会直接写索引：书被删掉后不能靠 /get 的假书又写回来
+    if (!(await stBridge.bookKnown(bookName))) {
+        console.warn('[nekotools] 世界书不存在，跳过写入:', bookName);
+        return false;
+    }
     const book = await loadBook(bookName);
     if (!book || !book.entries) return false;
 

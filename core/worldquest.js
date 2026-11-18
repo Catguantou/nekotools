@@ -14,6 +14,16 @@ function findEntry(book, title) {
     return Object.values(book.entries).find(e => e && e.comment === title) || null;
 }
 
+/** 支线聚合条目的绿灯 key；关键词全被过滤时退回清理过的原始短名，避免 key=[] 永不激活 */
+function questEntryKeys(data) {
+    const names = Object.keys(data || {}).map(n => String(n || '').trim()).filter(Boolean);
+    const keys = deriveGreenKeys(names);
+    if (keys.length) return keys;
+    return [...new Set(names
+        .map(n => n.replace(/[「」『』【】\[\]《》<>"'“”‘’\s]/g, '').trim())
+        .filter(n => n.length >= 2 && n.length <= 6))].slice(0, 6);
+}
+
 export function parseMain(content) {
     const out = {};
     for (const raw of String(content || '').split('\n')) {
@@ -71,6 +81,12 @@ export async function applyMain(bookName, raw) {
 
 /** 直接覆盖主线（手动编辑用） */
 export async function saveMain(bookName, main) {
+    if (!bookName) return null;
+    // 面板/快捷菜单直接调用，写入前没有存在性校验：书被删掉后不能又写回来
+    if (!(await stBridge.bookKnown(bookName))) {
+        console.warn('[nekotools] 世界书不存在，跳过写入:', bookName);
+        return null;
+    }
     const book = await stBridge.loadWorldInfoAsync(bookName, true);
     if (!book || !book.entries) return null;
     const entry = findEntry(book, MAIN_TITLE);
@@ -233,7 +249,7 @@ export async function pruneQuests(bookName, todayText = '') {
     if (!result.removed.length && !result.marked.length) return result;
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: false,
-        keywords: deriveGreenKeys(Object.keys(data)),
+        keywords: questEntryKeys(data),
         extra: { position: 0, depth: 0, order: 812 },
     });
     await stBridge.persistLorebook(bookName, book);
@@ -262,6 +278,12 @@ export async function readQuests(bookName) {
 
 export async function applyQuests(bookName, raw, { today = '' } = {}) {
     if (!raw || typeof raw !== 'object') return null;
+    if (!bookName) return null;
+    // 快捷菜单「世界快照/请求更新」会直接调用这里：书被删掉后不能靠 /get 的假书又写回来
+    if (!(await stBridge.bookKnown(bookName))) {
+        console.warn('[nekotools] 世界书不存在，跳过写入:', bookName);
+        return null;
+    }
     const book = await stBridge.loadWorldInfoAsync(bookName, true);
     if (!book || !book.entries) return null;
     const entry = findEntry(book, QUEST_TITLE);
@@ -282,7 +304,7 @@ export async function applyQuests(bookName, raw, { today = '' } = {}) {
 
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: false,
-        keywords: deriveGreenKeys(Object.keys(data)),
+        keywords: questEntryKeys(data),
         extra: { position: 0, depth: 0, order: 812 },
     });
     await stBridge.persistLorebook(bookName, book);
@@ -302,7 +324,7 @@ export async function saveQuests(bookName, quests) {
     }
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: false,
-        keywords: deriveGreenKeys(Object.keys(data)),
+        keywords: questEntryKeys(data),
         extra: { position: 0, depth: 0, order: 812 },
     });
     await stBridge.persistLorebook(bookName, book);

@@ -6,6 +6,12 @@ const GUIDE_VERSION = 1;
 const MASK_ID = 'nt-guide-mask';
 let mounted = false;
 let currentStep = 0;
+// 第 2 步选的运行方式：每步都会重渲染 body，DOM 里的 radio 到第 4 步已经被替换，
+// 所以翻页时先把选择记在这里，第 4 步再落盘。
+let pendingGuideMode = '';
+// 用户是否真的动过这两组选项：没动过就别用默认值覆盖用户之前手动改的设置
+let modeTouched = false;
+let apiTouched = false;
 
 const STEPS = [
     {
@@ -55,20 +61,22 @@ const STEPS = [
         subtitle: '主 API 写故事，副 API 可选',
         body: () => {
             const hasSub = hasSecondaryApi();
+            const mode = pendingGuideMode || 'light';
+            const ck = (v) => mode === v ? 'checked' : '';
             return `
                 <div class="nt-guide-options">
                     <label class="nt-guide-option">
-                        <input type="radio" name="nt-guide-mode" value="light" checked>
+                        <input type="radio" name="nt-guide-mode" value="light" ${ck('light')}>
                         <span class="nt-guide-radio"></span>
                         <span><b>轻量模式</b><small>只用主 API，每轮自动增量更新。</small></span>
                     </label>
                     <label class="nt-guide-option">
-                        <input type="radio" name="nt-guide-mode" value="split">
+                        <input type="radio" name="nt-guide-mode" value="split" ${ck('split')}>
                         <span class="nt-guide-radio"></span>
                         <span><b>分开模式</b><small>主 API 写正文，副 API 每轮全量更新世界书。</small></span>
                     </label>
                     <label class="nt-guide-option">
-                        <input type="radio" name="nt-guide-mode" value="later">
+                        <input type="radio" name="nt-guide-mode" value="later" ${ck('later')}>
                         <span class="nt-guide-radio"></span>
                         <span><b>先不决定</b><small>之后在 NEKOTOOL 设置里改。</small></span>
                     </label>
@@ -85,6 +93,12 @@ const STEPS = [
                 closeGuide(true);
                 window.dispatchEvent(new CustomEvent('nekotool:open-api-settings'));
             };
+            // 记住运行方式的选择：沿用上次落盘的选择，没有才默认轻量模式
+            const picked = document.querySelector('input[name="nt-guide-mode"]:checked');
+            pendingGuideMode = picked ? picked.value : (pendingGuideMode || 'light');
+            document.querySelectorAll('input[name="nt-guide-mode"]').forEach(r => {
+                r.addEventListener('change', () => { pendingGuideMode = r.value; modeTouched = true; });
+            });
         },
     },
     {
@@ -110,6 +124,8 @@ const STEPS = [
         subtitle: '不会自动扣 API，也不会自动初始化',
         body: () => {
             const hasSub = hasSecondaryApi();
+            const savedChoice = (settings.get('worldsim').refreshApi || {}).manualChoice === 'secondary' ? 'secondary' : 'main';
+            const ck = (v) => savedChoice === v ? 'checked' : '';
             return `
                 <p class="nt-guide-lead">引导不会自动初始化世界书，也不会自动发请求。先自己玩也可以，需要时再点「请求更新」。</p>
                 ${hasSub ? `
@@ -117,11 +133,11 @@ const STEPS = [
                     <b>之后手动请求更新默认用：</b>
                     <div class="nt-guide-options compact">
                         <label class="nt-guide-option">
-                            <input type="radio" name="nt-guide-update-api" value="main" checked>
+                            <input type="radio" name="nt-guide-update-api" value="main" ${ck('main')}>
                             <span class="nt-guide-radio"></span><span><b>主 API</b><small>酒馆当前 API</small></span>
                         </label>
                         <label class="nt-guide-option">
-                            <input type="radio" name="nt-guide-update-api" value="secondary">
+                            <input type="radio" name="nt-guide-update-api" value="secondary" ${ck('secondary')}>
                             <span class="nt-guide-radio"></span><span><b>副 API</b><small>设置里保存的副 API</small></span>
                         </label>
                     </div>
@@ -185,13 +201,35 @@ function renderStep() {
             renderStep();
             return;
         }
+        // 第 2 步的运行方式：落盘；只有用户真的动过选择才联动「每轮自动全量更新」，
+        // 免得重开引导直接点完成就把用户后来手动改的 autoFull 覆盖掉。
+        const modePick = document.querySelector('input[name="nt-guide-mode"]:checked');
+        const modeValue = modePick ? modePick.value : pendingGuideMode;
+        if (modeValue) {
+            settings.set('worldsim', { onboardingMode: modeValue });
+            if (modeTouched) {
+                if (modeValue === 'split' && hasSecondaryApi()) {
+                    const cfg = settings.get('worldsim') || {};
+                    settings.set('worldsim', { refreshApi: { ...(cfg.refreshApi || {}), autoFull: true } });
+                } else if (modeValue === 'light') {
+                    const cfg = settings.get('worldsim') || {};
+                    settings.set('worldsim', { refreshApi: { ...(cfg.refreshApi || {}), autoFull: false } });
+                }
+            }
+        }
+        // 手动请求更新的默认 API：只有用户动过、或之前没存过选择时才写
         const choice = document.querySelector('input[name="nt-guide-update-api"]:checked');
-        if (choice) {
-            const cfg = settings.get('worldsim') || {};
-            settings.set('worldsim', { refreshApi: { ...(cfg.refreshApi || {}), manualChoice: choice.value } });
+        const cfgNow = settings.get('worldsim') || {};
+        const savedManual = (cfgNow.refreshApi || {}).manualChoice;
+        if (choice && (apiTouched || !savedManual)) {
+            settings.set('worldsim', { refreshApi: { ...(cfgNow.refreshApi || {}), manualChoice: choice.value } });
         }
         closeGuide(true);
     };
+    // 第 4 步的「默认用主/副 API」也单独记 dirty，避免重开引导静默覆盖
+    mask.querySelectorAll('input[name="nt-guide-update-api"]').forEach(r => {
+        r.addEventListener('change', () => { apiTouched = true; });
+    });
     if (step.after) step.after();
 }
 
@@ -201,6 +239,10 @@ function showGuide(force = false) {
     const existing = document.getElementById(MASK_ID);
     if (existing) existing.remove();
     currentStep = 0;
+    // 重开引导时沿用上次落盘的运行方式（第 2 步据此预选）
+    pendingGuideMode = settings.get('worldsim').onboardingMode || '';
+    modeTouched = false;
+    apiTouched = false;
     const mask = document.createElement('div');
     mask.id = MASK_ID;
     mask.addEventListener('click', (e) => { if (e.target === mask) closeGuide(true); });

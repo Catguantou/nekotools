@@ -19,8 +19,21 @@ function openDb() {
     });
 }
 
+let keyPromise = null;
+
 async function getDeviceKey() {
-    if (!window.crypto?.subtle) throw new Error('当前浏览器不支持 WebCrypto');
+    if (!window.isSecureContext || !window.crypto?.subtle) {
+        throw new Error('API Key 需要 https 或 localhost 才能保存（当前不是安全上下文）');
+    }
+    if (keyPromise) return keyPromise;
+    keyPromise = loadOrCreateKey().catch(e => {
+        keyPromise = null;
+        throw e;
+    });
+    return keyPromise;
+}
+
+async function loadOrCreateKey() {
     const db = await openDb();
     const existing = await new Promise((resolve, reject) => {
         const tx = db.transaction(STORE, 'readonly');
@@ -75,6 +88,7 @@ export async function getSecret(id) {
         const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
         return new TextDecoder().decode(decrypted);
     } catch (_) {
+        console.warn('[nekotools] API Key 解密失败，请重新录入');
         return '';
     }
 }

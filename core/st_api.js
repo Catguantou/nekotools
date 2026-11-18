@@ -15,6 +15,34 @@ let wiModule = null;
 let wiPromise = null;
 let scriptModule = null;
 let scriptPromise = null;
+// 静默生成引用计数：嵌套调用时只有全部结束才真正解除静默
+let quietDepth = 0;
+let quietTimer = null;
+
+/** 开始一段静默生成（期间 hooks 不注入、不结算，避免递归） */
+export function beginQuiet() {
+    quietDepth++;
+    window.__nt_quiet = true;
+    if (quietTimer) clearTimeout(quietTimer);
+    // 安全兜底：异常退出没配对 endQuiet 时，10 分钟后自动解除，避免永久静默
+    quietTimer = setTimeout(() => {
+        quietDepth = 0;
+        window.__nt_quiet = false;
+        quietTimer = null;
+    }, 10 * 60 * 1000);
+}
+
+/** 结束一段静默生成；引用计数归零才真正解除 */
+export function endQuiet() {
+    quietDepth = Math.max(0, quietDepth - 1);
+    if (quietDepth === 0) {
+        window.__nt_quiet = false;
+        if (quietTimer) {
+            clearTimeout(quietTimer);
+            quietTimer = null;
+        }
+    }
+}
 
 export function getCtx() {
     try {
@@ -48,7 +76,7 @@ export async function generateQuiet(prompt) {
     if (!mod || typeof mod.generateQuietPrompt !== 'function') {
         throw new Error('当前酒馆版本不支持静默生成');
     }
-    window.__nt_quiet = true;
+    beginQuiet();
     const systemKey = '__NEKOTOOL_QUIET_SYSTEM__';
     const userKey = '__NEKOTOOL_QUIET_USER__';
     const types = mod.extension_prompt_types;
@@ -86,7 +114,7 @@ export async function generateQuiet(prompt) {
                 mod.setExtensionPrompt(userKey, '', types.IN_CHAT, 0, false, roles.USER);
             } catch (_) {}
         }
-        window.__nt_quiet = false;
+        endQuiet();
     }
 }
 

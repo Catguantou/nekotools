@@ -31,6 +31,18 @@ function cleanAndDedupeList(arr) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-CN'));
 }
 
+// 转发/合并世界书时要给新条目找 UID：只靠 Date.now() 会在同一毫秒内撞号，覆盖已有条目
+let uidSeq = 0;
+
+function makeFreeUid(entries) {
+    let n;
+    do {
+        uidSeq = (uidSeq + 1) % 1000;
+        n = String(Date.now() * 1000 + uidSeq);
+    } while (entries && entries[n]);
+    return n;
+}
+
 export const stBridge = {
     // 批量写入：一轮结算只读一次、写一次
     _batch: null,
@@ -46,12 +58,22 @@ export const stBridge = {
     async commitBatch() {
         const b = this._batch;
         this._batch = null;
-        if (b && b.dirty) {
+        if (!b || !b.dirty) return;
+        let ok = false;
+        try {
+            ok = await this._writeBook(b.name, b.book);
+        } catch (e) {
+            console.warn('[nekotools] 批量写盘失败', e);
+        }
+        if (!ok) {
+            // 写盘失败不再静默：控制台 + 界面提示 + 事件，避免「以为存上了其实没存」
+            console.error('[nekotools] 世界书保存失败:', b.name);
             try {
-                await this._writeBook(b.name, b.book);
-            } catch (e) {
-                console.warn('[nekotools] 批量写盘失败', e);
-            }
+                if (window.toastr?.error) window.toastr.error(`世界书保存失败：${b.name}`);
+            } catch (_) {}
+            try {
+                window.dispatchEvent(new CustomEvent('nekotool:write-failed', { detail: { name: b.name } }));
+            } catch (_) {}
         }
     },
 
@@ -226,6 +248,34 @@ export const stBridge = {
         }
 
         return cleanAndDedupeList(raw);
+    },
+
+    /**
+     * 存在性保护：先查内存列表（不发请求）；列表里没有时直接查一次服务端 /list，
+     * 只有「明确查到、且不在其中」才拒绝写入。查不到/旧版酒馆/网络失败一律放行，
+     * 避免因为列表过期或接口不可用把用户正常操作拦掉。
+     */
+    async bookKnown(name) {
+        if (!name) return false;
+        const names = this.getWorldNames();
+        if (!names.length || names.includes(name)) return true;
+        try {
+            const ctx = this.getContext();
+            const headers = {
+                ...(typeof ctx.getRequestHeaders === 'function' ? ctx.getRequestHeaders() : {}),
+                'Content-Type': 'application/json',
+            };
+            const res = await fetch('/api/worldinfo/list', { method: 'POST', headers, body: JSON.stringify({}) });
+            if (!res.ok) return true;
+            const data = await res.json();
+            const raw = Array.isArray(data)
+                ? data.map(x => (x && typeof x === 'object') ? (x.file_id || x.name) : x)
+                : (data && typeof data === 'object' ? Object.keys(data) : []);
+            const list = cleanAndDedupeList(raw);
+            return list.includes(name);
+        } catch (_) {
+            return true;
+        }
     },
 
     async fetchWorldNamesFromApi() {
@@ -543,13 +593,13 @@ export const stBridge = {
         return deleted;
     },
 
-    async deleteEntries(bookName, uids) {        const book = await this.loadWorldInfoAsync(bookName, true);
+    async deleteEntries(bookName, uids) {
+        const book = await this.loadWorldInfoAsync(bookName, true);
         if (!book || !book.entries) return false;
         for (const uid of uids) {
             delete book.entries[uid];
         }
-        await this.persistLorebook(bookName, book);
-        return true;
+        return await this.persistLorebook(bookName, book);
     },
 
     async forwardEntries(sourceName, targetName, uids) {
@@ -567,7 +617,8 @@ export const stBridge = {
         for (const uid of uids) {
             const entry = src.entries[uid];
             if (!entry) continue;
-            const newUid = Date.now().toString() + Math.floor(Math.random() * 1000);
+            // 同一毫秒批量转发时 Date.now() 会重复，这里用递增序号保证 UID 不撞
+            const newUid = makeFreeUid(dst.entries);
             dst.entries[newUid] = { ...JSON.parse(JSON.stringify(entry)), uid: newUid };
         }
         await this.persistLorebook(targetName, dst);
@@ -589,7 +640,7 @@ export const stBridge = {
             const src = await this.loadWorldInfoAsync(srcName, true);
             if (!src || !src.entries) continue;
             for (const entry of Object.values(src.entries)) {
-                const newUid = Date.now().toString() + Math.floor(Math.random() * 10000);
+                const newUid = makeFreeUid(dst.entries);
                 dst.entries[newUid] = { ...JSON.parse(JSON.stringify(entry)), uid: newUid };
                 count++;
             }
@@ -613,7 +664,13 @@ export const stBridge = {
         if (!char) return;
         const charName = char.name;
         if (!charName) return;
-        
+
+        // 角色名本身可能以「·数字」结尾（如「某某·2」），它的基础档名会和别的角色的档名撞上。
+        // 先把其它角色的档名收集起来，删档时跳过，避免误删别人的存档。
+        const others = (this.getContext().characters || [])
+            .filter(c => c && c.name && c.name !== charName)
+            .map(c => slotBaseName(c.name));
+
         // 删角色卡 → 该角色的所有存档档一起删；绑定的原生世界书只在「同步删除」开启时才删
         const cfg = this.getLoreManagerConfig();
         const booksToDelete = [];
@@ -625,7 +682,9 @@ export const stBridge = {
         for (const n of this.getWorldNames()) names.add(n);
         for (const n of this.getGloballyActivatedWorlds()) names.add(n);
         for (const name of names) {
-            if (this.isTrackerBook(name) && isSlotOf(name, charName)) booksToDelete.push(name);
+            if (!this.isTrackerBook(name) || !isSlotOf(name, charName)) continue;
+            if (others.includes(name)) continue;
+            booksToDelete.push(name);
         }
         
         for (const book of booksToDelete) {
@@ -778,9 +837,9 @@ export const stBridge = {
         if (this.batchBook(bookName)) {
             this._batch.book = bookData;
             this._batch.dirty = true;
-            return;
+            return true;
         }
-        await this._writeBook(bookName, bookData);
+        return await this._writeBook(bookName, bookData);
     },
 
     async _writeBook(bookName, bookData) {
@@ -849,26 +908,90 @@ export const stBridge = {
         this.applyVisualKeep();
     },
 
-    /** 小总结写完后，用酒馆 /hide 把已总结楼层从上下文里隐藏，省 token */
-    async hideSummarizedMessages(keepCount) {
+    /**
+     * 小总结写完后，用酒馆 /hide 把已总结楼层从上下文里隐藏，省 token。
+     * /hide 是整段无差别隐藏，所以隐藏前后要逐条打标：
+     *  - 收藏楼层：不隐藏，隐藏后还原可见状态
+     *  - 原本就隐藏的（用户手动 / 原生 system）：打 nekotool_user_hidden，恢复时不动
+     *  - 本次要隐藏的普通楼层：打 nekotool_hidden_by_plugin，恢复时只认这个标记
+     */
+    async hideSummarizedMessages(keepCount, bookName = '') {
         const ctx = this.getContext();
         const cutoff = Number(keepCount) > 0 ? this.cutoffIndexForKeep(keepCount) : -1;
         if (cutoff <= 0) return false;
         const last = cutoff - 1;
+        const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
+        // 用本次请求发起时那一档（生成期间切档时，别把隐藏区间记到新档）
+        const book = bookName || this.currentTrackerName();
+        // 升级前的旧版本只写了 summaryHiddenUntil、没有逐楼标记：
+        // 旧区间内已隐藏的楼层视为「旧版插件隐藏」，补上标记以便恢复按钮仍能还原。
+        // 区间按聊天（chatId）区分：同一本追踪书开新聊天时，旧区间不能拿来乱套。
+        const wsAll = settings.get('worldsim') || {};
+        const meta = (wsAll.slotMeta || {})[book] || {};
+        const currentChatId = ctx.chatId ?? null;
+        const sameChat = meta.summaryHiddenChatId === undefined
+            ? true
+            : String(meta.summaryHiddenChatId) === String(currentChatId);
+        const legacyUntil = sameChat ? Number(meta.summaryHiddenUntil) : NaN;
+
+        const hideTargets = [];   // 本次要隐藏的普通楼层
+        const userHidden = [];    // 原本就处于隐藏状态的楼层（用户手动 / 原生 system）
+        const legacyHidden = [];  // 旧版插件隐藏过、但没有标记的楼层
+        const favRestore = [];    // 收藏楼层：记录隐藏前的状态，隐藏后还原
+        for (let i = 0; i <= last && i < chat.length; i++) {
+            const msg = chat[i];
+            if (!msg) continue;
+            if (msg.extra?.nekotool_favorite) {
+                favRestore.push({ i, wasSystem: Boolean(msg.is_system) });
+                continue;
+            }
+            if (msg.is_system) {
+                // 上一轮由插件隐藏的楼层不算「用户手动隐藏」，不要重复打标
+                if (msg.extra?.nekotool_hidden_by_plugin) continue;
+                // 用户手动隐藏的楼层永远不要被重新归类成插件隐藏，否则恢复按钮会把它放出来
+                if (msg.extra?.nekotool_user_hidden) continue;
+                if (Number.isFinite(legacyUntil) && i <= legacyUntil) legacyHidden.push(i);
+                else userHidden.push(i);
+            } else {
+                hideTargets.push(i);
+            }
+        }
+
         try {
             if (typeof ctx.executeSlashCommandsWithOptions === 'function') {
                 await ctx.executeSlashCommandsWithOptions(`/hide 0-${last}`);
             } else {
-                for (let i = 0; i <= last; i++) {
-                    const msg = ctx.chat?.[i];
-                    if (msg && !msg.extra?.nekotool_favorite) msg.is_system = true;
+                for (const i of hideTargets) {
+                    if (chat[i]) chat[i].is_system = true;
                 }
-                await ctx.saveChatConditional?.();
             }
-            const all = settings.get('worldsim') || {};
-            const slotMeta = { ...(all.slotMeta || {}) };
-            const book = this.currentTrackerName();
-            slotMeta[book] = { ...(slotMeta[book] || {}), summaryHiddenUntil: last };
+
+            for (const i of hideTargets) {
+                const msg = chat[i];
+                if (msg) msg.extra = { ...(msg.extra || {}), nekotool_hidden_by_plugin: true };
+            }
+            for (const i of legacyHidden) {
+                const msg = chat[i];
+                if (msg) msg.extra = { ...(msg.extra || {}), nekotool_hidden_by_plugin: true };
+            }
+            for (const i of userHidden) {
+                const msg = chat[i];
+                if (msg) msg.extra = { ...(msg.extra || {}), nekotool_user_hidden: true };
+            }
+
+            // /hide 会把收藏楼层也设成隐藏，这里还原成隐藏前的可见状态
+            for (const { i, wasSystem } of favRestore) {
+                const msg = chat[i];
+                if (!msg || Boolean(msg.is_system) === wasSystem) continue;
+                msg.is_system = wasSystem;
+                const el = document.querySelector(`#chat .mes[mesid="${i}"]`);
+                if (el) el.setAttribute('is_system', String(wasSystem));
+                if (typeof ctx.updateMessageBlock === 'function') ctx.updateMessageBlock(i, msg);
+            }
+            await ctx.saveChat?.();
+
+            const slotMeta = { ...(wsAll.slotMeta || {}) };
+            slotMeta[book] = { ...meta, summaryHiddenUntil: last, summaryHiddenChatId: currentChatId };
             settings.set('worldsim', { slotMeta });
             return true;
         } catch (e) {
@@ -877,27 +1000,63 @@ export const stBridge = {
         }
     },
 
-    /** 恢复被小总结隐藏的楼层（不碰用户手动隐藏的楼层） */
+    /**
+     * 恢复被小总结隐藏的楼层。
+     * 只认 nekotool_hidden_by_plugin 标记——用户手动隐藏、原生 system 楼层保持原样。
+     * /unhide 会整段无差别恢复，所以这里改为逐条直接改。
+     */
     async unhideSummarizedMessages() {
         const ctx = this.getContext();
         const all = settings.get('worldsim') || {};
         const book = this.currentTrackerName();
-        const until = Number((all.slotMeta || {})[book]?.summaryHiddenUntil);
-        if (!Number.isFinite(until) || until < 0) return false;
+        const meta = (all.slotMeta || {})[book] || {};
+        const currentChatId = ctx.chatId ?? null;
+        // 旧数据没有 summaryHiddenChatId：按同一聊天处理，保持老行为；新数据按聊天校验
+        const sameChat = meta.summaryHiddenChatId === undefined
+            ? true
+            : String(meta.summaryHiddenChatId) === String(currentChatId);
+        const untilRaw = Number(meta.summaryHiddenUntil);
+        const until = sameChat && Number.isFinite(untilRaw) && untilRaw >= 0 ? untilRaw : -1;
+        const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
+        let restored = 0;
         try {
-            if (typeof ctx.executeSlashCommandsWithOptions === 'function') {
-                await ctx.executeSlashCommandsWithOptions(`/unhide 0-${until}`);
-            } else {
-                for (let i = 0; i <= until; i++) {
-                    const msg = ctx.chat?.[i];
-                    if (msg) msg.is_system = false;
+            // 扫全聊天：隐藏区间可能因删楼而变小，只按标记恢复才不会漏下永久隐藏的楼层。
+            // 没有 summaryHiddenUntil（设置被清/导入旧备份）时也照样按标记恢复。
+            for (let i = 0; i < chat.length; i++) {
+                const msg = chat[i];
+                if (!msg) continue;
+                const extra = msg.extra || {};
+                // 旧版本只写 summaryHiddenUntil、没有逐楼标记：区间内的隐藏楼层按旧行为恢复
+                const isLegacyHidden = !extra.nekotool_hidden_by_plugin && !extra.nekotool_user_hidden
+                    && msg.is_system && until >= 0 && i <= until && !extra.nekotool_favorite;
+                if (extra.nekotool_hidden_by_plugin || isLegacyHidden) {
+                    msg.is_system = false;
+                    if (extra.nekotool_hidden_by_plugin || extra.nekotool_user_hidden) {
+                        const clean = { ...extra };
+                        delete clean.nekotool_hidden_by_plugin;
+                        delete clean.nekotool_user_hidden;
+                        msg.extra = clean;
+                    }
+                    const el = document.querySelector(`#chat .mes[mesid="${i}"]`);
+                    if (el) el.setAttribute('is_system', 'false');
+                    if (typeof ctx.updateMessageBlock === 'function') ctx.updateMessageBlock(i, msg);
+                    restored++;
+                } else if (extra.nekotool_user_hidden) {
+                    // 原本就是隐藏的：只删掉标记，不改可见状态
+                    const clean = { ...extra };
+                    delete clean.nekotool_user_hidden;
+                    msg.extra = clean;
                 }
-                await ctx.saveChatConditional?.();
             }
+            await ctx.saveChat?.();
+
             const slotMeta = { ...(all.slotMeta || {}) };
-            if (slotMeta[book]) delete slotMeta[book].summaryHiddenUntil;
+            if (slotMeta[book]) {
+                delete slotMeta[book].summaryHiddenUntil;
+                delete slotMeta[book].summaryHiddenChatId;
+            }
             settings.set('worldsim', { slotMeta });
-            return true;
+            return restored > 0;
         } catch (e) {
             console.warn('[nekotools] 楼层恢复失败', e);
             return false;

@@ -1772,7 +1772,7 @@ body {
     cursor: pointer;
 }
 #nt-quick-modal .nt-quick-map-crumb + .nt-quick-map-crumb::before {
-    content: '閳?;
+    content: '›';
     margin-right: 6px;
     color: var(--ntq-dim);
 }
@@ -1826,7 +1826,7 @@ body {
     background-size: 18px 18px, 100% 100%;
 }
 #nt-quick-modal .nt-quick-map-board::before {
-    content: 'N 閳?;
+    content: 'N ↑';
     position: absolute;
     top: 8px;
     right: 12px;
@@ -3431,7 +3431,7 @@ body {
     transition: background 0.12s;
 }
 #nt-quick-pop .nt-quick-item::after {
-    content: '閳?;
+    content: '›';
     position: absolute;
     right: 7px;
     top: 50%;

@@ -109,6 +109,11 @@ export async function readCharacterEntry(bookName, name) {
 /** 保存某个角色的六字段条目（手动编辑）；写后复核 */
 export async function saveCharacterEntry(bookName, name, content) {
     if (!bookName || !name) return false;
+    // 快捷菜单直接调用，写入前没有存在性校验：书被删掉后不能再写回来
+    if (!(await stBridge.bookKnown(bookName))) {
+        console.warn('[nekotools] 世界书不存在，跳过写入:', bookName);
+        return false;
+    }
     const text = String(content || '');
     await stBridge.updateEntry(bookName, `角色·${name}`, text, false, [name]);
     const after = await readCharacterEntry(bookName, name);

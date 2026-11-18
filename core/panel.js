@@ -50,8 +50,11 @@ export function mountPanel() {
     if (!s.customPrompts) s.customPrompts = {};
     if (!s.promptModes) s.promptModes = {};
     const defaultPrompts = getDefaultPrompts();
-    const apiProfiles = Array.isArray(s.apiProfiles) ? s.apiProfiles : [];
-    const activeProfileId = s.activeSecondaryProfile || '';
+    // apiProfiles / activeSecondaryProfile 只存在 settings 的 worldsim 桶里；
+    // 模块 loadSettings() 只加载 defaultSettings 里的键，不能从模块内存对象 s 读。
+    const wsCfg = settings.get('worldsim');
+    const apiProfiles = Array.isArray(wsCfg.apiProfiles) ? wsCfg.apiProfiles : [];
+    const activeProfileId = wsCfg.activeSecondaryProfile || '';
     const apiProfileOptions = apiProfiles.map(p =>
         `<option value="${escapeHtml(p.id)}" ${p.id === activeProfileId ? 'selected' : ''}>${escapeHtml(p.name || p.url || p.id)}</option>`
     ).join('');
@@ -204,16 +207,16 @@ export function mountPanel() {
                         <div class="nt-subhead">总结</div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">大总结触发层数 <span class="nt-hint">/ 每 N 层触发一次；开关在 01 概览</span></span>
-                            <input type="number" id="nt-ws-biglimit" class="nt-data-input" value="${s.bigSummaryLimit}" min="10" max="9999">
+                            <input type="number" id="nt-ws-biglimit" class="nt-data-input" value="${Number(s.bigSummaryLimit) || 100}" min="10" max="9999">
                         </div>
                         <div class="nt-subhead">楼层显示</div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">楼层隐藏保留 <span class="nt-hint">/ 小总结写完后用 /hide 隐藏最新 N 条之外的楼层，0=关闭</span></span>
-                            <input type="number" id="nt-ws-keep" class="nt-data-input" value="${s.hideKeepCount}" min="0" max="50">
+                            <input type="number" id="nt-ws-keep" class="nt-data-input" value="${Number(s.hideKeepCount) || 0}" min="0" max="50">
                         </div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">视觉屏蔽保留 <span class="nt-hint">/ 最新 M 条之外只在界面上隐藏，0=关闭</span></span>
-                            <input type="number" id="nt-ws-visual-keep" class="nt-data-input" value="${s.visualHideKeep || 0}" min="0" max="200">
+                            <input type="number" id="nt-ws-visual-keep" class="nt-data-input" value="${Number(s.visualHideKeep) || 0}" min="0" max="200">
                         </div>
                         <div class="nt-data-row">
                             <button id="nt-ws-visual-restore" class="nt-btn-text" style="color:#00ffcc;">[恢复视觉显示]</button>
@@ -234,19 +237,19 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">T2 间隔 <span class="nt-hint">/ 每 N 层更新一次（默认 2）</span></span>
-                            <input type="number" id="nt-ws-char-tick" class="nt-data-input" value="${s.charTickEvery}" min="1" max="50">
+                            <input type="number" id="nt-ws-char-tick" class="nt-data-input" value="${Number(s.charTickEvery) || 2}" min="1" max="50">
                         </div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">世界 tick 间隔 <span class="nt-hint">/ 每 N 条 AI 回复结算一次，0=关</span></span>
-                            <input type="number" id="nt-ws-world-tick" class="nt-data-input" value="${s.worldTickEvery}" min="0" max="50">
+                            <input type="number" id="nt-ws-world-tick" class="nt-data-input" value="${Number.isFinite(Number(s.worldTickEvery)) ? Number(s.worldTickEvery) : 3}" min="0" max="50">
                         </div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">每轮最多结算角色 <span class="nt-hint">/ 控制 token；T1 不受限</span></span>
-                            <input type="number" id="nt-ws-tick-max" class="nt-data-input" value="${s.tickMaxChars}" min="1" max="10">
+                            <input type="number" id="nt-ws-tick-max" class="nt-data-input" value="${Number(s.tickMaxChars) || 2}" min="1" max="10">
                         </div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">T3 间隔 <span class="nt-hint">/ 配角每 N 层更新一次（默认 5）</span></span>
-                            <input type="number" id="nt-ws-stale-after" class="nt-data-input" value="${s.staleAfter}" min="5" max="200">
+                            <input type="number" id="nt-ws-stale-after" class="nt-data-input" value="${Number(s.staleAfter) || 5}" min="5" max="200">
                             <label style="display:flex;align-items:center;gap:6px;margin-left:8px;">
                                 <input type="checkbox" id="nt-ws-antilazy" ${s.enableAntiLazy ? 'checked' : ''}> 20层降级
                             </label>
@@ -788,12 +791,12 @@ export function mountPanel() {
             html += `
                 <div class="nt-book-row" style="display:flex; align-items:stretch; padding:0; margin-bottom:5px; opacity:${isDisabled ? '0.55' : '1'};">
                     <label style="padding:0 10px; display:flex; align-items:center; border-right:1px solid var(--nt-line); cursor:pointer; margin:0;">
-                        <input type="checkbox" class="nt-entry-select" data-uid="${e.uid}" style="cursor:pointer; width:15px; height:15px; margin:0;">
+                        <input type="checkbox" class="nt-entry-select" data-uid="${escapeHtml(String(e.uid))}" style="cursor:pointer; width:15px; height:15px; margin:0;">
                     </label>
                     <div style="flex:1; display:flex; align-items:center; padding:8px 10px; min-width:0; gap:8px;">
-                        <button class="nt-btn-text nt-toggle-light" data-uid="${e.uid}" title="点击切换蓝灯/绿灯">${lightBtn}</button>
+                        <button class="nt-btn-text nt-toggle-light" data-uid="${escapeHtml(String(e.uid))}" title="点击切换蓝灯/绿灯">${lightBtn}</button>
                         <span style="flex:1; text-align:left; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${escapeHtml(title)}</span>
-                        <button class="nt-btn-text nt-toggle-disable" data-uid="${e.uid}" title="点击切换启用/禁用">${stateBtn}</button>
+                        <button class="nt-btn-text nt-toggle-disable" data-uid="${escapeHtml(String(e.uid))}" title="点击切换启用/禁用">${stateBtn}</button>
                     </div>
                 </div>
             `;
@@ -1251,8 +1254,9 @@ export function mountPanel() {
 
     // ---------- API 配置 ----------
     {
-        let profiles = Array.isArray(s.apiProfiles) ? [...s.apiProfiles] : [];
-        let selectedId = s.activeSecondaryProfile || '';
+        const wsCfg = settings.get('worldsim');
+        let profiles = Array.isArray(wsCfg.apiProfiles) ? [...wsCfg.apiProfiles] : [];
+        let selectedId = wsCfg.activeSecondaryProfile || '';
         const mainSelect = wrap.querySelector('#nt-api-main-select');
         const subSelect = wrap.querySelector('#nt-api-sub-select');
         const nameEl = wrap.querySelector('#nt-api-name');
@@ -1437,7 +1441,9 @@ export function mountPanel() {
                     try { await applyMain(p); statusEl.textContent = '主 API 已同步'; }
                     catch (e) { statusEl.textContent = `主 API 失败：${e.message || e}`; }
                 };
-                row.querySelector('[data-act="secondary"]').onclick = () => useAsSecondary(p);
+                row.querySelector('[data-act="secondary"]').onclick = () => useAsSecondary(p).catch(e => {
+                    statusEl.textContent = '设为副 API 失败：' + (e.message || e);
+                });
             });
         };
         const buildTop = () => {
@@ -1572,14 +1578,24 @@ export function mountPanel() {
         };
 
         renderAll();
-        // 把旧配置里明文保存的 Key 迁移到酒馆 secrets，然后从插件配置里删掉
+        // 把旧配置里明文保存的 Key 迁移到酒馆 secrets，成功后才从插件配置里删掉；
+        // 迁移失败必须保留明文，否则下一次保存就永久丢 Key。
         (async () => {
             let changed = false;
             for (const p of profiles) {
                 if (!p.key) continue;
-                await saveSecret(p.id, p.key);
-                if (p.source === 'vertexai') await setSecret('api_key_vertexai', p.key);
-                else await setSecret(secretName(p.source || 'openai'), p.key);
+                try {
+                    await saveSecret(p.id, p.key);
+                } catch (e) {
+                    console.warn('[nekotools] 配置 Key 迁移失败，保留明文待下次重试：', p.id, e);
+                    continue;
+                }
+                try {
+                    if (p.source === 'vertexai') await setSecret('api_key_vertexai', p.key);
+                    else await setSecret(secretName(p.source || 'openai'), p.key);
+                } catch (e) {
+                    console.warn('[nekotools] 写入酒馆 secrets 失败（不影响本机加密保存）：', e);
+                }
                 p.key = '';
                 p.hasSecret = true;
                 changed = true;
@@ -1588,9 +1604,18 @@ export function mountPanel() {
             const rf = settings.get('worldsim').refreshApi || {};
             if (rf.key) {
                 const vaultId = rf.profileId || settings.get('worldsim').activeSecondaryProfile || 'legacy-sub';
-                await saveSecret(vaultId, rf.key);
-                if ((rf.source || '') === 'vertexai') await setSecret('api_key_vertexai', rf.key);
-                else await setSecret(secretName(rf.source || 'openai'), rf.key);
+                try {
+                    await saveSecret(vaultId, rf.key);
+                } catch (e) {
+                    console.warn('[nekotools] 副 API Key 迁移失败，保留明文待下次重试：', e);
+                    return;
+                }
+                try {
+                    if ((rf.source || '') === 'vertexai') await setSecret('api_key_vertexai', rf.key);
+                    else await setSecret(secretName(rf.source || 'openai'), rf.key);
+                } catch (e) {
+                    console.warn('[nekotools] 副 API Key 写入酒馆 secrets 失败：', e);
+                }
                 settings.set('worldsim', { refreshApi: { ...rf, key: '', profileId: rf.profileId || vaultId } });
             }
         })().catch(() => {});
@@ -1620,7 +1645,7 @@ export function mountPanel() {
             loadProfile();
             statusEl.textContent = '填写后保存为新配置';
         };
-        wrap.querySelector('#nt-api-profile-save').onclick = async () => {
+        const saveProfile = async () => {
             const source = sourceEl.value;
             const id = selectedId || `api_${Date.now()}`;
             if (source === 'vertexai') {
@@ -1651,6 +1676,11 @@ export function mountPanel() {
             loadProfile();
             statusEl.textContent = '已保存';
         };
+        wrap.querySelector('#nt-api-profile-save').onclick = () => {
+            saveProfile().catch(e => {
+                statusEl.textContent = '保存失败：' + (e.message || e);
+            });
+        };
         wrap.querySelector('#nt-api-profile-del').onclick = async () => {
             if (!selectedId) return;
             await deleteSecret(selectedId).catch(() => {});
@@ -1666,7 +1696,9 @@ export function mountPanel() {
             loadProfile();
             statusEl.textContent = '已删除';
         };
-        wrap.querySelector('#nt-api-profile-use').onclick = () => useAsSecondary(profileById(selectedId));
+        wrap.querySelector('#nt-api-profile-use').onclick = () => useAsSecondary(profileById(selectedId)).catch(e => {
+            statusEl.textContent = '设为副 API 失败：' + (e.message || e);
+        });
         mainSelect.addEventListener('change', async () => {
             const value = mainSelect.value;
             settings.set('worldsim', { apiMainChoice: value });
@@ -1679,7 +1711,9 @@ export function mountPanel() {
             settings.set('worldsim', { apiSubChoice: value });
             if (value.startsWith('profile:')) {
                 const p = profileById(value.slice(8));
-                if (p) useAsSecondary(p);
+                if (p) useAsSecondary(p).catch(e => {
+                    statusEl.textContent = '设为副 API 失败：' + (e.message || e);
+                });
             }
         });
     }
@@ -1707,15 +1741,23 @@ export function mountPanel() {
             enableForeshadow: '#nt-ws-foreshadow',
             enableSummary: '#nt-ws-summary',
             enableBigSummary: '#nt-ws-bigsummary',
+            enableTicks: '#nt-ws-tick-enable',
         };
         const flags = {};
         for (const [key, id] of Object.entries(flagMap)) {
             const el = wrap.querySelector(id);
             if (el) flags[key] = el.checked;
         }
-        const list = getSystemPromptPreview(custom, modes, flags);
-        const text = list.map(item => typeof item === 'string' ? item : String(item && item.content || '')).join('\n\n──────\n\n');
         const out = wrap.querySelector('#nt-prompt-preview-out');
+        let list;
+        try {
+            list = getSystemPromptPreview(custom, modes, flags);
+        } catch (e) {
+            out.style.display = 'block';
+            out.textContent = '预览失败：' + (e && e.message ? e.message : e);
+            return;
+        }
+        const text = list.map(item => typeof item === 'string' ? item : String(item && item.content || '')).join('\n\n──────\n\n');
         out.style.display = 'block';
         out.textContent = text || '（所有提示词都被关闭，当前不会发送任何 system 提示词）';
         const chars = text.length;
@@ -1728,6 +1770,13 @@ export function mountPanel() {
             if (!s.promptModes) s.promptModes = {};
             s.promptModes[sel.dataset.promptMode] = sel.value;
             mod.saveSettings();
+            // 模式切换后刷新输入框：替换模式显示自定义内容（没有就留空），其它模式回落到默认契约
+            const key = sel.dataset.promptMode;
+            const ta = wrap.querySelector(`.nt-prompt-textarea[data-prompt-key="${key}"]`);
+            if (ta) {
+                const customText = (s.customPrompts && s.customPrompts[key]) || '';
+                ta.value = sel.value === 'replace' ? customText : (customText || ta.dataset.default || '');
+            }
             const out = wrap.querySelector('#nt-prompt-preview-out');
             if (out && out.style.display === 'block') {
                 wrap.querySelector('#nt-prompt-preview')?.click();
@@ -1792,6 +1841,12 @@ export function mountPanel() {
         });
     }
 
+    // 数字输入：非法/留空回落到默认值；保存前再按 min 兜底，避免写进 0
+    const numOr = (el, def) => {
+        const v = parseInt(el.value, 10);
+        return Number.isFinite(v) ? v : def;
+    };
+
     wrap.querySelector('#nt-ws-save').onclick = () => {
         wrap.querySelectorAll('.nt-mod-cb').forEach(cb => {
             const id = cb.dataset.modId;
@@ -1799,6 +1854,9 @@ export function mountPanel() {
             if (m) {
                 m.enabled = cb.checked;
                 settings.set(id, { enabled: m.enabled });
+                // 模块内部 settings 是 loadSettings() 时读出的副本，不同步的话
+                // mod.saveSettings() 会用旧的 enabled 把总开关覆盖回去
+                if (m.settings && typeof m.settings === 'object') m.settings.enabled = m.enabled;
             }
         });
 
@@ -1814,16 +1872,16 @@ export function mountPanel() {
         s.enableForeshadow = wrap.querySelector('#nt-ws-foreshadow').checked;
         s.enableSummary = wrap.querySelector('#nt-ws-summary').checked;
         s.enableBigSummary = wrap.querySelector('#nt-ws-bigsummary').checked;
-        s.hideKeepCount = parseInt(wrap.querySelector('#nt-ws-keep').value) || 0;
-        s.visualHideKeep = parseInt(wrap.querySelector('#nt-ws-visual-keep').value) || 0;
-        s.bigSummaryLimit = parseInt(wrap.querySelector('#nt-ws-biglimit').value) || 100;
+        s.hideKeepCount = Math.max(0, numOr(wrap.querySelector('#nt-ws-keep'), 0));
+        s.visualHideKeep = Math.max(0, numOr(wrap.querySelector('#nt-ws-visual-keep'), 0));
+        s.bigSummaryLimit = Math.max(10, numOr(wrap.querySelector('#nt-ws-biglimit'), 100));
         s.recordUserCharacter = wrap.querySelector('#nt-ws-record-user').checked;
         s.enableTicks = wrap.querySelector('#nt-ws-tick-enable').checked;
         s.enableQuickMenu = wrap.querySelector('#nt-ws-quickmenu').checked;
-        s.charTickEvery = parseInt(wrap.querySelector('#nt-ws-char-tick').value) || 0;
-        s.worldTickEvery = parseInt(wrap.querySelector('#nt-ws-world-tick').value) || 0;
-        s.tickMaxChars = parseInt(wrap.querySelector('#nt-ws-tick-max').value) || 2;
-        s.staleAfter = parseInt(wrap.querySelector('#nt-ws-stale-after').value) || 0;
+        s.charTickEvery = Math.max(1, numOr(wrap.querySelector('#nt-ws-char-tick'), 2));
+        s.worldTickEvery = Math.max(0, numOr(wrap.querySelector('#nt-ws-world-tick'), 3));
+        s.tickMaxChars = Math.max(1, numOr(wrap.querySelector('#nt-ws-tick-max'), 2));
+        s.staleAfter = Math.max(5, numOr(wrap.querySelector('#nt-ws-stale-after'), 5));
         s.enableAntiLazy = wrap.querySelector('#nt-ws-antilazy').checked;
 
         wrap.querySelectorAll('.nt-prompt-textarea[data-prompt-key]').forEach(ta => {
