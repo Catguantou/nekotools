@@ -1534,8 +1534,18 @@ export async function applyRefreshData(bookName, data, layer = 0) {
 export function getDefaultPrompts() {
     const savedCustom = { ...(settings.customPrompts || {}) };
     const savedModes = { ...(settings.promptModes || {}) };
+    const flagKeys = [
+        'enableStatus', 'enablePreview', 'enableChars', 'enableItems', 'enablePlot',
+        'enableWorld', 'enableForeshadow', 'enableMap', 'enableQuests', 'enableCognition',
+        'enableSummary', 'enableBigSummary', 'enableTicks',
+    ];
+    const savedFlags = {};
     settings.customPrompts = {};
     settings.promptModes = { ...defaultSettings.promptModes };
+    for (const key of flagKeys) {
+        savedFlags[key] = settings[key];
+        settings[key] = true;
+    }
     try {
         const tracking = buildTrackingMessages('');
         const tagText = (tag) => {
@@ -1565,6 +1575,7 @@ export function getDefaultPrompts() {
     } finally {
         settings.customPrompts = savedCustom;
         settings.promptModes = savedModes;
+        for (const key of flagKeys) settings[key] = savedFlags[key];
     }
 }
 
