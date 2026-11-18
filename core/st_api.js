@@ -63,7 +63,7 @@ export async function generateQuiet(prompt) {
             systemPromptSet = true;
             mod.setExtensionPrompt(
                 userKey,
-                '请严格按 system 指令输出 JSON，不要输出正文、解释或 markdown 代码块。',
+                '开始更新。',
                 types.IN_CHAT,
                 0,
                 false,
