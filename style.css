@@ -4806,186 +4806,13 @@ body {
     margin-top: 4px;
 }
 
-/* 新手引导 */
+/* 新手引导 · 终端风格 */
 #nt-guide-mask {
+    --ntg-blue: #4f78ff;
+    --ntg-cyan: #58e0d0;
+    --ntg-line: rgba(120, 150, 230, 0.22);
+    --ntg-dim: #707a92;
     position: fixed;
-    inset: 0;
-    z-index: 100020;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
-    background: rgba(0, 0, 0, 0.72);
-    backdrop-filter: blur(4px);
-    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-}
-#nt-guide-mask .nt-guide-card {
-    width: min(460px, 100%);
-    max-height: min(82dvh, 680px);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    color: #dfe4f2;
-    background:
-        linear-gradient(180deg, rgba(12, 16, 26, 0.98), rgba(7, 9, 15, 0.99));
-    border: 1px solid rgba(80, 115, 225, 0.5);
-    border-radius: 4px;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.75), inset 0 0 0 1px rgba(47, 91, 215, 0.08);
-}
-#nt-guide-mask .nt-guide-head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    background: linear-gradient(90deg, rgba(0, 47, 167, 0.24), transparent);
-}
-#nt-guide-mask .nt-guide-title {
-    color: #eef2ff;
-    font-size: 11px;
-    letter-spacing: 2px;
-}
-#nt-guide-mask .nt-guide-dots {
-    display: flex;
-    gap: 4px;
-    margin-left: auto;
-}
-#nt-guide-mask .nt-guide-dot {
-    width: 5px;
-    height: 5px;
-    background: #3a4254;
-}
-#nt-guide-mask .nt-guide-dot.active {
-    background: #4b78ff;
-    box-shadow: 0 0 8px rgba(75, 120, 255, 0.8);
-}
-#nt-guide-mask .nt-guide-x {
-    border: 0;
-    background: transparent;
-    color: #7f8798;
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-}
-#nt-guide-mask .nt-guide-x:hover { color: #fff; }
-#nt-guide-mask .nt-guide-step-title {
-    padding: 14px 16px 4px;
-    color: #fff;
-    font-size: 17px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-}
-#nt-guide-mask .nt-guide-body {
-    flex: 1;
-    overflow: auto;
-    padding: 6px 16px 12px;
-    font-size: 11.5px;
-    line-height: 1.65;
-}
-#nt-guide-mask .nt-guide-body h3 {
-    margin: 11px 0 3px;
-    color: #9fb4ff;
-    font-size: 12px;
-    letter-spacing: 0.5px;
-}
-#nt-guide-mask .nt-guide-body ul {
-    margin: 2px 0 4px;
-    padding-left: 16px;
-    color: #b9c0d0;
-}
-#nt-guide-mask .nt-guide-body li { margin: 1px 0; }
-#nt-guide-mask .nt-guide-kicker {
-    color: #56688f;
-    font-size: 9px;
-    letter-spacing: 1.5px;
-    margin-bottom: 2px;
-}
-#nt-guide-mask .nt-guide-note {
-    color: #7f8798;
-    font-size: 10px;
-    line-height: 1.55;
-}
-#nt-guide-mask .nt-guide-choice {
-    display: flex;
-    align-items: flex-start;
-    gap: 7px;
-    margin: 5px 0;
-    padding: 7px 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.02);
-    font-size: 11px;
-}
-#nt-guide-mask .nt-guide-choice input { margin-top: 2px; }
-#nt-guide-mask .nt-guide-choice span {
-    display: block;
-    color: #8d96a8;
-    font-size: 10px;
-}
-#nt-guide-mask .nt-guide-choice-box {
-    margin: 8px 0;
-    padding: 8px;
-    border: 1px solid rgba(80, 115, 225, 0.3);
-    font-size: 11px;
-}
-#nt-guide-mask .nt-guide-choice-box label { margin-right: 12px; }
-#nt-guide-mask .nt-guide-link {
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: #6f95ff;
-    font-size: 10.5px;
-    cursor: pointer;
-    text-decoration: underline;
-}
-#nt-guide-mask .nt-guide-map {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-#nt-guide-mask .nt-guide-map > div {
-    display: flex;
-    gap: 9px;
-    padding: 5px 7px;
-    border-left: 2px solid rgba(80, 115, 225, 0.45);
-    background: rgba(255, 255, 255, 0.018);
-}
-#nt-guide-mask .nt-guide-map b {
-    flex: 0 0 82px;
-    color: #dfe4f2;
-    font-size: 10.5px;
-}
-#nt-guide-mask .nt-guide-map span { color: #8d96a8; font-size: 10.5px; }
-#nt-guide-mask .nt-guide-foot {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 10px 14px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-#nt-guide-mask .nt-guide-spacer { flex: 1; }
-#nt-guide-mask .nt-guide-btn {
-    height: 28px;
-    padding: 0 12px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: transparent;
-    color: #9fa6b2;
-    font-size: 10.5px;
-    cursor: pointer;
-}
-#nt-guide-mask .nt-guide-btn:hover { border-color: rgba(80, 115, 225, 0.8); color: #fff; }
-#nt-guide-mask .nt-guide-btn.primary {
-    border-color: rgba(80, 115, 225, 0.75);
-    background: rgba(0, 47, 167, 0.28);
-    color: #eef2ff;
-}
-@media (max-width: 640px) {
-    #nt-guide-mask { padding: 10px; }
-    #nt-guide-mask .nt-guide-card { max-height: calc(100dvh - 20px); }
-    #nt-guide-mask .nt-guide-body { font-size: 11px; }
-}
-
-/* 修复手机 WebView body fixed 导致引导遮罩高度塌陷 */
-#nt-guide-mask {
     top: 0 !important;
     left: 0 !important;
     right: auto !important;
@@ -4995,14 +4822,370 @@ body {
     height: 100dvh !important;
     box-sizing: border-box;
     padding: max(12px, env(safe-area-inset-top, 0px)) 12px max(12px, env(safe-area-inset-bottom, 0px));
+    z-index: 100020;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     overflow: hidden;
+    background: rgba(2, 4, 9, 0.78);
+    backdrop-filter: blur(7px);
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
 }
 #nt-guide-mask .nt-guide-card {
+    position: relative;
+    width: min(468px, 100%);
     max-height: calc(100dvh - 24px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    color: #dfe4f2;
+    background:
+        linear-gradient(180deg, rgba(11, 15, 24, 0.985), rgba(5, 7, 12, 0.995));
+    border: 1px solid rgba(90, 120, 210, 0.5);
+    border-radius: 2px;
+    box-shadow:
+        0 28px 90px rgba(0, 0, 0, 0.8),
+        0 0 0 1px rgba(0, 0, 0, 0.65),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+#nt-guide-mask .nt-guide-card::before {
+    content: '';
+    position: absolute;
+    inset: 5px;
+    border: 1px solid rgba(73, 110, 230, 0.16);
+    pointer-events: none;
+    z-index: 3;
+}
+#nt-guide-mask .nt-guide-scan {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.55;
+    background:
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 3px),
+        radial-gradient(circle at 78% 0%, rgba(45, 85, 230, 0.16), transparent 45%);
+}
+#nt-guide-mask .nt-guide-head,
+#nt-guide-mask .nt-guide-progress,
+#nt-guide-mask .nt-guide-step-head,
+#nt-guide-mask .nt-guide-body,
+#nt-guide-mask .nt-guide-foot {
+    position: relative;
+    z-index: 1;
+}
+#nt-guide-mask .nt-guide-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px 10px;
+}
+#nt-guide-mask .nt-guide-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 0;
+}
+#nt-guide-mask .nt-guide-brand b {
+    color: #f0f4ff;
+    font-family: "Bahnschrift", "Consolas", monospace;
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-shadow: 0 0 16px rgba(90, 130, 255, 0.35);
+}
+#nt-guide-mask .nt-guide-brand span {
+    color: #4f5f88;
+    font-family: "Consolas", monospace;
+    font-size: 8px;
+    letter-spacing: 1px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+#nt-guide-mask .nt-guide-counter {
+    margin-left: auto;
+    color: #dbe2f5;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+#nt-guide-mask .nt-guide-counter span {
+    color: #4f5f88;
+    font-size: 9px;
+}
+#nt-guide-mask .nt-guide-x {
+    width: 24px;
+    height: 24px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #6e7890;
+    font-size: 17px;
+    line-height: 1;
+    cursor: pointer;
+}
+#nt-guide-mask .nt-guide-x:hover {
+    border-color: var(--ntg-line);
+    color: #fff;
+}
+#nt-guide-mask .nt-guide-progress {
+    display: flex;
+    gap: 3px;
+    padding: 0 16px 12px;
+}
+#nt-guide-mask .nt-guide-seg {
+    flex: 1;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.08);
+}
+#nt-guide-mask .nt-guide-seg.on {
+    background: linear-gradient(90deg, #4169e8, #6d92ff);
+    box-shadow: 0 0 8px rgba(80, 120, 255, 0.55);
+}
+#nt-guide-mask .nt-guide-step-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 13px;
+    padding: 4px 18px 12px;
+}
+#nt-guide-mask .nt-guide-step-code {
+    flex: 0 0 auto;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(110, 145, 255, 0.55);
+    font-family: "Bahnschrift", "Consolas", monospace;
+    font-size: 32px;
+    line-height: 1;
+    letter-spacing: -1px;
+}
+#nt-guide-mask .nt-guide-step-head h2 {
+    margin: 0;
+    color: #f4f7ff;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+#nt-guide-mask .nt-guide-step-head p {
+    margin: 3px 0 0;
+    color: #69748e;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+}
+#nt-guide-mask .nt-guide-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 18px 14px;
+    color: #b9c0d0;
+    font-size: 11.5px;
+    line-height: 1.65;
+    scrollbar-width: thin;
+}
+#nt-guide-mask .nt-guide-modules {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+#nt-guide-mask .nt-guide-module {
+    padding: 9px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    border-left: 2px solid rgba(79, 120, 255, 0.55);
+    background: rgba(255, 255, 255, 0.016);
+}
+#nt-guide-mask .nt-guide-module-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 3px;
+}
+#nt-guide-mask .nt-guide-code {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 15px;
+    padding: 0 4px;
+    border: 1px solid rgba(90, 125, 235, 0.35);
+    color: #7f9aff;
+    font-family: "Consolas", monospace;
+    font-size: 8px;
+    letter-spacing: 0.5px;
+}
+#nt-guide-mask .nt-guide-module h4 {
+    margin: 0;
+    color: #e6ebfa;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+}
+#nt-guide-mask .nt-guide-module ul {
+    margin: 2px 0 0;
+    padding-left: 14px;
+}
+#nt-guide-mask .nt-guide-module li { margin: 0; }
+#nt-guide-mask .nt-guide-module p { margin: 2px 0; }
+#nt-guide-mask .nt-guide-dim { color: #69748e; font-size: 10px; }
+#nt-guide-mask .nt-guide-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+#nt-guide-mask .nt-guide-options.compact {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+#nt-guide-mask .nt-guide-options.compact .nt-guide-option {
+    flex: 1 1 145px;
+}
+#nt-guide-mask .nt-guide-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 9px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.018);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+}
+#nt-guide-mask .nt-guide-option:hover {
+    border-color: rgba(79, 120, 255, 0.55);
+    background: rgba(79, 120, 255, 0.06);
+}
+#nt-guide-mask .nt-guide-option input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+#nt-guide-mask .nt-guide-radio {
+    flex: 0 0 auto;
+    width: 11px;
+    height: 11px;
+    margin-top: 2px;
+    border: 1px solid rgba(120, 145, 205, 0.55);
+    background: rgba(0, 0, 0, 0.35);
+}
+#nt-guide-mask .nt-guide-option input:checked + .nt-guide-radio {
+    border-color: #6d92ff;
+    background:
+        radial-gradient(circle, #8fb0ff 0 2px, transparent 2.5px),
+        rgba(40, 70, 170, 0.35);
+    box-shadow: 0 0 8px rgba(80, 120, 255, 0.45);
+}
+#nt-guide-mask .nt-guide-option b {
+    display: block;
+    color: #eef2ff;
+    font-size: 11.5px;
+    font-weight: 600;
+}
+#nt-guide-mask .nt-guide-option small {
+    display: block;
+    color: #77829a;
+    font-size: 10px;
+    line-height: 1.5;
+}
+#nt-guide-mask .nt-guide-callout {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 9px;
+    padding: 7px 9px;
+    border-left: 2px solid rgba(88, 224, 208, 0.45);
+    background: rgba(88, 224, 208, 0.035);
+    color: #8d9bb0;
+    font-size: 10.5px;
+}
+#nt-guide-mask .nt-guide-link {
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #7f9aff;
+    font-size: 10px;
+    cursor: pointer;
+}
+#nt-guide-mask .nt-guide-link:hover { color: #b8c8ff; }
+#nt-guide-mask .nt-guide-map {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+#nt-guide-mask .nt-guide-map-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 7px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.065);
+    background: rgba(255, 255, 255, 0.014);
+}
+#nt-guide-mask .nt-guide-map-row b {
+    flex: 0 0 76px;
+    color: #e3e9f8;
+    font-size: 11px;
+}
+#nt-guide-mask .nt-guide-map-row > span:last-child {
+    color: #77829a;
+    font-size: 10.5px;
+}
+#nt-guide-mask .nt-guide-lead {
+    margin: 0 0 10px;
+    color: #b7bfd0;
+}
+#nt-guide-mask .nt-guide-choice-box {
+    padding: 9px 10px;
+    border: 1px solid rgba(79, 120, 255, 0.3);
+    background: rgba(30, 50, 110, 0.12);
+}
+#nt-guide-mask .nt-guide-choice-box > b {
+    color: #dfe6fb;
+    font-size: 11px;
+}
+#nt-guide-mask .nt-guide-foot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 11px 16px 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(0, 0, 0, 0.2);
+}
+#nt-guide-mask .nt-guide-spacer { flex: 1; }
+#nt-guide-mask .nt-guide-btn {
+    height: 30px;
+    padding: 0 13px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    background: rgba(255, 255, 255, 0.02);
+    color: #aab2c3;
+    font-size: 10.5px;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+}
+#nt-guide-mask .nt-guide-btn:hover {
+    border-color: rgba(79, 120, 255, 0.7);
+    color: #fff;
+}
+#nt-guide-mask .nt-guide-btn.ghost {
+    border-color: transparent;
+    background: transparent;
+    color: #66718a;
+}
+#nt-guide-mask .nt-guide-btn.ghost:hover { color: #aab2c3; }
+#nt-guide-mask .nt-guide-btn.primary {
+    border-color: rgba(79, 120, 255, 0.75);
+    background: linear-gradient(180deg, rgba(45, 78, 180, 0.42), rgba(20, 38, 100, 0.5));
+    color: #eef3ff;
+    box-shadow: 0 0 18px rgba(60, 100, 255, 0.18);
+}
+#nt-guide-mask .nt-guide-btn.primary:hover {
+    background: linear-gradient(180deg, rgba(55, 92, 210, 0.55), rgba(24, 44, 116, 0.6));
 }
 @media (max-width: 640px) {
-    #nt-guide-mask .nt-guide-card {
-        width: min(420px, 100%);
-        max-height: calc(100dvh - 24px);
-    }
+    #nt-guide-mask { padding: 8px; }
+    #nt-guide-mask .nt-guide-card { max-height: calc(100dvh - 16px); }
+    #nt-guide-mask .nt-guide-step-head { padding: 2px 14px 10px; }
+    #nt-guide-mask .nt-guide-step-code { font-size: 27px; }
+    #nt-guide-mask .nt-guide-step-head h2 { font-size: 16px; }
+    #nt-guide-mask .nt-guide-body { padding: 0 14px 12px; font-size: 11px; }
+    #nt-guide-mask .nt-guide-head { padding: 12px 14px 8px; }
+    #nt-guide-mask .nt-guide-progress { padding: 0 14px 10px; }
+    #nt-guide-mask .nt-guide-foot { padding: 10px 14px 12px; }
+    #nt-guide-mask .nt-guide-btn { height: 29px; padding: 0 11px; }
 }
