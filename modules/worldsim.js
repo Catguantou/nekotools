@@ -600,8 +600,9 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
     }
 
     const list = [];
-    const coreText = core.map(x => String(x || '').trim()).filter(Boolean).join('\n\n──────\n\n');
-    const contractText = contract.map(x => String(x || '').trim()).filter(Boolean).join('\n\n──────\n\n');
+    const toText = (x) => String(typeof x === 'string' ? x : (x && x.content) || '').trim();
+    const coreText = core.map(toText).filter(Boolean).join('\n\n──────\n\n');
+    const contractText = contract.map(toText).filter(Boolean).join('\n\n──────\n\n');
     if (coreText) list.push({ role: 'system', content: coreText });
     if (contractText) list.push({ role: 'system', content: `【NEKOTOOL 本轮输出契约】\n\n${contractText}` });
 
