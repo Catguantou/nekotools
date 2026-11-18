@@ -2289,7 +2289,7 @@ async function buildAutoRefreshPrompt(book) {
             : null;
         return entry ? String(entry.content || '').slice(0, 6000) : '';
     };
-    const roster = await readRoster(book);
+    const roster = (await readRoster(book)).filter(c => String(c.tier || '').toUpperCase() !== 'T4');
     const charNames = roster.map(c => c.name);
     const userCharName = stBridge.getUserName() || '用户';
     const recordUserChar = settings.recordUserCharacter === true;
@@ -2319,6 +2319,8 @@ async function buildAutoRefreshPrompt(book) {
     blocks.push(`【道具】\n${get('道具') || '（空）'}`);
     blocks.push(`【伏笔】\n${get('伏笔') || '（空）'}`);
     blocks.push(`【计划】\n${get('计划') || '（空）'}`);
+    blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
+    blocks.push(`【大总结】\n${get('大总结') || '（空）'}`);
 
     const schema = [
         `"chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userCharName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`,
@@ -2329,14 +2331,17 @@ async function buildAutoRefreshPrompt(book) {
         '"items": {"add": {"道具名": {"描述":"[类别] 描述","关键词":["具体词1","具体词2"]}}, "del":["道具名"]}',
         '"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}',
         '"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}',
+        '"summary": "100字内，具体事件/承诺/道具/关系变化"',
+        '"bigSummary": "约2000 token，按时间顺序总结至此剧情，保留关键事件/关系变化/伏笔"',
     ];
     const contract = buildRefreshContract({
         chars: true, items: true, plot: true, world: true, foreshadow: true, map: true, quests: true,
+        summary: true, bigSummary: true,
         userName: userCharName, recordUserChar,
     });
     const charLine = charNames.length
-        ? `本轮更新这些角色：${charNames.join('、')}；不要输出其他人。`
-        : '角色索引为空：请根据角色卡和当前追踪书初始化主要角色（包括必要 NPC），不要留空。';
+        ? `本轮更新这些角色（T1/T2/T3，T4 跳过）：${charNames.join('、')}；不要输出其他人，不要输出 T4。`
+        : '角色索引为空：请根据角色卡和当前追踪书初始化主要角色（包括必要 NPC），T4 路人不要写。';
     const userLine = recordUserChar
         ? `用户角色「${userCharName}」也可以作为一条角色档案更新。`
         : `不要更新用户角色「${userCharName}」的角色档案。`;
@@ -2356,46 +2361,67 @@ ${contract}
 }
 
 let autoRefreshRunning = false;
-let autoRefreshWarned = false;
+let autoRefreshPending = false;
+
+function showAutoUpdateBanner() {
+    let el = document.getElementById('nt-auto-updating');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'nt-auto-updating';
+        el.textContent = '正在全量更新，建议更新结束后再继续下一轮';
+        document.body.appendChild(el);
+    }
+    el.style.display = 'flex';
+}
+
+function hideAutoUpdateBanner() {
+    const el = document.getElementById('nt-auto-updating');
+    if (el) el.remove();
+}
 
 async function runAutoFullRefresh() {
     const api = settings.get('worldsim').refreshApi || {};
-    if (!api.autoFull || !api.url || autoRefreshRunning) return;
+    if (!api.autoFull || !api.url) return;
+    if (autoRefreshRunning) {
+        autoRefreshPending = true;
+        return;
+    }
     if (window.__nt_quiet) return;
     const book = stBridge.currentTrackerName();
     if (!book) return;
     autoRefreshRunning = true;
+    showAutoUpdateBanner();
     try {
-        if (!autoRefreshWarned) {
-            console.log('[nekotools] 自动全量更新已启用，使用外接 API:', api.url);
-            autoRefreshWarned = true;
-        }
-        const prompt = await buildAutoRefreshPrompt(book);
-        const raw = await generateRefreshApi(prompt, api);
-        const text = String(raw || '');
-        const a = text.indexOf('{');
-        const b = text.lastIndexOf('}');
-        if (a < 0 || b <= a) throw new Error('模型没有返回 JSON');
-        const data = JSON.parse(text.slice(a, b + 1));
-        const summary = await applyRefreshData(book, data, currentLayerNo());
-        const bits = [
-            summary.chars ? `角色 ${summary.chars}` : '',
-            summary.world ? `世界 ${summary.world}` : '',
-            summary.map ? `地图 ${summary.map}` : '',
-            summary.main ? '主线' : '',
-            summary.quests ? `支线 ${summary.quests}` : '',
-            summary.items ? `道具 ${summary.items}` : '',
-            summary.foreshadow ? `伏笔 ${summary.foreshadow}` : '',
-            summary.plot ? `计划 ${summary.plot}` : '',
-            summary.summary ? '小总结' : '',
-            summary.bigSummary ? '大总结' : '',
-        ].filter(Boolean);
-        if (bits.length) toast(`自动全量更新：${bits.join(' / ')}`, 'success');
+        do {
+            autoRefreshPending = false;
+            const prompt = await buildAutoRefreshPrompt(book);
+            const raw = await generateRefreshApi(prompt, api);
+            const text = String(raw || '');
+            const a = text.indexOf('{');
+            const b = text.lastIndexOf('}');
+            if (a < 0 || b <= a) throw new Error('模型没有返回 JSON');
+            const data = JSON.parse(text.slice(a, b + 1));
+            const summary = await applyRefreshData(book, data, currentLayerNo());
+            const bits = [
+                summary.chars ? `角色 ${summary.chars}` : '',
+                summary.world ? `世界 ${summary.world}` : '',
+                summary.map ? `地图 ${summary.map}` : '',
+                summary.main ? '主线' : '',
+                summary.quests ? `支线 ${summary.quests}` : '',
+                summary.items ? `道具 ${summary.items}` : '',
+                summary.foreshadow ? `伏笔 ${summary.foreshadow}` : '',
+                summary.plot ? `计划 ${summary.plot}` : '',
+                summary.summary ? '小总结' : '',
+                summary.bigSummary ? '大总结' : '',
+            ].filter(Boolean);
+            console.log('[nekotools] 自动全量更新完成', bits.join(' / ') || '无变化');
+        } while (autoRefreshPending);
     } catch (e) {
         console.warn('[nekotools] 自动全量更新失败', e);
         toast(`自动全量更新失败：${e && e.message ? e.message : e}`, 'error');
     } finally {
         autoRefreshRunning = false;
+        hideAutoUpdateBanner();
     }
 }
 

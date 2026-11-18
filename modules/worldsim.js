@@ -1374,29 +1374,31 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         summary.plot = map ? Object.keys(map).length : 0;
     }
     const bigSummaryText = typeof data.bigSummary === 'string' ? data.bigSummary.trim() : '';
+    const smallSummaryText = typeof data.summary === 'string' ? data.summary.trim() : '';
     if (bigSummaryText) {
         const text = bigSummaryText.slice(0, 50000);
         await stBridge.updateEntry(bookName, '大总结', text, true, [], {
             position: 4, depth: 9999, order: 9999, role: 2, insertion_order: 9999,
         });
+        summary.bigSummary = 1;
+    }
+    if (smallSummaryText) {
+        const latest = await stBridge.loadWorldInfoAsync(bookName);
+        let current = '';
+        if (!bigSummaryText) {
+            const entry = Object.values(latest?.entries || {}).find(e => e && e.comment === '小总结');
+            if (entry && entry.content !== '（已浓缩入大总结）') current = `${entry.content}\n`;
+        }
+        await stBridge.updateEntry(bookName, '小总结', `${current}${smallSummaryText}`.slice(-30000), true, [], {
+            position: 4, depth: 999, order: 999, role: 2, insertion_order: 999,
+        });
+        summary.summary = 1;
+    } else if (bigSummaryText) {
         const latest = await stBridge.loadWorldInfoAsync(bookName);
         for (const entry of Object.values(latest?.entries || {})) {
             if (entry.comment === '小总结') entry.content = '（已浓缩入大总结）';
         }
         await stBridge.persistLorebook(bookName, latest);
-        summary.bigSummary = 1;
-    } else {
-        const smallText = typeof data.summary === 'string' ? data.summary.trim() : '';
-        if (smallText) {
-            const latest = await stBridge.loadWorldInfoAsync(bookName);
-            let current = '';
-            const entry = Object.values(latest?.entries || {}).find(e => e && e.comment === '小总结');
-            if (entry && entry.content !== '（已浓缩入大总结）') current = `${entry.content}\n`;
-            await stBridge.updateEntry(bookName, '小总结', `${current}${smallText}`.slice(-30000), true, [], {
-                position: 4, depth: 999, order: 999, role: 2, insertion_order: 999,
-            });
-            summary.summary = 1;
-        }
     }
 
     refreshSnapshots(bookName, book);
