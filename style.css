@@ -1120,7 +1120,7 @@ body {
     right: 76px; top: 0; bottom: 0;
     width: 44%;
     background: rgba(218, 223, 233, 0.82);
-    opacity: .18;
+    opacity: .07;
     -webkit-mask-image:
         radial-gradient(circle, #000 1.2px, transparent 1.6px),
         linear-gradient(90deg, transparent 0%, #000 62%, #000 100%);
@@ -4744,7 +4744,7 @@ body {
         top: 0;
         bottom: 0;
         width: 100%;
-        opacity: 0.22;
+        opacity: 0.08;
         background: rgba(218, 223, 233, 0.82);
         -webkit-mask-image:
             radial-gradient(circle, #000 1px, transparent 1.35px),
