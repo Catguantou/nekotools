@@ -2240,14 +2240,23 @@ function refreshApiModelsUrl(url) {
 }
 
 async function fetchRefreshModels(cfg) {
-    const url = refreshApiModelsUrl(cfg.url);
+    let url;
+    try {
+        url = refreshApiModelsUrl(cfg.url);
+    } catch (e) {
+        throw new Error('URL 格式不对，要写完整地址（含 https://）');
+    }
     const headers = {};
     if (cfg.key) headers.Authorization = `Bearer ${cfg.key}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
     let res;
     try {
-        res = await fetch(url, { headers });
+        res = await fetch(url, { headers, signal: ctrl.signal });
     } catch (e) {
-        throw new Error(`连接失败（CORS/网络）：${e && e.message ? e.message : e}`);
+        throw new Error(`连接失败（CORS/网络/超时）：${e && e.message ? e.message : e}`);
+    } finally {
+        clearTimeout(timer);
     }
     const text = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
@@ -2614,6 +2623,7 @@ async function showRefreshModal(preselectName = '') {
         }
         testApi.disabled = true;
         apiStatus.textContent = '连接中…';
+        toast('正在测试外接 API，请稍等…', 'info');
         try {
             const models = await fetchRefreshModels(cfg);
             modelList.textContent = '';
@@ -2624,9 +2634,11 @@ async function showRefreshModal(preselectName = '') {
             }
             if (!apiModel.value && models.length) apiModel.value = models[0];
             apiStatus.textContent = models.length ? `连接成功，${models.length} 个模型` : '连接成功，但没返回模型列表';
+            toast(apiStatus.textContent, 'success');
             persistApi();
         } catch (e) {
             apiStatus.textContent = `失败：${e && e.message ? e.message : e}`;
+            toast(apiStatus.textContent, 'error');
         } finally {
             testApi.disabled = false;
         }

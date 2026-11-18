@@ -4603,9 +4603,10 @@ body {
     flex-wrap: wrap;
 }
 #nt-quick-modal .nt-refresh-api-status {
-    color: var(--ntq-dim);
-    font-size: 9.5px;
-    line-height: 1.4;
+    flex: 1 1 100%;
+    color: #dfe4f2;
+    font-size: 10px;
+    line-height: 1.5;
     word-break: break-word;
 }
 #nt-quick-modal .nt-refresh-auto {
