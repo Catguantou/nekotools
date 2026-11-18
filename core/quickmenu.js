@@ -2525,6 +2525,9 @@ async function generateViaStRelay(prompt, cfg) {
     };
     if (url) payload.reverse_proxy = url;
     if (cfg.key) payload.proxy_password = cfg.key;
+    if (source === 'custom') {
+        payload.custom_url = cfg.url || document.querySelector('#custom_api_url_text')?.value || '';
+    }
     const res = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },

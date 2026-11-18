@@ -1321,8 +1321,12 @@ export function mountPanel() {
             const profileOptions = profiles.map(p => `<option value="profile:${escapeHtml(p.id)}">配置：${escapeHtml(p.name || p.url)}</option>`).join('');
             mainSelect.innerHTML = `<option value="">-- 选择酒馆 API --</option><optgroup label="酒馆已有 API">${sourceOptions}</optgroup>${profiles.length ? `<optgroup label="我的配置">${profileOptions}</optgroup>` : ''}`;
             subSelect.innerHTML = `<option value="">-- 选择副 API --</option><optgroup label="酒馆转发 API">${sourceOptions}</optgroup>${profiles.length ? `<optgroup label="我的配置">${profileOptions}</optgroup>` : ''}`;
+            const currentSource = String(document.querySelector('#chat_completion_source')?.value || '');
+            const currentSub = settings.get('worldsim').refreshApi || {};
             if (mainVal) mainSelect.value = mainVal;
+            else if (currentSource) mainSelect.value = `st:${currentSource}`;
             if (subVal) subSelect.value = subVal;
+            else if (currentSub.source) subSelect.value = `st:${currentSub.source}`;
         };
         const loadProfile = () => {
             const p = profileById(selectedId);
