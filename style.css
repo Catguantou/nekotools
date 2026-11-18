@@ -5232,3 +5232,34 @@ body {
         padding: 8px 11px;
     }
 }
+
+/* 提示词模式与预览 */
+#nt-ws-panel .nt-prompt-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+#nt-ws-panel .nt-prompt-mode {
+    margin-left: auto;
+    height: 24px;
+    padding: 0 5px;
+    border: 1px solid var(--ntk-line);
+    background: #0b0d12;
+    color: var(--ntk-dim);
+    font-size: 10px;
+    outline: none;
+}
+#nt-ws-panel .nt-prompt-preview {
+    max-height: 320px;
+    overflow: auto;
+    margin: 0 0 10px;
+    padding: 10px;
+    border: 1px solid var(--ntk-line);
+    background: #07090d;
+    color: #aeb6c8;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 10px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

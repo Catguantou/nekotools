@@ -2,7 +2,7 @@ import { registry } from './registry.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 import { saveSecret, getSecret, deleteSecret } from './apivault.js';
-import { getDefaultPrompts } from '../modules/worldsim.js';
+import { getDefaultPrompts, getSystemPromptPreview } from '../modules/worldsim.js';
 import { mountOnboarding } from './onboarding.js';
 import {
     cleanChatSlop,
@@ -48,6 +48,7 @@ export function mountPanel() {
 
     const s = mod.settings;
     if (!s.customPrompts) s.customPrompts = {};
+    if (!s.promptModes) s.promptModes = {};
     const defaultPrompts = getDefaultPrompts();
     const apiProfiles = Array.isArray(s.apiProfiles) ? s.apiProfiles : [];
     const activeProfileId = s.activeSecondaryProfile || '';
@@ -133,16 +134,22 @@ export function mountPanel() {
         ];
         return map.map(([key, code, name]) => {
             const custom = (s.customPrompts && s.customPrompts[key]) || '';
+            const mode = (s.promptModes && s.promptModes[key]) || 'append';
             const def = defaultPrompts[key] || '';
-            const shown = custom || def;
+            const shown = custom || (mode === 'replace' ? '' : def);
             return `
             <div class="nt-prompt-block">
                 <div class="nt-prompt-head">
                     <span class="nt-prompt-code">${code}</span>
                     <span class="nt-prompt-name">${name}</span>
+                    <select class="nt-prompt-mode" data-prompt-mode="${key}" title="追加=保留默认再加你的；替换=只用你写的；关闭=本轮不发送">
+                        <option value="append" ${mode === 'append' ? 'selected' : ''}>追加</option>
+                        <option value="replace" ${mode === 'replace' ? 'selected' : ''}>替换</option>
+                        <option value="off" ${mode === 'off' ? 'selected' : ''}>关闭</option>
+                    </select>
                 </div>
                 <textarea class="nt-prompt-textarea" data-prompt-key="${key}" data-default="${escapeHtml(def)}" placeholder="[自定义提示词 // 留空则使用默认契约]">${escapeHtml(shown)}</textarea>
-                <div class="nt-hint">默认提示词已显示在框中；不改动则继续使用默认。</div>
+                <div class="nt-hint">关闭 = 这一轮完全不发送；替换 = 只发你写的内容，标签要自己保留。</div>
             </div>`;
         }).join('');
     }
@@ -359,6 +366,11 @@ export function mountPanel() {
                             <span class="nt-title">自定义提示词</span>
                             <div class="nt-sec-line"></div>
                         </div>
+                        <div class="nt-data-row" style="justify-content:flex-start; gap:10px; flex-wrap:wrap;">
+                            <button id="nt-prompt-preview" class="nt-btn-text">[预览本轮实际发送]</button>
+                            <span id="nt-prompt-count" class="nt-hint"></span>
+                        </div>
+                        <pre id="nt-prompt-preview-out" class="nt-prompt-preview" style="display:none;"></pre>
                         ${getPromptBlocksHtml()}
                     </div>
                 </div>
@@ -1666,6 +1678,25 @@ export function mountPanel() {
         });
     }
 
+    wrap.querySelector('#nt-prompt-preview').onclick = () => {
+        const custom = {};
+        wrap.querySelectorAll('.nt-prompt-textarea[data-prompt-key]').forEach(ta => {
+            const key = ta.dataset.promptKey;
+            custom[key] = ta.value === (ta.dataset.default || '') ? '' : ta.value;
+        });
+        const modes = {};
+        wrap.querySelectorAll('select[data-prompt-mode]').forEach(sel => {
+            modes[sel.dataset.promptMode] = sel.value;
+        });
+        const list = getSystemPromptPreview(custom, modes);
+        const text = list.join('\n\n──────\n\n');
+        const out = wrap.querySelector('#nt-prompt-preview-out');
+        out.style.display = 'block';
+        out.textContent = text || '（所有提示词都被关闭，当前不会发送任何 system 提示词）';
+        const chars = text.length;
+        wrap.querySelector('#nt-prompt-count').textContent = `约 ${chars} 字符 / ${Math.ceil(chars / 2)} token（粗估）`;
+    };
+
     wrap.querySelector('#nt-ws-save').onclick = () => {
         wrap.querySelectorAll('.nt-mod-cb').forEach(cb => {
             const id = cb.dataset.modId;
@@ -1702,6 +1733,10 @@ export function mountPanel() {
         wrap.querySelectorAll('.nt-prompt-textarea[data-prompt-key]').forEach(ta => {
             const key = ta.dataset.promptKey;
             if (key) s.customPrompts[key] = ta.value === (ta.dataset.default || '') ? '' : ta.value;
+        });
+        wrap.querySelectorAll('select[data-prompt-mode]').forEach(sel => {
+            if (!s.promptModes) s.promptModes = {};
+            s.promptModes[sel.dataset.promptMode] = sel.value;
         });
 
         mod.saveSettings();

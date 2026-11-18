@@ -38,10 +38,48 @@ const defaultSettings = {
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
         world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '',
+    },
+    promptModes: {
+        status: 'append', preview: 'append', chars: 'append', items: 'append', plot: 'append',
+        world: 'append', foreshadow: 'append', summary: 'append', bigSummary: 'append', roster: 'append',
+        genesis: 'append', tick: 'append', map: 'append', quest: 'append', cognition: 'append',
     }
 };
 
-const settings = { ...defaultSettings, customPrompts: { ...defaultSettings.customPrompts } };
+const settings = {
+    ...defaultSettings,
+    customPrompts: { ...defaultSettings.customPrompts },
+    promptModes: { ...defaultSettings.promptModes },
+};
+
+/** 提示词模式：append=默认+附加，replace=只用自定义，off=本轮不发送 */
+function promptMode(key) {
+    return (settings.promptModes && settings.promptModes[key]) || 'append';
+}
+
+function customPromptText(key) {
+    return String((settings.customPrompts && settings.customPrompts[key]) || '').trim();
+}
+
+/** 给带固定标签的提示词统一套用模式；replace 时由用户自己负责标签 */
+function applyPromptMode(key, baseBlock) {
+    const mode = promptMode(key);
+    if (mode === 'off') return '';
+    if (mode === 'replace') return customPromptText(key);
+    const custom = customPromptText(key);
+    return custom ? `${baseBlock}\n【附加要求】\n${custom}` : baseBlock;
+}
+
+function pushTrackedPrompt(list, key, baseBlock) {
+    const mode = promptMode(key);
+    if (mode === 'off') return;
+    const custom = customPromptText(key);
+    if (mode === 'replace') {
+        if (custom) list.push({ role: 'system', content: custom });
+        return;
+    }
+    list.push({ role: 'system', content: custom ? `${baseBlock}\n【附加要求】\n${custom}` : baseBlock });
+}
 
 // 仅内存：本档是否已完成「开局世界生成」/「开局地图生成」
 const worldReady = new Map();
@@ -69,9 +107,7 @@ function buildGenesisPrompt() {
 社会新闻只写区域/国家/世界级的公开大事（政策、战争、灾害、经济、科技、宗教、大型事故、国际关系、社会运动），不要围绕主角/用户/单个角色写私事。
 沿用已有设定，不要另起炉灶；不要只写当前文本里已经出现的东西。
 ${tagClose}`;
-    const custom = (settings.customPrompts.genesis || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
+    return applyPromptMode('genesis', p);
 }
 
 /** 角色等级：索引里的 T1核心 也算 T1 */
@@ -141,9 +177,7 @@ function buildTickPrompt({ needWorldTick, targets = [] }) {
     lines.push('</nekotools:tick>');
 
     let p = lines.join('\n');
-    const custom = (settings.customPrompts.tick || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
+    return applyPromptMode('tick', p);
 }
 
 /** 每轮只读快照：索引角色等级，不写回 */
@@ -174,9 +208,7 @@ function buildMapGenesisPrompt(bookName = '') {
 - **地点名全局唯一，不要重名**；不同城市的同名地点请用“城市·地点”区分。
 - 先复用世界书里出现过的地名，不要造与设定冲突的地方。
 ${tagClose}`;
-    const custom = (settings.customPrompts.map || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
+    return applyPromptMode('map', p);
 }
 
 /** 每轮的地图增量契约 */
@@ -219,9 +251,7 @@ function buildQuestGenesisPrompt() {
 - 支线要能在当前地区自然触发，和 NPC/势力/新闻有关。
 - 支线「期限」必须写绝对日期（如 2009年11月05日），没有期限写“无”；「失败条件」一句话写清怎样算失败。期限已过且状态未完成、或状态写失败的支线，插件会自动删除。
 ${tagClose}`;
-    const custom = (settings.customPrompts.quest || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
+    return applyPromptMode('quest', p);
 }
 
 /** 每轮的主线/支线增量契约 */
@@ -337,6 +367,7 @@ function loadSettings() {
         if (saved[key] !== undefined) settings[key] = saved[key];
     }
     settings.customPrompts = { ...defaultSettings.customPrompts, ...(saved.customPrompts || {}) };
+    settings.promptModes = { ...defaultSettings.promptModes, ...(saved.promptModes || {}) };
 }
 
 function saveSettings() {
@@ -348,6 +379,7 @@ function saveSettings() {
         out[key] = settings[key];
     }
     out.customPrompts = { ...defaultSettings.customPrompts, ...(settings.customPrompts || {}) };
+    out.promptModes = { ...defaultSettings.promptModes, ...(settings.promptModes || {}) };
     coreSettings.set('worldsim', out);
 }
 
@@ -378,18 +410,14 @@ function buildCognitionPrompt() {
 - 信息差：任何情报都要有来源（看到/听到/查到/被告诉）；角色之间、角色与用户之间允许存在信息差，不得凭空得知。
 - 秘密：角色的个人隐私、重大秘密、成长经历、痛苦往事，绝不随口说出；只有被逼问、信任足够或剧情付出代价时才可能透露。
 </nekotools:cognition>`;
-    const custom = (settings.customPrompts.cognition || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
+    return applyPromptMode('cognition', p);
 }
 
 function buildStatusPrompt() {
     const tagOpen = '<ws_' + 'status>';
     const tagClose = '</ws_' + 'status>';
     let p = `<nekotools:status>\n【状态栏终端】必须在本轮正文末尾输出：\n${tagOpen}时间: XXXX年XX月XX日 | 地点: XXX | 天气: XXX | 温度: XX℃${tagClose}\n（前端会自动渲染，不要用代码块包裹，字段用 " | " 分隔）\n</nekotools:status>`;
-    const custom = (settings.customPrompts.status || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
+    return applyPromptMode('status', p);
 }
 
 function buildPreviewPrompt() {
@@ -413,16 +441,18 @@ ${tagOpen}
 ${tagClose}
 （标签之外绝对不要重复上述推演内容）`;
 
-    const custom = (settings.customPrompts.preview || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-
-    return p;
+    return applyPromptMode('preview', p);
 }
 
 function buildTrackingMessages(bookName = '') {
     const list = [];
-    const anyEnabled = settings.enableChars || settings.enableItems || settings.enablePlot
-        || settings.enableWorld || settings.enableForeshadow || settings.enableMap || settings.enableQuests;
+    const anyEnabled = (settings.enableChars && promptMode('chars') !== 'off')
+        || (settings.enableItems && promptMode('items') !== 'off')
+        || (settings.enablePlot && promptMode('plot') !== 'off')
+        || (settings.enableWorld && promptMode('world') !== 'off')
+        || (settings.enableForeshadow && promptMode('foreshadow') !== 'off')
+        || (settings.enableMap && promptMode('map') !== 'off')
+        || (settings.enableQuests && promptMode('quest') !== 'off');
     if (!anyEnabled) return list;
 
     const tagOpen = '<ws_' + 'update>';
@@ -458,10 +488,7 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 信任 0-20 提防 / 21-40 保留 / 41-60 一般 / 61-80 信任 / 81-100 生死托付。
 只写本轮有变化的人；插件会按人合并，没写到的旧关系保留。姓名由插件自动写，不用输出。
 `;
-        const custom = (settings.customPrompts.chars || '').trim();
-        if (custom) c += `【附加要求】\n${custom}\n`;
-        c += `</nekotools:track.chars>`;
-        list.push({ role: 'system', content: c });
+        pushTrackedPrompt(list, 'chars', c + `</nekotools:track.chars>`);
     }
 
     // 角色索引：不依赖「角色追踪」开关，只要有追踪就维护
@@ -478,10 +505,7 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 关键词必填 1–3 个，2–6 字，**正文里会原样出现**的具体词（人名/地名/物件/动作）；不要写“XX疑云、XX寻踪”这种标题式抽象词。
 重点保留未来剧情可能召回的道具。
 `;
-        const custom = (settings.customPrompts.items || '').trim();
-        if (custom) c += `【附加要求】\n${custom}\n`;
-        c += `</nekotools:track.items>`;
-        list.push({ role: 'system', content: c });
+        pushTrackedPrompt(list, 'items', c + `</nekotools:track.items>`);
     }
 
     if (settings.enablePlot) {
@@ -492,10 +516,7 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 关键词必填 1–3 个，2–6 字，**正文里会原样出现**的具体词（人名/地名/物件/动作）；不要写“XX疑云、XX寻踪”这种标题式抽象词。
 重要：此条目与角色后台动向联动。暗中进行的计划必须严守认知隔离，绝不能提前在正文中让用户或无关角色得知
 `;
-        const custom = (settings.customPrompts.plot || '').trim();
-        if (custom) c += `【附加要求】\n${custom}\n`;
-        c += `</nekotools:track.plot>`;
-        list.push({ role: 'system', content: c });
+        pushTrackedPrompt(list, 'plot', c + `</nekotools:track.plot>`);
     }
 
     if (settings.enableWorld) {
@@ -508,10 +529,7 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 新闻日报每游戏日只更新一次：游戏日期没变就不要新增/修改新闻；日期变化后才更新。常驻新闻最多 6 条；新新闻添加，旧新闻失去时效且没有剧情推动价值就删除，还能继续推动剧情则更新为进一步动态；标题和内容不要重复发布。
 世界要自己运转：国家之间会建交/断交/战争/贸易/文化渗透，势力有自己的目标和动作，不要围着主角转。
 `;
-        const custom = (settings.customPrompts.world || '').trim();
-        if (custom) c += `【附加要求】\n${custom}\n`;
-        c += `</nekotools:track.world>`;
-        list.push({ role: 'system', content: c });
+        pushTrackedPrompt(list, 'world', c + `</nekotools:track.world>`);
     }
 
     if (settings.enableForeshadow) {
@@ -521,13 +539,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 伏笔名要短（2-8 字），用正文里可能出现的具体物/地/人，不要抽象标题。
 关键词必填 1–3 个，2–6 字，**正文里会原样出现**的具体词（人名/地名/物件/动作）；不要写“XX疑云、XX寻踪”这种标题式抽象词。
 `;
-        const custom = (settings.customPrompts.foreshadow || '').trim();
-        if (custom) c += `【附加要求】\n${custom}\n`;
-        c += `</nekotools:track.foreshadow>`;
-        list.push({ role: 'system', content: c });
+        pushTrackedPrompt(list, 'foreshadow', c + `</nekotools:track.foreshadow>`);
     }
 
-    return list;
+    return list.filter(m => String(m && m.content || '').trim());
 }
 
 function buildSummaryPrompt() {
@@ -536,9 +551,7 @@ function buildSummaryPrompt() {
     let p = `<nekotools:summary>
 【格式契约】必须在末尾输出 ${tagOpen} ... ${tagClose}，开始与结束标签都要有。100字内对本轮剧情进行简洁概括，完整保留角色行为、发展与对话，包括详细日期时间，记录如学习到的经验/领悟/技巧/教训，或者是约定/承诺/性格转变/道具/礼物等等重要内容，确保记录具体且清晰的实际内容，严禁概括为模糊形容词
 </nekotools:summary>`;
-    const custom = (settings.customPrompts.summary || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
+    return applyPromptMode('summary', p);
 }
 
 function buildBigSummaryPrompt() {
@@ -548,9 +561,7 @@ function buildBigSummaryPrompt() {
 【格式契约 · 仅本轮触发】必须输出 ${tagOpen} ... ${tagClose}，开始与结束标签都要有。停止所有角色扮演，作为总结助手对本局游戏至此的剧情进行【大总结】。保持中性客观，总体2000token上下对已发生时间进行总结，以自然语言交代清楚发生了什么，且事件时间顺序必须与前文一致，保持时间线清晰度。相近时间事件整合为同一时间跨度，并使用【】对时间跨度进行标记，保留关键事件、人物关系变化、重要伏笔。
 如果世界书里已经有「大总结」：不要从第一楼重新总结，只总结「已有大总结」结束之后新发生的剧情，把新增内容接到旧大总结后面，输出合并后的新大总结；不要重复旧内容。
 </nekotools:bigsummary>`;
-    const custom = (settings.customPrompts.bigSummary || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
+    return applyPromptMode('bigSummary', p);
 }
 
 function externalAutoFullActive() {
@@ -579,7 +590,7 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
 
     // 世界书设定不再由本插件注入：追踪书已经全局激活，酒馆自己会把它送进提示词。
     // 重复注入既浪费 token，也会让同一段设定出现两次。
-    return list;
+    return list.filter(m => String(m && m.content || '').trim());
 }
 
 /** 日程兼容对象和字符串两种写法；字符串按「早晨：地点｜做什么；白天：…」解析 */
@@ -1283,9 +1294,7 @@ ${tagClose}`;
     if (cfg.blocked.length) {
         p += `\n【不记录】以下角色不要写进索引：\n${cfg.blocked.join('、')}`;
     }
-    const custom = (settings.customPrompts.roster || '').trim();
-    if (custom) p += `\n【附加要求】\n${custom}`;
-    return p;
+    return applyPromptMode('roster', p);
 }
 
 /**
@@ -1507,7 +1516,9 @@ export async function applyRefreshData(bookName, data, layer = 0) {
 
 export function getDefaultPrompts() {
     const savedCustom = { ...(settings.customPrompts || {}) };
+    const savedModes = { ...(settings.promptModes || {}) };
     settings.customPrompts = {};
+    settings.promptModes = { ...defaultSettings.promptModes };
     try {
         const tracking = buildTrackingMessages('');
         const tagText = (tag) => {
@@ -1536,6 +1547,23 @@ export function getDefaultPrompts() {
         };
     } finally {
         settings.customPrompts = savedCustom;
+        settings.promptModes = savedModes;
+    }
+}
+
+export function getSystemPromptPreview(customPrompts = {}, promptModes = {}) {
+    const savedCustom = { ...(settings.customPrompts || {}) };
+    const savedModes = { ...(settings.promptModes || {}) };
+    settings.customPrompts = { ...defaultSettings.customPrompts, ...customPrompts };
+    settings.promptModes = { ...defaultSettings.promptModes, ...promptModes };
+    try {
+        const book = stBridge.currentTrackerName() || '';
+        return buildSystemMessages(false, true, book, false, false, false)
+            .map(m => String(m && m.content || ''))
+            .filter(Boolean);
+    } finally {
+        settings.customPrompts = savedCustom;
+        settings.promptModes = savedModes;
     }
 }
 
