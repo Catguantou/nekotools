@@ -2,6 +2,8 @@ import { registry } from './registry.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 import { saveSecret, getSecret, deleteSecret } from './apivault.js';
+import { getDefaultPrompts } from '../modules/worldsim.js';
+import { mountOnboarding } from './onboarding.js';
 import {
     cleanChatSlop,
     exportPureStoryTxt,
@@ -46,6 +48,7 @@ export function mountPanel() {
 
     const s = mod.settings;
     if (!s.customPrompts) s.customPrompts = {};
+    const defaultPrompts = getDefaultPrompts();
     const apiProfiles = Array.isArray(s.apiProfiles) ? s.apiProfiles : [];
     const activeProfileId = s.activeSecondaryProfile || '';
     const apiProfileOptions = apiProfiles.map(p =>
@@ -96,6 +99,7 @@ export function mountPanel() {
         let html = '';
         let i = 0;
         for (const m of registry.list()) {
+            if (m.id === 'textmanager') continue;
             i++;
             const code = String(i).padStart(2, '0');
             html += `
@@ -128,14 +132,17 @@ export function mountPanel() {
             ['cognition', 'P_15', '认知隔离'],
         ];
         return map.map(([key, code, name]) => {
-            const val = (s.customPrompts && s.customPrompts[key]) || '';
+            const custom = (s.customPrompts && s.customPrompts[key]) || '';
+            const def = defaultPrompts[key] || '';
+            const shown = custom || def;
             return `
             <div class="nt-prompt-block">
                 <div class="nt-prompt-head">
                     <span class="nt-prompt-code">${code}</span>
                     <span class="nt-prompt-name">${name}</span>
                 </div>
-                <textarea class="nt-prompt-textarea" data-prompt-key="${key}" placeholder="[自定义提示词 // 留空则使用默认契约]">${escapeHtml(val)}</textarea>
+                <textarea class="nt-prompt-textarea" data-prompt-key="${key}" data-default="${escapeHtml(def)}" placeholder="[自定义提示词 // 留空则使用默认契约]">${escapeHtml(shown)}</textarea>
+                <div class="nt-hint">默认提示词已显示在框中；不改动则继续使用默认。</div>
             </div>`;
         }).join('');
     }
@@ -160,8 +167,8 @@ export function mountPanel() {
 
                 <div class="nt-tabs">
                     <button class="nt-tab active" data-target="nt-pane-core"><span class="nt-tnum">01</span>概览</button>
-                    <button class="nt-tab" data-target="nt-pane-lore"><span class="nt-tnum">02</span>世界书</button>
-                    <button class="nt-tab" data-target="nt-pane-data"><span class="nt-tnum">03</span>追踪</button>
+                    <button class="nt-tab" data-target="nt-pane-data"><span class="nt-tnum">02</span>世界模拟</button>
+                    <button class="nt-tab" data-target="nt-pane-lore"><span class="nt-tnum">03</span>世界书</button>
                     <button class="nt-tab" data-target="nt-pane-text"><span class="nt-tnum">04</span>文本</button>
                     <button class="nt-tab" data-target="nt-pane-settings"><span class="nt-tnum">05</span>设置</button>
                 </div>
@@ -176,17 +183,25 @@ export function mountPanel() {
                         <div class="nt-grid-layout">
                             ${getModulesHtml()}
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quickmenu" class="nt-hidden-cb" ${s.enableQuickMenu !== false ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">TOOL 菜单</span><span class="nt-code">U_01</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-summary" class="nt-hidden-cb" ${s.enableSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">小总结</span><span class="nt-code">T_08</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-bigsummary" class="nt-hidden-cb" ${s.enableBigSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">大总结</span><span class="nt-code">T_09</span></label>
                         </div>
                     </div>
 
-                    <div class="nt-section">
+                                        <div class="nt-section">
                         <div class="nt-sec-head">
                             <span class="nt-index">02</span>
                             <span class="nt-title">配置限制</span>
                             <div class="nt-sec-line"></div>
                         </div>
+                        <div class="nt-subhead">总结</div>
                         <div class="nt-data-row">
-                            <span class="nt-data-label">楼层隐藏保留 <span class="nt-hint">/ 小总结写完后用酒馆 /hide 隐藏最新 N 条之外的楼层（0=关闭）</span></span>
+                            <span class="nt-data-label">大总结触发层数 <span class="nt-hint">/ 每 N 层触发一次；开关在 01 概览</span></span>
+                            <input type="number" id="nt-ws-biglimit" class="nt-data-input" value="${s.bigSummaryLimit}" min="10" max="9999">
+                        </div>
+                        <div class="nt-subhead">楼层显示</div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">楼层隐藏保留 <span class="nt-hint">/ 小总结写完后用 /hide 隐藏最新 N 条之外的楼层，0=关闭</span></span>
                             <input type="number" id="nt-ws-keep" class="nt-data-input" value="${s.hideKeepCount}" min="0" max="50">
                         </div>
                         <div class="nt-data-row">
@@ -197,17 +212,14 @@ export function mountPanel() {
                             <button id="nt-ws-visual-restore" class="nt-btn-text" style="color:#00ffcc;">[恢复视觉显示]</button>
                             <button id="nt-ws-unhide-summary" class="nt-btn-text" style="color:#00ffcc;">[恢复已总结楼层]</button>
                         </div>
-                        <div class="nt-data-row">
-                            <span class="nt-data-label">大总结触发层数 <span class="nt-hint">/ 每 N 层触发</span></span>
-                            <input type="number" id="nt-ws-biglimit" class="nt-data-input" value="${s.bigSummaryLimit}" min="10" max="9999">
-                        </div>
+                        <div class="nt-subhead">角色与世界更新</div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">把用户角色记入世界书 <span class="nt-hint">/ 关闭后不创建/更新「角色·你」</span></span>
                             <label style="display:flex;align-items:center;gap:6px;">
                                 <input type="checkbox" id="nt-ws-record-user" ${s.recordUserCharacter ? 'checked' : ''}> 启用
                             </label>
                         </div>
-                        <div class="nt-data-row" style="margin-top: 16px;">
+                        <div class="nt-data-row">
                             <span class="nt-data-label">后台 tick <span class="nt-hint">/ 角色与世界的离屏推进</span></span>
                             <label style="display:flex;align-items:center;gap:6px;">
                                 <input type="checkbox" id="nt-ws-tick-enable" ${s.enableTicks ? 'checked' : ''}> 启用
@@ -242,9 +254,10 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row" style="gap:10px; flex-wrap:wrap;">
                             <button class="nt-btn-text" data-goto="nt-pane-lore">[世界书]</button>
-                            <button class="nt-btn-text" data-goto="nt-pane-data">[追踪]</button>
+                            <button class="nt-btn-text" data-goto="nt-pane-data">[世界模拟]</button>
                             <button class="nt-btn-text" data-goto="nt-pane-text">[文本]</button>
                             <button class="nt-btn-text" data-goto="nt-pane-settings">[设置]</button>
+                            <button class="nt-btn-text" id="nt-open-guide">[新手引导]</button>
                         </div>
                     </div>
                 </div>
@@ -335,8 +348,6 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-plot" class="nt-hidden-cb" ${s.enablePlot ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">计划追踪</span><span class="nt-code">T_05</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-world" class="nt-hidden-cb" ${s.enableWorld ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">世界局势</span><span class="nt-code">T_06</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-foreshadow" class="nt-hidden-cb" ${s.enableForeshadow ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">草蛇伏笔</span><span class="nt-code">T_07</span></label>
-                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-summary" class="nt-hidden-cb" ${s.enableSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">小总结</span><span class="nt-code">T_08</span></label>
-                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-bigsummary" class="nt-hidden-cb" ${s.enableBigSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">大总结</span><span class="nt-code">T_09</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quests" class="nt-hidden-cb" ${s.enableQuests ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">主线支线</span><span class="nt-code">T_10</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">认知隔离</span><span class="nt-code">T_11</span></label>
                         </div>
@@ -589,6 +600,16 @@ export function mountPanel() {
             wrap.querySelectorAll('.nt-tab').forEach(t => t.classList.toggle('active', t.dataset.target === target));
             wrap.querySelectorAll('.nt-tab-pane').forEach(p => p.classList.toggle('active', p.id === target));
         };
+    });
+
+    wrap.querySelector('#nt-open-guide').onclick = () => {
+        window.dispatchEvent(new CustomEvent('nekotool:open-guide'));
+    };
+    window.addEventListener('nekotool:open-api-settings', () => {
+        const tab = wrap.querySelector('.nt-tab[data-target="nt-pane-settings"]');
+        if (tab) tab.click();
+        const section = wrap.querySelector('#nt-pane-settings');
+        if (section) section.scrollIntoView({ block: 'start' });
     });
 
     // 强制展开抽屉内容，无视酒馆的展开动画逻辑
@@ -1680,7 +1701,7 @@ export function mountPanel() {
 
         wrap.querySelectorAll('.nt-prompt-textarea[data-prompt-key]').forEach(ta => {
             const key = ta.dataset.promptKey;
-            if (key) s.customPrompts[key] = ta.value;
+            if (key) s.customPrompts[key] = ta.value === (ta.dataset.default || '') ? '' : ta.value;
         });
 
         mod.saveSettings();
@@ -1767,4 +1788,6 @@ export function mountPanel() {
         };
         input.click();
     };
+
+    mountOnboarding();
 }

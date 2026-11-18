@@ -1505,6 +1505,40 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     return summary;
 }
 
+export function getDefaultPrompts() {
+    const savedCustom = { ...(settings.customPrompts || {}) };
+    settings.customPrompts = {};
+    try {
+        const tracking = buildTrackingMessages('');
+        const tagText = (tag) => {
+            const item = tracking.find(m => String(m.content || '').startsWith(`<${tag}>`));
+            if (!item) return '';
+            return String(item.content)
+                .replace(new RegExp(`^<${tag}>\\s*`), '')
+                .replace(new RegExp(`\\s*</${tag}>$`), '');
+        };
+        return {
+            status: buildStatusPrompt(),
+            preview: buildPreviewPrompt(),
+            chars: tagText('nekotools:track.chars'),
+            items: tagText('nekotools:track.items'),
+            plot: tagText('nekotools:track.plot'),
+            world: tagText('nekotools:track.world'),
+            foreshadow: tagText('nekotools:track.foreshadow'),
+            summary: buildSummaryPrompt(),
+            bigSummary: buildBigSummaryPrompt(),
+            roster: tagText('nekotools:track.roster'),
+            genesis: buildGenesisPrompt(),
+            tick: buildTickPrompt({ worldTick: true, targets: [] }),
+            map: buildMapPrompt(),
+            quest: buildQuestPrompt(),
+            cognition: buildCognitionPrompt(),
+        };
+    } finally {
+        settings.customPrompts = savedCustom;
+    }
+}
+
 registry.register({
     id: 'worldsim',
     name: '世界模拟',
