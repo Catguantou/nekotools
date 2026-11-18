@@ -5263,3 +5263,26 @@ body {
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+/* 世界模拟开关：紧凑三列 */
+#nt-ws-panel .nt-switch-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 4px !important;
+}
+#nt-ws-panel .nt-switch-grid .nt-grid-item {
+    padding: 5px 6px;
+    min-height: 26px;
+    gap: 5px;
+}
+#nt-ws-panel .nt-switch-grid .nt-text {
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#nt-ws-panel .nt-switch-grid .nt-code { display: none; }
+@media (max-width: 640px) {
+    #nt-ws-panel .nt-switch-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+    #nt-ws-panel .nt-switch-grid .nt-grid-item { padding: 5px 4px; min-height: 25px; }
+    #nt-ws-panel .nt-switch-grid .nt-text { font-size: 9.5px; }
+}

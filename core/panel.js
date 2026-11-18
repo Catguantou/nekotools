@@ -347,16 +347,20 @@ export function mountPanel() {
                             <span class="nt-title">世界模拟开关</span>
                             <div class="nt-sec-line"></div>
                         </div>
-                        <div class="nt-grid-layout">
-                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-status" class="nt-hidden-cb" ${s.enableStatus ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">状态栏美化</span><span class="nt-code">T_01</span></label>
+                        <div class="nt-subhead">正文输出</div>
+                        <div class="nt-grid-layout nt-switch-grid">
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-status" class="nt-hidden-cb" ${s.enableStatus ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">状态栏</span><span class="nt-code">T_01</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-preview" class="nt-hidden-cb" ${s.enablePreview ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">剧情预演</span><span class="nt-code">T_02</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">认知隔离</span><span class="nt-code">T_11</span></label>
+                        </div>
+                        <div class="nt-subhead">世界追踪</div>
+                        <div class="nt-grid-layout nt-switch-grid">
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-chars" class="nt-hidden-cb" ${s.enableChars ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">角色追踪</span><span class="nt-code">T_03</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-items" class="nt-hidden-cb" ${s.enableItems ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">道具追踪</span><span class="nt-code">T_04</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-plot" class="nt-hidden-cb" ${s.enablePlot ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">计划追踪</span><span class="nt-code">T_05</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-world" class="nt-hidden-cb" ${s.enableWorld ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">世界局势</span><span class="nt-code">T_06</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-foreshadow" class="nt-hidden-cb" ${s.enableForeshadow ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">草蛇伏笔</span><span class="nt-code">T_07</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quests" class="nt-hidden-cb" ${s.enableQuests ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">主线支线</span><span class="nt-code">T_10</span></label>
-                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">认知隔离</span><span class="nt-code">T_11</span></label>
                         </div>
                     </div>
 
@@ -1688,7 +1692,25 @@ export function mountPanel() {
         wrap.querySelectorAll('select[data-prompt-mode]').forEach(sel => {
             modes[sel.dataset.promptMode] = sel.value;
         });
-        const list = getSystemPromptPreview(custom, modes);
+        const flagMap = {
+            enableStatus: '#nt-ws-status',
+            enablePreview: '#nt-ws-preview',
+            enableChars: '#nt-ws-chars',
+            enableItems: '#nt-ws-items',
+            enablePlot: '#nt-ws-plot',
+            enableWorld: '#nt-ws-world',
+            enableQuests: '#nt-ws-quests',
+            enableCognition: '#nt-ws-cognition',
+            enableForeshadow: '#nt-ws-foreshadow',
+            enableSummary: '#nt-ws-summary',
+            enableBigSummary: '#nt-ws-bigsummary',
+        };
+        const flags = {};
+        for (const [key, id] of Object.entries(flagMap)) {
+            const el = wrap.querySelector(id);
+            if (el) flags[key] = el.checked;
+        }
+        const list = getSystemPromptPreview(custom, modes, flags);
         const text = list.join('\n\n──────\n\n');
         const out = wrap.querySelector('#nt-prompt-preview-out');
         out.style.display = 'block';
@@ -1708,6 +1730,30 @@ export function mountPanel() {
             }
         });
     });
+
+    const toggleMap = {
+        '#nt-ws-status': 'enableStatus',
+        '#nt-ws-preview': 'enablePreview',
+        '#nt-ws-chars': 'enableChars',
+        '#nt-ws-items': 'enableItems',
+        '#nt-ws-plot': 'enablePlot',
+        '#nt-ws-world': 'enableWorld',
+        '#nt-ws-quests': 'enableQuests',
+        '#nt-ws-cognition': 'enableCognition',
+        '#nt-ws-foreshadow': 'enableForeshadow',
+        '#nt-ws-summary': 'enableSummary',
+        '#nt-ws-bigsummary': 'enableBigSummary',
+    };
+    for (const [id, key] of Object.entries(toggleMap)) {
+        const el = wrap.querySelector(id);
+        if (!el) continue;
+        el.addEventListener('change', () => {
+            s[key] = el.checked;
+            mod.saveSettings();
+            const out = wrap.querySelector('#nt-prompt-preview-out');
+            if (out && out.style.display === 'block') wrap.querySelector('#nt-prompt-preview')?.click();
+        });
+    }
 
     wrap.querySelector('#nt-ws-save').onclick = () => {
         wrap.querySelectorAll('.nt-mod-cb').forEach(cb => {

@@ -1551,11 +1551,17 @@ export function getDefaultPrompts() {
     }
 }
 
-export function getSystemPromptPreview(customPrompts = {}, promptModes = {}) {
+export function getSystemPromptPreview(customPrompts = {}, promptModes = {}, flags = {}) {
     const savedCustom = { ...(settings.customPrompts || {}) };
     const savedModes = { ...(settings.promptModes || {}) };
+    const flagKeys = Object.keys(flags || {}).filter(k => k.startsWith('enable'));
+    const savedFlags = {};
     settings.customPrompts = { ...defaultSettings.customPrompts, ...customPrompts };
     settings.promptModes = { ...defaultSettings.promptModes, ...promptModes };
+    for (const key of flagKeys) {
+        savedFlags[key] = settings[key];
+        settings[key] = Boolean(flags[key]);
+    }
     try {
         const book = stBridge.currentTrackerName() || '';
         return buildSystemMessages(false, true, book, false, false, false)
@@ -1564,6 +1570,7 @@ export function getSystemPromptPreview(customPrompts = {}, promptModes = {}) {
     } finally {
         settings.customPrompts = savedCustom;
         settings.promptModes = savedModes;
+        for (const key of flagKeys) settings[key] = savedFlags[key];
     }
 }
 
