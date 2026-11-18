@@ -11,7 +11,7 @@ const STEPS = [
     {
         code: '01',
         title: 'NEKOTOOL 是什么',
-        subtitle: '四个入口，先认个脸',
+        subtitle: '',
         body: () => `
             <div class="nt-guide-modules">
                 <section class="nt-guide-module">
@@ -165,7 +165,7 @@ function renderStep() {
             <div class="nt-guide-progress">${segments}</div>
             <div class="nt-guide-step-head">
                 <span class="nt-guide-step-code">${step.code}</span>
-                <div><h2>${step.title}</h2><p>${step.subtitle}</p></div>
+                <div><h2>${step.title}</h2>${step.subtitle ? `<p>${step.subtitle}</p>` : ''}</div>
             </div>
             <div class="nt-guide-body">${step.body()}</div>
             <div class="nt-guide-foot">
