@@ -373,7 +373,6 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row" style="justify-content:flex-start; gap:10px; flex-wrap:wrap;">
                             <button id="nt-prompt-preview" class="nt-btn-text">[预览本轮实际发送]</button>
-                            <button id="nt-prompt-fill-default" class="nt-btn-text">[把默认提示词填回自定义]</button>
                             <button id="nt-prompt-clear-custom" class="nt-btn-text">[清空自定义并用默认]</button>
                             <span id="nt-prompt-count" class="nt-hint"></span>
                         </div>
@@ -1715,7 +1714,7 @@ export function mountPanel() {
             if (el) flags[key] = el.checked;
         }
         const list = getSystemPromptPreview(custom, modes, flags);
-        const text = list.join('\n\n──────\n\n');
+        const text = list.map(item => typeof item === 'string' ? item : String(item && item.content || '')).join('\n\n──────\n\n');
         const out = wrap.querySelector('#nt-prompt-preview-out');
         out.style.display = 'block';
         out.textContent = text || '（所有提示词都被关闭，当前不会发送任何 system 提示词）';
@@ -1752,23 +1751,6 @@ export function mountPanel() {
         ta.addEventListener('input', sync);
         ta.addEventListener('change', sync);
     });
-
-    wrap.querySelector('#nt-prompt-fill-default').onclick = () => {
-        if (!confirm('把 15 个默认提示词全部复制进自定义框，并把模式设为“替换”？原来的自定义内容会被覆盖。')) return;
-        wrap.querySelectorAll('.nt-prompt-textarea[data-prompt-key]').forEach(ta => {
-            const key = ta.dataset.promptKey;
-            const def = ta.dataset.default || '';
-            ta.value = def;
-            if (!s.customPrompts) s.customPrompts = {};
-            s.customPrompts[key] = def;
-            if (!s.promptModes) s.promptModes = {};
-            s.promptModes[key] = 'replace';
-            const sel = wrap.querySelector(`select[data-prompt-mode="${key}"]`);
-            if (sel) sel.value = 'replace';
-        });
-        mod.saveSettings();
-        wrap.querySelector('#nt-prompt-preview')?.click();
-    };
 
     wrap.querySelector('#nt-prompt-clear-custom').onclick = () => {
         if (!confirm('清空所有自定义提示词，恢复使用默认？')) return;
