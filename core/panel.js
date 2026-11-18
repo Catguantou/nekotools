@@ -1718,7 +1718,7 @@ export function mountPanel() {
         out.style.display = 'block';
         out.textContent = text || '（所有提示词都被关闭，当前不会发送任何 system 提示词）';
         const chars = text.length;
-        wrap.querySelector('#nt-prompt-count').textContent = `约 ${chars} 字符 / ${Math.ceil(chars / 2)} token（粗估）`;
+        wrap.querySelector('#nt-prompt-count').textContent = `约 ${chars} 字符 / ${Math.ceil(chars / 2)} token（粗估） · ${list.length} 段`;
     };
 
     wrap.querySelectorAll('select[data-prompt-mode]').forEach(sel => {

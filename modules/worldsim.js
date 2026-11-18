@@ -572,33 +572,42 @@ function externalAutoFullActive() {
 }
 
 function buildSystemMessages(needBig, includeTracking = true, bookName = '', needGenesis = false, needMapGenesis = false, needQuestGenesis = false) {
-    const list = [];
+    const core = [];
+    const contract = [];
     const externalAuto = externalAutoFullActive();
-    if (needGenesis && !externalAuto) list.push({ role: 'system', content: buildGenesisPrompt() });
-    if (needMapGenesis && !externalAuto) list.push({ role: 'system', content: buildMapGenesisPrompt(bookName) });
-    if (needQuestGenesis && !externalAuto) list.push({ role: 'system', content: buildQuestGenesisPrompt() });
+
+    if (needGenesis && !externalAuto) contract.push(buildGenesisPrompt());
+    if (needMapGenesis && !externalAuto) contract.push(buildMapGenesisPrompt(bookName));
+    if (needQuestGenesis && !externalAuto) contract.push(buildQuestGenesisPrompt(bookName));
+
     // 只留状态栏时不再发送世界模拟核心指令，避免污染正文
     const hasNonStatusFeature = Boolean(
         settings.enablePreview || settings.enableChars || settings.enableItems
         || settings.enablePlot || settings.enableWorld || settings.enableMap
         || settings.enableQuests || settings.enableCognition || settings.enableForeshadow
     );
-    if (hasNonStatusFeature) list.push({ role: 'system', content: DIRECTOR_PROMPT });
-    if (settings.enableCognition) list.push({ role: 'system', content: buildCognitionPrompt() });
+    if (hasNonStatusFeature) core.push(DIRECTOR_PROMPT);
+    if (settings.enableCognition) core.push(buildCognitionPrompt());
 
-    if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
-    if (settings.enablePreview) list.push({ role: 'system', content: buildPreviewPrompt() });
+    if (settings.enableStatus) contract.push(buildStatusPrompt());
+    if (settings.enablePreview) contract.push(buildPreviewPrompt());
 
     // 追踪书不存在时不要再要求模型输出追踪 JSON：写了也没地方存，白烧 token
     if (includeTracking && !externalAuto) {
-        list.push(...buildTrackingMessages(bookName));
-        if (settings.enableSummary) list.push({ role: 'system', content: buildSummaryPrompt() });
-        if (needBig) list.push({ role: 'system', content: buildBigSummaryPrompt() });
+        contract.push(...buildTrackingMessages(bookName));
+        if (settings.enableSummary) contract.push(buildSummaryPrompt());
+        if (needBig) contract.push(buildBigSummaryPrompt());
     }
+
+    const list = [];
+    const coreText = core.map(x => String(x || '').trim()).filter(Boolean).join('\n\n──────\n\n');
+    const contractText = contract.map(x => String(x || '').trim()).filter(Boolean).join('\n\n──────\n\n');
+    if (coreText) list.push({ role: 'system', content: coreText });
+    if (contractText) list.push({ role: 'system', content: `【NEKOTOOL 本轮输出契约】\n\n${contractText}` });
 
     // 世界书设定不再由本插件注入：追踪书已经全局激活，酒馆自己会把它送进提示词。
     // 重复注入既浪费 token，也会让同一段设定出现两次。
-    return list.filter(m => String(m && m.content || '').trim());
+    return list;
 }
 
 /** 日程兼容对象和字符串两种写法；字符串按「早晨：地点｜做什么；白天：…」解析 */
