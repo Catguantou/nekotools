@@ -627,13 +627,7 @@ registry.register({
                 console.warn('[nekotools] 状态栏渲染失败', e);
             }
             try {
-                touched.forEach(el => {
-                    if (el.classList.contains('nt-visual-hidden')) return;
-                    const mid = el.getAttribute('mesid');
-                    if (mid === null) return;
-                    const msg = ctx.chat?.[Number(mid)];
-                    if (msg?.extra?.hidden) el.classList.add('nt-visual-hidden');
-                });
+                stBridge.applyVisualKeep();
             } catch (e) {
                 console.warn('[nekotools] 视觉屏蔽失败', e);
             }
@@ -655,6 +649,7 @@ registry.register({
             ctx.eventSource.on(name, () => setTimeout(() => {
                 try {
                     upgradeStatusBars();
+                    stBridge.applyVisualKeep();
                 } catch (e) {
                     console.warn('[nekotools] 状态栏补渲染失败', e);
                 }
@@ -665,11 +660,7 @@ registry.register({
         setTimeout(() => {
             upgradeStatusBars();
             applySlopVisualAll();
-            document.querySelectorAll('#chat .mes[mesid]').forEach(el => {
-                if (el.classList.contains('nt-visual-hidden')) return;
-                const msg = stBridge.getContext().chat?.[Number(el.getAttribute('mesid'))];
-                if (msg?.extra?.hidden) el.classList.add('nt-visual-hidden');
-            });
+            stBridge.applyVisualKeep();
         }, 600);
     }
 });

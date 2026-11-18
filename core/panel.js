@@ -1176,6 +1176,7 @@ export function mountPanel() {
         // 词库可能变了：先还原旧的隐藏，再按新规则重新套一遍
         restoreSlopVisual();
         applySlopVisualAll();
+        try { stBridge.applyVisualKeep(); } catch (_) {}
         if (window.toastr) toastr.success('数据已同步');
     };
 

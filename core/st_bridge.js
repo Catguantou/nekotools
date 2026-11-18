@@ -845,9 +845,8 @@ export const stBridge = {
             }
         }
 
-        if (Number(visualKeep) > 0) {
-            this.applyVisualHide(this.cutoffIndexForKeep(visualKeep));
-        }
+        // 视觉屏蔽由设置独立控制，数据隐藏不再顺手把楼层藏起来
+        this.applyVisualKeep();
     },
 
     /** 视觉屏蔽：只给楼层加 class，看不见但数据没变 */
@@ -857,6 +856,24 @@ export const stBridge = {
         if (!chatEl) return;
         for (let i = 0; i < cutoffIndex; i++) {
             if (ctx.chat?.[i]?.extra?.nekotool_favorite) continue;
+            const el = chatEl.querySelector(`.mes[mesid="${i}"]`);
+            if (el) el.classList.add('nt-visual-hidden');
+        }
+    },
+
+    /** 按「视觉屏蔽保留」重新套一遍；数据层 hidden 不再自动影响视觉 */
+    applyVisualKeep() {
+        const chatEl = document.getElementById('chat');
+        const ctx = this.getContext();
+        if (!chatEl || !ctx || !ctx.chat) return;
+        const keep = Number(settings.get('worldsim').visualHideKeep) || 0;
+        const cutoff = keep > 0 ? this.cutoffIndexForKeep(keep) : -1;
+        chatEl.querySelectorAll('.mes.nt-visual-hidden').forEach(el => {
+            el.classList.remove('nt-visual-hidden');
+        });
+        if (cutoff < 0) return;
+        for (let i = 0; i < cutoff; i++) {
+            if (ctx.chat[i]?.extra?.nekotool_favorite) continue;
             const el = chatEl.querySelector(`.mes[mesid="${i}"]`);
             if (el) el.classList.add('nt-visual-hidden');
         }

@@ -2331,6 +2331,13 @@ async function buildAutoRefreshPrompt(book) {
     const charNames = roster.map(c => c.name);
     const userCharName = stBridge.getUserName() || '用户';
     const recordUserChar = settings.recordUserCharacter === true;
+    const chatNow = stBridge.getContext().chat || [];
+    const aiCount = chatNow.filter(m => m && !m.is_user && !m.is_system).length;
+    const wsCfg = settings.get('worldsim') || {};
+    const bigLimit = Number(wsCfg.bigSummaryLimit) || 0;
+    const wantBigSummary = wsCfg.enableBigSummary === true
+        && bigLimit > 0 && aiCount > 0 && aiCount % bigLimit === 0;
+    const wantSmallSummary = wsCfg.enableSummary === true && !wantBigSummary;
     const blocks = [];
     const recentChat = (stBridge.getContext().chat || [])
         .slice(-6)
@@ -2357,8 +2364,12 @@ async function buildAutoRefreshPrompt(book) {
     blocks.push(`【道具】\n${get('道具') || '（空）'}`);
     blocks.push(`【伏笔】\n${get('伏笔') || '（空）'}`);
     blocks.push(`【计划】\n${get('计划') || '（空）'}`);
-    blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
-    blocks.push(`【大总结】\n${get('大总结') || '（空）'}`);
+    if (wantBigSummary) {
+        blocks.push(`【大总结】\n${get('大总结') || '（空）'}`);
+        blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
+    } else if (wantSmallSummary) {
+        blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
+    }
 
     const schema = [
         `"chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userCharName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}`,
@@ -2369,12 +2380,12 @@ async function buildAutoRefreshPrompt(book) {
         '"items": {"add": {"道具名": {"描述":"[类别] 描述","关键词":["具体词1","具体词2"]}}, "del":["道具名"]}',
         '"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}',
         '"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}',
-        '"summary": "100字内，具体事件/承诺/道具/关系变化"',
-        '"bigSummary": "约2000 token，按时间顺序总结至此剧情，保留关键事件/关系变化/伏笔"',
     ];
+    if (wantSmallSummary) schema.push('"summary": "100字内，具体事件/承诺/道具/关系变化"');
+    if (wantBigSummary) schema.push('"bigSummary": "约2000 token，按时间顺序总结至此剧情，保留关键事件/关系变化/伏笔"');
     const contract = buildRefreshContract({
         chars: true, items: true, plot: true, world: true, foreshadow: true, map: true, quests: true,
-        summary: true, bigSummary: true,
+        summary: wantSmallSummary, bigSummary: wantBigSummary,
         userName: userCharName, recordUserChar,
     });
     const charLine = charNames.length
