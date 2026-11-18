@@ -149,7 +149,7 @@ export function mountPanel() {
                     </select>
                 </div>
                 <textarea class="nt-prompt-textarea" data-prompt-key="${key}" data-default="${escapeHtml(def)}" placeholder="[自定义提示词 // 留空则使用默认契约]">${escapeHtml(shown)}</textarea>
-                <div class="nt-hint">关闭 = 这一轮完全不发送；替换 = 只发你写的内容，标签要自己保留。</div>
+                <div class="nt-hint">关闭 = 这一轮完全不发送；替换 = 只发你写的内容，标签要自己保留；输入后会自动保存。</div>
             </div>`;
         }).join('');
     }
@@ -1731,6 +1731,24 @@ export function mountPanel() {
                 wrap.querySelector('#nt-prompt-preview')?.click();
             }
         });
+    });
+
+    wrap.querySelectorAll('.nt-prompt-textarea[data-prompt-key]').forEach(ta => {
+        let timer = 0;
+        const sync = () => {
+            const key = ta.dataset.promptKey;
+            if (!key) return;
+            if (!s.customPrompts) s.customPrompts = {};
+            s.customPrompts[key] = ta.value === (ta.dataset.default || '') ? '' : ta.value;
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                mod.saveSettings();
+                const out = wrap.querySelector('#nt-prompt-preview-out');
+                if (out && out.style.display === 'block') wrap.querySelector('#nt-prompt-preview')?.click();
+            }, 350);
+        };
+        ta.addEventListener('input', sync);
+        ta.addEventListener('change', sync);
     });
 
     const toggleMap = {
