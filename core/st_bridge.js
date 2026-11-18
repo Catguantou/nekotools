@@ -849,6 +849,61 @@ export const stBridge = {
         this.applyVisualKeep();
     },
 
+    /** 小总结写完后，用酒馆 /hide 把已总结楼层从上下文里隐藏，省 token */
+    async hideSummarizedMessages(keepCount) {
+        const ctx = this.getContext();
+        const cutoff = Number(keepCount) > 0 ? this.cutoffIndexForKeep(keepCount) : -1;
+        if (cutoff <= 0) return false;
+        const last = cutoff - 1;
+        try {
+            if (typeof ctx.executeSlashCommandsWithOptions === 'function') {
+                await ctx.executeSlashCommandsWithOptions(`/hide 0-${last}`);
+            } else {
+                for (let i = 0; i <= last; i++) {
+                    const msg = ctx.chat?.[i];
+                    if (msg && !msg.extra?.nekotool_favorite) msg.is_system = true;
+                }
+                await ctx.saveChatConditional?.();
+            }
+            const all = settings.get('worldsim') || {};
+            const slotMeta = { ...(all.slotMeta || {}) };
+            const book = this.currentTrackerName();
+            slotMeta[book] = { ...(slotMeta[book] || {}), summaryHiddenUntil: last };
+            settings.set('worldsim', { slotMeta });
+            return true;
+        } catch (e) {
+            console.warn('[nekotools] 楼层隐藏失败', e);
+            return false;
+        }
+    },
+
+    /** 恢复被小总结隐藏的楼层（不碰用户手动隐藏的楼层） */
+    async unhideSummarizedMessages() {
+        const ctx = this.getContext();
+        const all = settings.get('worldsim') || {};
+        const book = this.currentTrackerName();
+        const until = Number((all.slotMeta || {})[book]?.summaryHiddenUntil);
+        if (!Number.isFinite(until) || until < 0) return false;
+        try {
+            if (typeof ctx.executeSlashCommandsWithOptions === 'function') {
+                await ctx.executeSlashCommandsWithOptions(`/unhide 0-${until}`);
+            } else {
+                for (let i = 0; i <= until; i++) {
+                    const msg = ctx.chat?.[i];
+                    if (msg) msg.is_system = false;
+                }
+                await ctx.saveChatConditional?.();
+            }
+            const slotMeta = { ...(all.slotMeta || {}) };
+            if (slotMeta[book]) delete slotMeta[book].summaryHiddenUntil;
+            settings.set('worldsim', { slotMeta });
+            return true;
+        } catch (e) {
+            console.warn('[nekotools] 楼层恢复失败', e);
+            return false;
+        }
+    },
+
     /** 视觉屏蔽：只给楼层加 class，看不见但数据没变 */
     applyVisualHide(cutoffIndex) {
         const chatEl = document.getElementById('chat');

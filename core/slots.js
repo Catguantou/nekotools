@@ -19,7 +19,12 @@ function readMeta() {
     return meta;
 }
 
-function setSlotMeta(bookName, patch) {
+export function getSlotMeta(bookName) {
+    if (!bookName) return {};
+    return readMeta()[bookName] || {};
+}
+
+export function setSlotMeta(bookName, patch) {
     if (!bookName) return;
     const meta = readMeta();
     meta[bookName] = { ...(meta[bookName] || {}), ...patch };

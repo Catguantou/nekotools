@@ -45,6 +45,18 @@ export function mountPanel() {
 
     const s = mod.settings;
     if (!s.customPrompts) s.customPrompts = {};
+    const apiProfiles = Array.isArray(s.apiProfiles) ? s.apiProfiles : [];
+    const activeProfileId = s.activeSecondaryProfile || '';
+    const apiProfileOptions = apiProfiles.map(p =>
+        `<option value="${escapeHtml(p.id)}" ${p.id === activeProfileId ? 'selected' : ''}>${escapeHtml(p.name || p.url || p.id)}</option>`
+    ).join('');
+    let currentMainApi = '';
+    let currentMainModel = '';
+    try {
+        const ctx = stBridge.getContext();
+        currentMainApi = ctx.mainApi || '';
+        currentMainModel = ctx.onlineStatus || '';
+    } catch (_) {}
 
     const tmMod = registry.get('textmanager');
     if (tmMod && typeof tmMod.loadSettings === 'function') tmMod.loadSettings();
@@ -173,7 +185,7 @@ export function mountPanel() {
                             <div class="nt-sec-line"></div>
                         </div>
                         <div class="nt-data-row">
-                            <span class="nt-data-label">数据隐藏保留 <span class="nt-hint">/ 最新 N 条之外打 hidden 标记(影响导出)</span></span>
+                            <span class="nt-data-label">楼层隐藏保留 <span class="nt-hint">/ 小总结写完后用酒馆 /hide 隐藏最新 N 条之外的楼层（0=关闭）</span></span>
                             <input type="number" id="nt-ws-keep" class="nt-data-input" value="${s.hideKeepCount}" min="0" max="50">
                         </div>
                         <div class="nt-data-row">
@@ -182,6 +194,7 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row">
                             <button id="nt-ws-visual-restore" class="nt-btn-text" style="color:#00ffcc;">[恢复视觉显示]</button>
+                            <button id="nt-ws-unhide-summary" class="nt-btn-text" style="color:#00ffcc;">[恢复已总结楼层]</button>
                         </div>
                         <div class="nt-data-row">
                             <span class="nt-data-label">大总结触发层数 <span class="nt-hint">/ 每 N 层触发</span></span>
@@ -451,6 +464,61 @@ export function mountPanel() {
                 <div class="nt-tab-pane" id="nt-pane-settings">
                     <div class="nt-section">
                         <div class="nt-sec-head">
+                            <span class="nt-index">00</span>
+                            <span class="nt-title">API 配置</span>
+                            <div class="nt-sec-line"></div>
+                        </div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">酒馆主 API <span class="nt-hint">/ 当前：${escapeHtml(currentMainApi || '未知')} ${escapeHtml(currentMainModel || '')}</span></span>
+                        </div>
+                        <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
+                            <select id="nt-api-main-type" class="nt-edit-select">
+                                <option value="openai">OpenAI / 自定义兼容</option>
+                                <option value="textgenerationwebui">Text Generation WebUI</option>
+                                <option value="kobold">KoboldAI</option>
+                                <option value="novel">NovelAI</option>
+                                <option value="koboldhorde">KoboldAI Horde</option>
+                            </select>
+                            <input id="nt-api-main-model" class="nt-data-input" style="min-width:130px;" placeholder="主 API 模型（可留空）">
+                            <button id="nt-api-main-apply" class="nt-btn-text">[应用主 API]</button>
+                        </div>
+                        <div class="nt-data-row">
+                            <span class="nt-data-label">副 API 配置 <span class="nt-hint">/ 保存多套 URL / Key / 模型，随时切换</span></span>
+                        </div>
+                        <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
+                            <select id="nt-api-profile-select" class="nt-edit-select">
+                                <option value="">-- 选择配置 --</option>
+                                ${apiProfileOptions}
+                            </select>
+                            <button id="nt-api-profile-new" class="nt-btn-text">[新建]</button>
+                            <button id="nt-api-profile-del" class="nt-btn-text danger">[删除]</button>
+                        </div>
+                        <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
+                            <input id="nt-api-name" class="nt-data-input" style="min-width:110px;" placeholder="配置名">
+                            <select id="nt-api-type" class="nt-edit-select">
+                                <option value="openai">OpenAI 兼容</option>
+                                <option value="anthropic">Anthropic</option>
+                                <option value="gemini">Gemini</option>
+                            </select>
+                        </div>
+                        <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
+                            <input id="nt-api-url" class="nt-data-input" style="flex:1; min-width:180px;" placeholder="URL（基础地址或完整接口）">
+                        </div>
+                        <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
+                            <input id="nt-api-key" class="nt-data-input" style="flex:1; min-width:180px;" type="password" placeholder="Key">
+                            <input id="nt-api-model" class="nt-data-input" style="min-width:130px;" list="nt-api-model-list" placeholder="模型（可手填）">
+                            <datalist id="nt-api-model-list"></datalist>
+                        </div>
+                        <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
+                            <button id="nt-api-profile-save" class="nt-btn-text primary">[保存配置]</button>
+                            <button id="nt-api-profile-use" class="nt-btn-text">[设为副 API]</button>
+                            <button id="nt-api-test" class="nt-btn-text">[测试连接 / 获取模型]</button>
+                            <span id="nt-api-status" class="nt-hint"></span>
+                        </div>
+                    </div>
+
+                    <div class="nt-section">
+                        <div class="nt-sec-head">
                             <span class="nt-index">01</span>
                             <span class="nt-title">数据与诊断</span>
                             <div class="nt-sec-line"></div>
@@ -713,6 +781,14 @@ export function mountPanel() {
     wrap.querySelector('#nt-ws-visual-restore').onclick = () => {
         stBridge.showAllHiddenMessages();
         if (window.toastr) toastr.success('已恢复视觉显示（数据层隐藏未改变）');
+    };
+
+    wrap.querySelector('#nt-ws-unhide-summary').onclick = async () => {
+        const ok = await stBridge.unhideSummarizedMessages();
+        if (window.toastr) {
+            if (ok) toastr.success('已恢复被小总结隐藏的楼层');
+            else toastr.info('没有记录到被小总结隐藏的楼层');
+        }
     };
 
     wrap.querySelector('#nt-ws-refresh').onclick = async () => {
@@ -1129,6 +1205,170 @@ export function mountPanel() {
             window.dispatchEvent(new CustomEvent('nekotool:quickmenu-toggle', { detail: { enabled } }));
         } catch (_) {}
     });
+
+    // ---------- API 配置 ----------
+    {
+        let profiles = [...apiProfiles];
+        let selectedId = activeProfileId;
+        const profileSelect = wrap.querySelector('#nt-api-profile-select');
+        const nameEl = wrap.querySelector('#nt-api-name');
+        const typeEl = wrap.querySelector('#nt-api-type');
+        const urlEl = wrap.querySelector('#nt-api-url');
+        const keyEl = wrap.querySelector('#nt-api-key');
+        const modelEl = wrap.querySelector('#nt-api-model');
+        const statusEl = wrap.querySelector('#nt-api-status');
+        const modelList = wrap.querySelector('#nt-api-model-list');
+
+        const renderOptions = () => {
+            profileSelect.innerHTML = '<option value="">-- 选择配置 --</option>'
+                + profiles.map(p => `<option value="${escapeHtml(p.id)}" ${p.id === selectedId ? 'selected' : ''}>${escapeHtml(p.name || p.url || p.id)}</option>`).join('');
+        };
+        const loadProfile = () => {
+            const p = profiles.find(x => x.id === selectedId);
+            nameEl.value = p ? (p.name || '') : '';
+            typeEl.value = p ? (p.type || 'openai') : 'openai';
+            urlEl.value = p ? (p.url || '') : '';
+            keyEl.value = p ? (p.key || '') : '';
+            modelEl.value = p ? (p.model || '') : '';
+            statusEl.textContent = p ? '已加载配置' : '';
+        };
+        const saveProfiles = () => {
+            settings.set('worldsim', { apiProfiles: profiles });
+            renderOptions();
+        };
+        const normalizeUrl = (raw, type) => {
+            let s = String(raw || '').trim();
+            if (!s) return '';
+            if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+            const u = new URL(s);
+            if (u.protocol === 'http:' && !['localhost', '127.0.0.1', '::1'].includes(u.hostname)) u.protocol = 'https:';
+            let path = u.pathname.replace(/\/+$/, '');
+            if (type === 'openai' || !type) {
+                if (!path || path === '/') path = '/v1/chat/completions';
+                else if (/\/v\d+$/i.test(path)) path += '/chat/completions';
+                else if (!/\/chat\/completions$/i.test(path) && !/\/v\d+\//i.test(path)) path += '/v1/chat/completions';
+            }
+            u.pathname = path;
+            u.search = '';
+            return u.toString();
+        };
+        const testConnection = async () => {
+            const type = typeEl.value;
+            const url = normalizeUrl(urlEl.value, type);
+            if (!url) { statusEl.textContent = '先填 URL'; return; }
+            statusEl.textContent = '连接中…';
+            try {
+                let modelsUrl;
+                const u = new URL(url);
+                if (type === 'gemini') {
+                    statusEl.textContent = 'Gemini 暂不支持自动拉模型，请手填模型名';
+                    return;
+                }
+                if (type === 'anthropic') {
+                    u.pathname = `${u.pathname.replace(/\/messages$/i, '')}/models`;
+                    modelsUrl = u.toString();
+                } else {
+                    u.pathname = `${u.pathname.replace(/\/chat\/completions$/i, '')}/models`;
+                    modelsUrl = u.toString();
+                }
+                const headers = {};
+                if (type === 'anthropic') {
+                    headers['x-api-key'] = keyEl.value.trim();
+                    headers['anthropic-version'] = '2023-06-01';
+                } else if (keyEl.value.trim()) {
+                    headers.Authorization = `Bearer ${keyEl.value.trim()}`;
+                }
+                const res = await fetch(modelsUrl, { headers });
+                const text = await res.text();
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`);
+                const data = JSON.parse(text);
+                const list = Array.isArray(data.data) ? data.data : (Array.isArray(data.models) ? data.models : []);
+                modelList.textContent = '';
+                for (const item of list) {
+                    const id = typeof item === 'string' ? item : (item.id || item.name);
+                    if (!id) continue;
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    modelList.appendChild(opt);
+                }
+                statusEl.textContent = list.length ? `连接成功，${list.length} 个模型` : '连接成功，但没返回模型';
+            } catch (e) {
+                statusEl.textContent = `失败：${e.message || e}`;
+            }
+        };
+
+        renderOptions();
+        loadProfile();
+        profileSelect.addEventListener('change', () => {
+            selectedId = profileSelect.value;
+            loadProfile();
+        });
+        wrap.querySelector('#nt-api-profile-new').onclick = () => {
+            selectedId = '';
+            renderOptions();
+            loadProfile();
+            statusEl.textContent = '填写后保存为新配置';
+        };
+        wrap.querySelector('#nt-api-profile-save').onclick = () => {
+            if (!urlEl.value.trim()) { statusEl.textContent = 'URL 不能为空'; return; }
+            const item = {
+                id: selectedId || `api_${Date.now()}`,
+                name: nameEl.value.trim() || urlEl.value.trim(),
+                type: typeEl.value,
+                url: urlEl.value.trim(),
+                key: keyEl.value.trim(),
+                model: modelEl.value.trim(),
+            };
+            const index = profiles.findIndex(p => p.id === item.id);
+            if (index >= 0) profiles[index] = item;
+            else profiles.push(item);
+            selectedId = item.id;
+            saveProfiles();
+            loadProfile();
+            statusEl.textContent = '已保存';
+        };
+        wrap.querySelector('#nt-api-profile-del').onclick = () => {
+            if (!selectedId) return;
+            profiles = profiles.filter(p => p.id !== selectedId);
+            if (settings.get('worldsim').activeSecondaryProfile === selectedId) {
+                settings.set('worldsim', { activeSecondaryProfile: '' });
+            }
+            selectedId = '';
+            saveProfiles();
+            loadProfile();
+            statusEl.textContent = '已删除';
+        };
+        wrap.querySelector('#nt-api-profile-use').onclick = () => {
+            const p = profiles.find(x => x.id === selectedId);
+            if (!p) { statusEl.textContent = '先保存并选择一个配置'; return; }
+            settings.set('worldsim', {
+                activeSecondaryProfile: p.id,
+                refreshApi: {
+                    ...(settings.get('worldsim').refreshApi || {}),
+                    url: p.url,
+                    key: p.key,
+                    model: p.model,
+                    type: p.type || 'openai',
+                },
+            });
+            statusEl.textContent = '已设为当前副 API';
+            if (window.toastr) toastr.success('已设为当前副 API');
+        };
+        wrap.querySelector('#nt-api-test').onclick = testConnection;
+        wrap.querySelector('#nt-api-main-apply').onclick = async () => {
+            const type = wrap.querySelector('#nt-api-main-type').value;
+            const model = wrap.querySelector('#nt-api-main-model').value.trim();
+            try {
+                const ctx = stBridge.getContext();
+                if (typeof ctx.executeSlashCommandsWithOptions !== 'function') throw new Error('当前酒馆不支持切换 API');
+                await ctx.executeSlashCommandsWithOptions(`/api ${type}`);
+                if (model) await ctx.executeSlashCommandsWithOptions(`/model ${JSON.stringify(model)}`);
+                if (window.toastr) toastr.success(`主 API 已切换：${type}${model ? ` / ${model}` : ''}`);
+            } catch (e) {
+                if (window.toastr) toastr.error(`主 API 切换失败：${e.message || e}`);
+            }
+        };
+    }
 
     wrap.querySelector('#nt-ws-save').onclick = () => {
         wrap.querySelectorAll('.nt-mod-cb').forEach(cb => {

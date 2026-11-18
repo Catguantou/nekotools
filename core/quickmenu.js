@@ -10,6 +10,7 @@ import {
     importCurrent,
     getSlotClock,
     getSlotLog,
+    getSlotMeta,
     readRoster,
     readCharacterEntry,
     saveCharacterEntry,
@@ -657,14 +658,14 @@ function showNewsModal() {
         body.className = 'nt-news';
         const head = document.createElement('div');
         head.className = 'nt-news-head';
-        head.textContent = clock && clock.time ? `${clock.time} · 社会新闻` : '社会新闻';
+        head.textContent = clock && clock.time ? `${clock.time} · 新闻日报` : '新闻日报';
         body.appendChild(head);
         if (!rows.length) {
             const note = document.createElement('div');
             note.className = 'nt-quick-note';
-            note.textContent = '还没有社会新闻。世界 tick 或开局世界生成后会写进「社会新闻」条目。';
+            note.textContent = '还没有新闻。世界 tick 或开局世界生成后会写进「新闻日报」条目。';
             body.appendChild(note);
-            openModal({ title: '社会新闻', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+            openModal({ title: '新闻日报', body, wide: true, footer: [{ label: '关闭', primary: true }] });
             return;
         }
         for (const row of rows.slice(-20).reverse()) {
@@ -680,10 +681,10 @@ function showNewsModal() {
             card.appendChild(meta);
             body.appendChild(card);
         }
-        openModal({ title: '社会新闻', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+        openModal({ title: '新闻日报', body, wide: true, footer: [{ label: '关闭', primary: true }] });
     }).catch(e => {
-        console.warn('[nekotools] 社会新闻读取失败', e);
-        toast('社会新闻读取失败', 'error');
+        console.warn('[nekotools] 新闻日报读取失败', e);
+        toast('新闻日报读取失败', 'error');
     });
 }
 
@@ -2268,7 +2269,7 @@ async function backupBeforeWrite() {
     }
 }
 
-function normalizeRefreshApiUrl(raw) {
+function normalizeRefreshApiUrl(raw, type = 'openai') {
     let s = String(raw || '').trim();
     if (!s) return '';
     if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
@@ -2276,18 +2277,30 @@ function normalizeRefreshApiUrl(raw) {
     try { u = new URL(s); } catch { throw new Error('URL 格式不对，要写完整地址'); }
     if (u.protocol === 'http:' && !['localhost', '127.0.0.1', '::1'].includes(u.hostname)) u.protocol = 'https:';
     let path = u.pathname.replace(/\/+$/, '');
-    if (!path || path === '/') path = '/v1/chat/completions';
-    else if (/\/v1$/i.test(path)) path += '/chat/completions';
-    else if (!/\/chat\/completions$/i.test(path) && !/\/v1\//i.test(path)) path += '/v1/chat/completions';
+    if (type === 'anthropic') {
+        if (!path || path === '/') path = '/v1/messages';
+        else if (/\/v1$/i.test(path)) path += '/messages';
+        else if (!/\/messages$/i.test(path)) path += '/v1/messages';
+    } else if (type === 'gemini') {
+        if (!path || path === '/') path = '/v1beta';
+    } else {
+        if (!path || path === '/') path = '/v1/chat/completions';
+        else if (/\/v\d+$/i.test(path)) path += '/chat/completions';
+        else if (!/\/chat\/completions$/i.test(path) && !/\/v\d+\//i.test(path)) path += '/v1/chat/completions';
+    }
     u.pathname = path;
     u.search = '';
     u.hash = '';
     return u.toString();
 }
 
-function refreshApiModelsUrl(url) {
-    const u = new URL(normalizeRefreshApiUrl(url));
-    u.pathname = `${u.pathname.replace(/\/chat\/completions$/i, '')}/models`;
+function refreshApiModelsUrl(url, type = 'openai') {
+    const u = new URL(normalizeRefreshApiUrl(url, type));
+    if (type === 'anthropic') {
+        u.pathname = `${u.pathname.replace(/\/messages$/i, '')}/models`;
+    } else {
+        u.pathname = `${u.pathname.replace(/\/chat\/completions$/i, '')}/models`;
+    }
     u.search = '';
     return u.toString();
 }
@@ -2295,12 +2308,17 @@ function refreshApiModelsUrl(url) {
 async function fetchRefreshModels(cfg) {
     let url;
     try {
-        url = refreshApiModelsUrl(cfg.url);
+        url = refreshApiModelsUrl(cfg.url, cfg.type || 'openai');
     } catch (e) {
         throw new Error('URL 格式不对，要写完整地址（含 https://）');
     }
     const headers = {};
-    if (cfg.key) headers.Authorization = `Bearer ${cfg.key}`;
+    if (cfg.type === 'anthropic') {
+        headers['x-api-key'] = cfg.key || '';
+        headers['anthropic-version'] = '2023-06-01';
+    } else if (cfg.key) {
+        headers.Authorization = `Bearer ${cfg.key}`;
+    }
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 15000);
     let res;
@@ -2367,6 +2385,11 @@ async function buildAutoRefreshPrompt(book) {
     if (wantBigSummary) {
         blocks.push(`【大总结】\n${get('大总结') || '（空）'}`);
         blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
+        const cursor = Number(getSlotMeta(book).bigSummaryLayer) || 0;
+        const since = chatNow.slice(cursor)
+            .map(m => `${m.is_user ? '用户' : (m.name || '角色')}：${String(m.mes || '').slice(0, 800)}`)
+            .join('\n');
+        if (since) blocks.push(`【大总结之后新增对话】\n${since.slice(0, 8000)}`);
     } else if (wantSmallSummary) {
         blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
     }
@@ -2454,6 +2477,9 @@ async function runAutoFullRefresh() {
             if (a < 0 || b <= a) throw new Error('模型没有返回 JSON');
             const data = JSON.parse(text.slice(a, b + 1));
             const summary = await applyRefreshData(book, data, currentLayerNo());
+            if (summary.summary || summary.bigSummary) {
+                await stBridge.hideSummarizedMessages(Number(settings.get('worldsim').hideKeepCount) || 0);
+            }
             const bits = [
                 summary.chars ? `角色 ${summary.chars}` : '',
                 summary.world ? `世界 ${summary.world}` : '',
@@ -2480,18 +2506,52 @@ async function runAutoFullRefresh() {
 async function generateRefreshApi(prompt, cfg) {
     const rawUrl = String(cfg.url || '').trim();
     if (!rawUrl) return null;
-    const url = normalizeRefreshApiUrl(rawUrl);
+    const type = cfg.type || 'openai';
+    const url = normalizeRefreshApiUrl(rawUrl, type);
     const headers = { 'Content-Type': 'application/json' };
-    if (cfg.key) headers.Authorization = `Bearer ${cfg.key}`;
-    const body = {
-        messages: [
-            { role: 'system', content: prompt },
-            { role: 'user', content: '开始更新。' },
-        ],
-        temperature: 0.7,
-        stream: false,
-    };
-    if (cfg.model) body.model = cfg.model;
+    let body;
+    if (type === 'anthropic') {
+        headers['x-api-key'] = cfg.key || '';
+        headers['anthropic-version'] = '2023-06-01';
+        body = {
+            model: cfg.model || undefined,
+            max_tokens: 4096,
+            temperature: 0.7,
+            system: prompt,
+            messages: [{ role: 'user', content: '开始更新。' }],
+        };
+    } else if (type === 'gemini') {
+        const base = new URL(url);
+        const key = cfg.key ? `?key=${encodeURIComponent(cfg.key)}` : '';
+        base.pathname = `${base.pathname.replace(/\/+$/, '')}/models/${encodeURIComponent(cfg.model || 'gemini-1.5-flash')}:generateContent`;
+        base.search = key;
+        return await (async () => {
+            const res = await fetch(base.toString(), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    systemInstruction: { parts: [{ text: prompt }] },
+                    contents: [{ role: 'user', parts: [{ text: '开始更新。' }] }],
+                    generationConfig: { temperature: 0.7 },
+                }),
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error(`Gemini API ${res.status}: ${text.slice(0, 300)}`);
+            const data = JSON.parse(text);
+            return data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+        })();
+    } else {
+        if (cfg.key) headers.Authorization = `Bearer ${cfg.key}`;
+        body = {
+            messages: [
+                { role: 'system', content: prompt },
+                { role: 'user', content: '开始更新。' },
+            ],
+            temperature: 0.7,
+            stream: false,
+        };
+        if (cfg.model) body.model = cfg.model;
+    }
     let res;
     try {
         res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
@@ -2504,6 +2564,7 @@ async function generateRefreshApi(prompt, cfg) {
     try { data = JSON.parse(text); } catch { throw new Error('外接 API 返回的不是 JSON'); }
     return data?.choices?.[0]?.message?.content
         ?? data?.choices?.[0]?.text
+        ?? data?.content?.[0]?.text
         ?? data?.content
         ?? data?.response
         ?? '';
@@ -2772,7 +2833,7 @@ async function showRefreshModal(preselectName = '') {
     body.appendChild(apiDetails);
 
     testApi.addEventListener('click', async () => {
-        const cfg = { url: apiUrl.value.trim(), key: apiKey.value.trim(), model: apiModel.value.trim() };
+        const cfg = { url: apiUrl.value.trim(), key: apiKey.value.trim(), model: apiModel.value.trim(), type: savedApi.type || 'openai' };
         if (!cfg.url) {
             apiStatus.textContent = '先填 URL';
             return;
@@ -2925,6 +2986,7 @@ ${contract}
                 url: apiUrl.value.trim(),
                 key: apiKey.value.trim(),
                 model: apiModel.value.trim(),
+                type: savedApi.type || 'openai',
                 autoFull: autoCb.checked,
                 manualChoice: apiChoice.value,
             };
@@ -2945,6 +3007,9 @@ ${contract}
                 data.chars = !doChars ? {} : (effectiveChars.length ? filtered : data.chars);
             }
             const summary = await applyRefreshData(book, data, currentLayerNo());
+            if (summary.summary || summary.bigSummary) {
+                await stBridge.hideSummarizedMessages(Number(settings.get('worldsim').hideKeepCount) || 0);
+            }
             const bits = [
                 summary.chars ? `角色 ${summary.chars}` : '',
                 summary.world ? `世界 ${summary.world}` : '',
@@ -3118,7 +3183,7 @@ function buildPop() {
     const items = [
         { group: '世界', icon: '🕰', key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气', enabled: true },
         { group: '世界', icon: '🗺', key: 'map', label: '地图', hint: '区域 / 城市 / 小地点', enabled: true },
-        { group: '世界', icon: '📰', key: 'news', label: '社会新闻', hint: '最近发生了什么', enabled: true },
+        { group: '世界', icon: '📰', key: 'news', label: '新闻日报', hint: '每游戏日更新 / 最多6条', enabled: true },
         { group: '世界', icon: '📜', key: 'log', label: '世界日志', hint: '最近的角色 / 世界 / 支线变化', enabled: true },
         { group: '角色', icon: '👥', key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
         { group: '角色', icon: '📋', key: 'quests', label: '可办事项', hint: '主线 / 支线，可编辑', enabled: true },

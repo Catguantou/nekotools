@@ -1,7 +1,7 @@
 import { registry } from '../core/registry.js';
 import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
-import { touchSlot, getSlotClock, setSlotClock, appendSlotLog } from '../core/slots.js';
+import { touchSlot, getSlotClock, setSlotClock, appendSlotLog, getSlotMeta, setSlotMeta } from '../core/slots.js';
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, refreshBriefs, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
@@ -263,6 +263,14 @@ function rememberMainProgress(bookName, main) {
     } catch (_) {}
 }
 
+/** 记录大总结覆盖到第几层：下次大总结只从这之后开始 */
+function rememberBigSummaryLayer(bookName, layer) {
+    if (!bookName) return;
+    try {
+        setSlotMeta(bookName, { bigSummaryLayer: Math.max(0, Number(layer) || 0) });
+    } catch (_) {}
+}
+
 function markWorldReady(bookName, book) {
     if (!bookName) return;
     const data = book && book.entries ? readWorldData(book) : null;
@@ -332,7 +340,9 @@ function loadSettings() {
 }
 
 function saveSettings() {
-    const out = {};
+    // 保留插件运行时键（slotMeta / quickFloat / refreshApi / apiProfiles 等），
+    // 不能被面板保存时的默认键集合覆盖掉。
+    const out = { ...(coreSettings.get('worldsim') || {}) };
     for (const key of Object.keys(defaultSettings)) {
         if (key === 'customPrompts') continue;
         out[key] = settings[key];
@@ -495,6 +505,7 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 要求：只写本轮**变化**；国家、势力、社会新闻分开维护，不要把所有东西都塞进社会新闻。没有变化就写 "world": {}。
 社会新闻只写**已经发生的公开事实**；可执行的目标/承诺/待办钩子放「支线」，不要写进社会新闻。
 社会新闻必须是**区域性 / 国家性 / 世界性**的大事：政策、战争、灾害、经济、科技、宗教、大型事故、国际关系、社会运动等；不要写主角、用户或单个角色的私事、恋爱日常、今天吃了什么。人物只能作为事件的参与者或受影响者出现。
+新闻日报每游戏日只更新一次：游戏日期没变就不要新增/修改新闻；日期变化后才更新。常驻新闻最多 6 条；新新闻添加，旧新闻失去时效且没有剧情推动价值就删除，还能继续推动剧情则更新为进一步动态；标题和内容不要重复发布。
 世界要自己运转：国家之间会建交/断交/战争/贸易/文化渗透，势力有自己的目标和动作，不要围着主角转。
 `;
         const custom = (settings.customPrompts.world || '').trim();
@@ -535,6 +546,7 @@ function buildBigSummaryPrompt() {
     const tagClose = '</ws_' + 'big_summary>';
     let p = `<nekotools:bigsummary>
 【格式契约 · 仅本轮触发】必须输出 ${tagOpen} ... ${tagClose}，开始与结束标签都要有。停止所有角色扮演，作为总结助手对本局游戏至此的剧情进行【大总结】。保持中性客观，总体2000token上下对已发生时间进行总结，以自然语言交代清楚发生了什么，且事件时间顺序必须与前文一致，保持时间线清晰度。相近时间事件整合为同一时间跨度，并使用【】对时间跨度进行标记，保留关键事件、人物关系变化、重要伏笔。
+如果世界书里已经有「大总结」：不要从第一楼重新总结，只总结「已有大总结」结束之后新发生的剧情，把新增内容接到旧大总结后面，输出合并后的新大总结；不要重复旧内容。
 </nekotools:bigsummary>`;
     const custom = (settings.customPrompts.bigSummary || '').trim();
     if (custom) p += `\n【附加要求】\n${custom}`;
@@ -772,11 +784,27 @@ function normalizeWorldRaw(raw) {
     return out;
 }
 
+function currentGameDay(bookName) {
+    const clock = getSlotClock(bookName) || {};
+    const date = parseGameDate(clock.time || '');
+    return date ? `${date.y}-${date.m}-${date.d}` : '';
+}
+
 async function applyWorldUpdate(bookName, raw) {
     const book = await stBridge.loadWorldInfoAsync(bookName);
     if (!book || !book.entries) return null;
     const data = readWorldData(book);
     const ops = normalizeWorldRaw(raw);
+    const day = currentGameDay(bookName);
+    const meta = getSlotMeta(bookName);
+    const newsOps = Object.keys(ops.社会新闻 || {}).length
+        || (ops.del.社会新闻 || []).length;
+    const sameNewsDay = Boolean(day) && meta.newsDay === day;
+    if (sameNewsDay) {
+        // 新闻日报每游戏日只更新一次，同日重复的新闻直接忽略
+        ops.社会新闻 = {};
+        ops.del.社会新闻 = [];
+    }
 
     for (const section of WORLD_SECTIONS) {
         for (const name of ops.del[section] || []) delete data[section][name];
@@ -785,6 +813,24 @@ async function applyWorldUpdate(bookName, raw) {
             else data[section][name] = value;
         }
     }
+
+    // 常驻新闻最多 6 条，保留最新的；同时去掉内容重复的旧新闻
+    const seenNews = new Set();
+    const newsEntries = Object.entries(data.社会新闻 || {});
+    for (let i = newsEntries.length - 1; i >= 0; i--) {
+        const [name, value] = newsEntries[i];
+        const fingerprint = String(value || '').replace(/\s+/g, '').slice(0, 120);
+        if (!fingerprint || seenNews.has(fingerprint)) {
+            delete data.社会新闻[name];
+        } else {
+            seenNews.add(fingerprint);
+        }
+    }
+    const newsNames = Object.keys(data.社会新闻 || {});
+    if (newsNames.length > 6) {
+        for (const name of newsNames.slice(0, newsNames.length - 6)) delete data.社会新闻[name];
+    }
+    if (day && newsOps && !sameNewsDay) setSlotMeta(bookName, { newsDay: day });
 
     writeWorldEntries(book, data);
     removeEntryByComment(book, '世界局势');
@@ -1328,7 +1374,7 @@ export function buildRefreshContract({
     if (world) {
         parts.push(`【世界契约】
 "world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"},"del":{"国家":["名称"],"势力":["名称"],"社会新闻":["标题"]}}
-要求：国家固定 7 段、势力固定 5 段、社会新闻固定 3 段，顺序不要乱；缺的写“未知”；只写变化；社会新闻只写已经发生的公开事实，可执行目标/钩子放支线；世界要自己运转，不要围着主角转。社会新闻必须是区域性/国家性/世界性的大事（政策、战争、灾害、经济、科技、宗教、大型事故、国际关系、社会运动），不要写主角/用户/单个角色的私事或恋爱日常。`);
+要求：国家固定 7 段、势力固定 5 段、社会新闻固定 3 段，顺序不要乱；缺的写“未知”；只写变化；社会新闻只写已经发生的公开事实，可执行目标/钩子放支线；世界要自己运转，不要围着主角转。社会新闻必须是区域性/国家性/世界性的大事（政策、战争、灾害、经济、科技、宗教、大型事故、国际关系、社会运动），不要写主角/用户/单个角色的私事或恋爱日常。新闻日报每游戏日只更新一次；日期未变不要重复发布；常驻最多 6 条，新新闻添加，过期且无剧情用途的删除，能继续推动剧情的更新为进一步动态。`);
     }
     if (map) {
         parts.push(`【地图契约】
@@ -1344,7 +1390,7 @@ export function buildRefreshContract({
     if (bigSummary) {
         parts.push(`【大总结契约】
 "bigSummary": "对本局至此的剧情做一次大总结，约 2000 token，按时间顺序，保留关键事件、人物关系变化、重要伏笔；用【】标时间跨度。"
-要求：这是覆盖式总结，不要写正文；只输出总结文本。`);
+要求：这是覆盖式总结，不要写正文；只输出总结文本。如果已有「大总结」，只补写已有大总结之后的新剧情，不要从第一楼重新总结。`);
     }
     if (summary) {
         parts.push(`【小总结契约】
@@ -1432,6 +1478,7 @@ export async function applyRefreshData(bookName, data, layer = 0) {
             position: 4, depth: 9999, order: 9999, role: 2, insertion_order: 9999,
         });
         summary.bigSummary = 1;
+        rememberBigSummaryLayer(bookName, layer);
     }
     if (smallSummaryText) {
         const latest = await stBridge.loadWorldInfoAsync(bookName);
@@ -1737,6 +1784,7 @@ registry.register({
                 if (entry.comment === '小总结') entry.content = '（已浓缩入大总结）';
             }
             await stBridge.persistLorebook(currentLorebook, book);
+            rememberBigSummaryLayer(currentLorebook, replyLayer);
         }
 
         if (captured.ws_summary && settings.enableSummary && !captured.ws_big_summary) {
@@ -1747,6 +1795,9 @@ registry.register({
             await stBridge.updateEntry(currentLorebook, '小总结', currentSum + captured.ws_summary.trim(), true, [], {
                 position: 4, depth: 999, order: 999, role: 2, insertion_order: 999
             });
+        }
+        if (captured.ws_summary || captured.ws_big_summary) {
+            await stBridge.hideSummarizedMessages(settings.hideKeepCount);
         }
 
         if (captured.ws_preview && settings.enablePreview) {
@@ -1877,7 +1928,7 @@ registry.register({
             }
         }
 
-        setTimeout(() => { stBridge.hideOldMessages(settings.hideKeepCount, settings.visualHideKeep); }, 1000);
+        setTimeout(() => { stBridge.applyVisualKeep(); }, 1000);
         // 记录这一档最后游玩时间/层数，存档列表用
         touchSlot(currentLorebook);
         if (!window.__nt_quiet) {
