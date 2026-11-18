@@ -49,16 +49,27 @@ export async function generateQuiet(prompt) {
         throw new Error('当前酒馆版本不支持静默生成');
     }
     window.__nt_quiet = true;
-    const key = '__NEKOTOOL_QUIET_SYSTEM__';
+    const systemKey = '__NEKOTOOL_QUIET_SYSTEM__';
+    const userKey = '__NEKOTOOL_QUIET_USER__';
     const types = mod.extension_prompt_types;
     const roles = mod.extension_prompt_roles;
     let systemPromptSet = false;
+    let userPromptSet = false;
     try {
         // quietPrompt 在部分后端会被塞成 assistant；这里改成扩展 system 提示，
-        // 然后让 quietPrompt 为空，避免最后一条变成模型消息（Gemini 会拒绝）。
+        // 再补一条最后的 user 触发，避免请求以模型消息结尾（Gemini 会拒绝）。
         if (typeof mod.setExtensionPrompt === 'function' && types && roles) {
-            mod.setExtensionPrompt(key, prompt, types.IN_PROMPT, 0, false, roles.SYSTEM);
+            mod.setExtensionPrompt(systemKey, prompt, types.IN_PROMPT, 0, false, roles.SYSTEM);
             systemPromptSet = true;
+            mod.setExtensionPrompt(
+                userKey,
+                '请严格按 system 指令输出 JSON，不要输出正文、解释或 markdown 代码块。',
+                types.IN_CHAT,
+                0,
+                false,
+                roles.USER,
+            );
+            userPromptSet = true;
         }
         return await mod.generateQuietPrompt({
             quietPrompt: systemPromptSet ? '' : prompt,
@@ -67,7 +78,12 @@ export async function generateQuiet(prompt) {
     } finally {
         if (systemPromptSet) {
             try {
-                mod.setExtensionPrompt(key, '', types.IN_PROMPT, 0, false, roles.SYSTEM);
+                mod.setExtensionPrompt(systemKey, '', types.IN_PROMPT, 0, false, roles.SYSTEM);
+            } catch (_) {}
+        }
+        if (userPromptSet) {
+            try {
+                mod.setExtensionPrompt(userKey, '', types.IN_CHAT, 0, false, roles.USER);
             } catch (_) {}
         }
         window.__nt_quiet = false;
