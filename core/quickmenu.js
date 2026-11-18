@@ -2230,11 +2230,26 @@ async function backupBeforeWrite() {
     }
 }
 
-function refreshApiModelsUrl(url) {
-    const u = new URL(String(url || '').trim());
+function normalizeRefreshApiUrl(raw) {
+    let s = String(raw || '').trim();
+    if (!s) return '';
+    if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+    let u;
+    try { u = new URL(s); } catch { throw new Error('URL 格式不对，要写完整地址'); }
+    if (u.protocol === 'http:' && !['localhost', '127.0.0.1', '::1'].includes(u.hostname)) u.protocol = 'https:';
     let path = u.pathname.replace(/\/+$/, '');
-    path = path.replace(/\/chat\/completions$/, '');
-    u.pathname = `${path}/models`;
+    if (!path || path === '/') path = '/v1/chat/completions';
+    else if (/\/v1$/i.test(path)) path += '/chat/completions';
+    else if (!/\/chat\/completions$/i.test(path) && !/\/v1\//i.test(path)) path += '/v1/chat/completions';
+    u.pathname = path;
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+}
+
+function refreshApiModelsUrl(url) {
+    const u = new URL(normalizeRefreshApiUrl(url));
+    u.pathname = `${u.pathname.replace(/\/chat\/completions$/i, '')}/models`;
     u.search = '';
     return u.toString();
 }
@@ -2383,8 +2398,9 @@ async function runAutoFullRefresh() {
 }
 
 async function generateRefreshApi(prompt, cfg) {
-    const url = String(cfg.url || '').trim();
-    if (!url) return null;
+    const rawUrl = String(cfg.url || '').trim();
+    if (!rawUrl) return null;
+    const url = normalizeRefreshApiUrl(rawUrl);
     const headers = { 'Content-Type': 'application/json' };
     if (cfg.key) headers.Authorization = `Bearer ${cfg.key}`;
     const body = {
@@ -2570,7 +2586,7 @@ async function showRefreshModal(preselectName = '') {
         apiBox.appendChild(row);
         return input;
     };
-    const apiUrl = apiInput('url', 'URL', 'https://api.example.com/v1/chat/completions');
+    const apiUrl = apiInput('url', 'URL', 'https://api.example.com/v1 或完整 /v1/chat/completions');
     const apiKey = apiInput('key', 'Key', 'sk-...', 'password');
     const apiModel = apiInput('model', 'Model', 'gpt-4o-mini');
     apiModel.setAttribute('list', 'nt-refresh-model-list');
@@ -2611,7 +2627,7 @@ async function showRefreshModal(preselectName = '') {
     autoCb.addEventListener('change', persistApi);
     const apiHint = document.createElement('div');
     apiHint.className = 'nt-refresh-note';
-    apiHint.textContent = '填 URL 才走外接 API；要求接口兼容 OpenAI Chat Completions，并允许浏览器跨域。Key 只保存在当前酒馆设置里。';
+    apiHint.textContent = '可填基础地址（如 https://host/v1）或完整 .../v1/chat/completions；HTTP 会自动改成 HTTPS，并自动补 /v1。要求接口兼容 OpenAI 且允许浏览器跨域。Key 只保存在当前酒馆设置里。';
     apiBox.appendChild(apiHint);
     body.appendChild(apiBox);
 
@@ -2633,6 +2649,7 @@ async function showRefreshModal(preselectName = '') {
                 modelList.appendChild(opt);
             }
             if (!apiModel.value && models.length) apiModel.value = models[0];
+            apiUrl.value = normalizeRefreshApiUrl(cfg.url);
             apiStatus.textContent = models.length ? `连接成功，${models.length} 个模型` : '连接成功，但没返回模型列表';
             toast(apiStatus.textContent, 'success');
             persistApi();
