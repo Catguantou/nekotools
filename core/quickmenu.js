@@ -2230,6 +2230,144 @@ async function backupBeforeWrite() {
     }
 }
 
+function refreshApiModelsUrl(url) {
+    const u = new URL(String(url || '').trim());
+    let path = u.pathname.replace(/\/+$/, '');
+    path = path.replace(/\/chat\/completions$/, '');
+    u.pathname = `${path}/models`;
+    u.search = '';
+    return u.toString();
+}
+
+async function fetchRefreshModels(cfg) {
+    const url = refreshApiModelsUrl(cfg.url);
+    const headers = {};
+    if (cfg.key) headers.Authorization = `Bearer ${cfg.key}`;
+    let res;
+    try {
+        res = await fetch(url, { headers });
+    } catch (e) {
+        throw new Error(`连接失败（CORS/网络）：${e && e.message ? e.message : e}`);
+    }
+    const text = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+    let data;
+    try { data = JSON.parse(text); } catch { throw new Error('返回的不是 JSON'); }
+    const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.models) ? data.models : []);
+    return list.map(x => typeof x === 'string' ? x : (x?.id || x?.name)).filter(Boolean);
+}
+
+async function buildAutoRefreshPrompt(book) {
+    const bookData = await stBridge.loadWorldInfoAsync(book);
+    const get = (title) => {
+        const entry = bookData && bookData.entries
+            ? Object.values(bookData.entries).find(e => e && e.comment === title)
+            : null;
+        return entry ? String(entry.content || '').slice(0, 6000) : '';
+    };
+    const roster = await readRoster(book);
+    const charNames = roster.map(c => c.name);
+    const userCharName = stBridge.getUserName() || '用户';
+    const recordUserChar = settings.recordUserCharacter === true;
+    const blocks = [];
+    if (charNames.length) {
+        blocks.push(`【索引】\n${get('索引') || '（空）'}`);
+    } else {
+        const cur = stBridge.getCurrentCharacter?.();
+        const card = cur ? [cur.name, cur.description, cur.personality, cur.scenario].filter(Boolean).join('\n') : '';
+        if (card) blocks.push(`【角色卡】\n${card.slice(0, 3000)}`);
+        const all = bookData && bookData.entries
+            ? Object.values(bookData.entries).filter(e => e && e.comment).map(e => `【${e.comment}】\n${String(e.content || '').slice(0, 800)}`).join('\n')
+            : '';
+        if (all) blocks.push(`【当前追踪书】\n${all.slice(0, 5000)}`);
+    }
+    blocks.push(`【世界·国家】\n${get('世界·国家') || '（空）'}`);
+    blocks.push(`【世界·势力】\n${get('世界·势力') || '（空）'}`);
+    blocks.push(`【社会新闻】\n${get('社会新闻') || '（空）'}`);
+    blocks.push(`【地图】\n${get('地图') || '（空）'}`);
+    blocks.push(`【主线】\n${get('主线') || '（空）'}`);
+    blocks.push(`【支线】\n${get('支线') || '（空）'}`);
+    blocks.push(`【道具】\n${get('道具') || '（空）'}`);
+    blocks.push(`【伏笔】\n${get('伏笔') || '（空）'}`);
+    blocks.push(`【计划】\n${get('计划') || '（空）'}`);
+
+    const schema = [
+        `"chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userCharName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"..."}}`,
+        '"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}',
+        '"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}',
+        '"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}',
+        '"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}',
+        '"items": {"add": {"道具名": {"描述":"[类别] 描述","关键词":["具体词1","具体词2"]}}, "del":["道具名"]}',
+        '"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}',
+        '"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}',
+    ];
+    const contract = buildRefreshContract({
+        chars: true, items: true, plot: true, world: true, foreshadow: true, map: true, quests: true,
+        userName: userCharName, recordUserChar,
+    });
+    const charLine = charNames.length
+        ? `本轮更新这些角色：${charNames.join('、')}；不要输出其他人。`
+        : '角色索引为空：请根据角色卡和当前追踪书初始化主要角色（包括必要 NPC），不要留空。';
+    const userLine = recordUserChar
+        ? `用户角色「${userCharName}」也可以作为一条角色档案更新。`
+        : `不要更新用户角色「${userCharName}」的角色档案。`;
+    return `你是 NEKOTOOL 的后台世界更新器。只输出一个 JSON 对象，不要正文、不要 markdown 代码块、不要解释。
+方式：补全当前状态（把缺的细节补全，不主动推进时间）。
+${charLine}
+${userLine}
+当前数据：
+${blocks.join('\n\n')}
+
+请全量更新以下类别，只写本轮需要变化/新增的内容：
+${schema.join('\n')}
+
+【默认契约】
+${contract}
+要求：人物位置用地图小地点名；没有变化就留空对象；不要编造与当前数据冲突的内容。`;
+}
+
+let autoRefreshRunning = false;
+let autoRefreshWarned = false;
+
+async function runAutoFullRefresh() {
+    const api = settings.get('worldsim').refreshApi || {};
+    if (!api.autoFull || !api.url || autoRefreshRunning) return;
+    if (window.__nt_quiet) return;
+    const book = stBridge.currentTrackerName();
+    if (!book) return;
+    autoRefreshRunning = true;
+    try {
+        if (!autoRefreshWarned) {
+            console.log('[nekotools] 自动全量更新已启用，使用外接 API:', api.url);
+            autoRefreshWarned = true;
+        }
+        const prompt = await buildAutoRefreshPrompt(book);
+        const raw = await generateRefreshApi(prompt, api);
+        const text = String(raw || '');
+        const a = text.indexOf('{');
+        const b = text.lastIndexOf('}');
+        if (a < 0 || b <= a) throw new Error('模型没有返回 JSON');
+        const data = JSON.parse(text.slice(a, b + 1));
+        const summary = await applyRefreshData(book, data, currentLayerNo());
+        const bits = [
+            summary.chars ? `角色 ${summary.chars}` : '',
+            summary.world ? `世界 ${summary.world}` : '',
+            summary.map ? `地图 ${summary.map}` : '',
+            summary.main ? '主线' : '',
+            summary.quests ? `支线 ${summary.quests}` : '',
+            summary.items ? `道具 ${summary.items}` : '',
+            summary.foreshadow ? `伏笔 ${summary.foreshadow}` : '',
+            summary.plot ? `计划 ${summary.plot}` : '',
+        ].filter(Boolean);
+        if (bits.length) toast(`自动全量更新：${bits.join(' / ')}`, 'success');
+    } catch (e) {
+        console.warn('[nekotools] 自动全量更新失败', e);
+        toast(`自动全量更新失败：${e && e.message ? e.message : e}`, 'error');
+    } finally {
+        autoRefreshRunning = false;
+    }
+}
+
 async function generateRefreshApi(prompt, cfg) {
     const url = String(cfg.url || '').trim();
     if (!url) return null;
@@ -2400,6 +2538,9 @@ async function showRefreshModal(preselectName = '') {
     apiHead.className = 'nt-refresh-section';
     apiHead.textContent = '外接 API（可选，不填就用酒馆当前 API）';
     apiBox.appendChild(apiHead);
+    const modelList = document.createElement('datalist');
+    modelList.id = 'nt-refresh-model-list';
+    apiBox.appendChild(modelList);
     const apiInput = (key, label, placeholder, type = 'text') => {
         const row = document.createElement('label');
         row.className = 'nt-refresh-api-row';
@@ -2418,11 +2559,73 @@ async function showRefreshModal(preselectName = '') {
     const apiUrl = apiInput('url', 'URL', 'https://api.example.com/v1/chat/completions');
     const apiKey = apiInput('key', 'Key', 'sk-...', 'password');
     const apiModel = apiInput('model', 'Model', 'gpt-4o-mini');
+    apiModel.setAttribute('list', 'nt-refresh-model-list');
+    const apiActions = document.createElement('div');
+    apiActions.className = 'nt-refresh-api-actions';
+    const testApi = document.createElement('button');
+    testApi.type = 'button';
+    testApi.className = 'nt-quest-add';
+    testApi.textContent = '测试连接 / 获取模型';
+    const apiStatus = document.createElement('span');
+    apiStatus.className = 'nt-refresh-api-status';
+    apiActions.appendChild(testApi);
+    apiActions.appendChild(apiStatus);
+    apiBox.appendChild(apiActions);
+    const autoRow = document.createElement('label');
+    autoRow.className = 'nt-refresh-api-row nt-refresh-auto';
+    const autoCb = document.createElement('input');
+    autoCb.type = 'checkbox';
+    autoCb.checked = savedApi.autoFull === true;
+    const autoText = document.createElement('span');
+    autoText.textContent = '每轮自动全量更新（走外接 API）';
+    autoRow.appendChild(autoCb);
+    autoRow.appendChild(autoText);
+    apiBox.appendChild(autoRow);
+    const persistApi = () => {
+        settings.set('worldsim', {
+            refreshApi: {
+                url: apiUrl.value.trim(),
+                key: apiKey.value.trim(),
+                model: apiModel.value.trim(),
+                autoFull: autoCb.checked,
+            },
+        });
+    };
+    for (const input of [apiUrl, apiKey, apiModel]) {
+        input.addEventListener('change', persistApi);
+    }
+    autoCb.addEventListener('change', persistApi);
     const apiHint = document.createElement('div');
     apiHint.className = 'nt-refresh-note';
     apiHint.textContent = '填 URL 才走外接 API；要求接口兼容 OpenAI Chat Completions，并允许浏览器跨域。Key 只保存在当前酒馆设置里。';
     apiBox.appendChild(apiHint);
     body.appendChild(apiBox);
+
+    testApi.addEventListener('click', async () => {
+        const cfg = { url: apiUrl.value.trim(), key: apiKey.value.trim(), model: apiModel.value.trim() };
+        if (!cfg.url) {
+            apiStatus.textContent = '先填 URL';
+            return;
+        }
+        testApi.disabled = true;
+        apiStatus.textContent = '连接中…';
+        try {
+            const models = await fetchRefreshModels(cfg);
+            modelList.textContent = '';
+            for (const id of models) {
+                const opt = document.createElement('option');
+                opt.value = id;
+                modelList.appendChild(opt);
+            }
+            if (!apiModel.value && models.length) apiModel.value = models[0];
+            apiStatus.textContent = models.length ? `连接成功，${models.length} 个模型` : '连接成功，但没返回模型列表';
+            persistApi();
+        } catch (e) {
+            apiStatus.textContent = `失败：${e && e.message ? e.message : e}`;
+        } finally {
+            testApi.disabled = false;
+        }
+    });
 
     const save = async () => {
         const selected = Object.entries(checks).filter(([, cb]) => cb.checked).map(([k]) => k);
@@ -2527,6 +2730,7 @@ ${contract}
                 url: apiUrl.value.trim(),
                 key: apiKey.value.trim(),
                 model: apiModel.value.trim(),
+                autoFull: autoCb.checked,
             };
             settings.set('worldsim', { refreshApi: apiCfg });
             const raw = apiCfg.url
@@ -2890,6 +3094,9 @@ export function mountQuickMenu() {
             showMainCompleteModal(book).catch(err => console.warn('[nekotools] 主线完成弹窗失败', err));
         });
         window.addEventListener('nekotool:quickmenu-toggle', () => refreshQuickMenuVisibility());
+        window.addEventListener('nekotool:auto-refresh', () => {
+            runAutoFullRefresh().catch(err => console.warn('[nekotools] 自动全量更新异常', err));
+        });
         setInterval(() => {
             if (!ensureButton()) return;
             if (!$(POP_ID)) buildPop();

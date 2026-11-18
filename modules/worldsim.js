@@ -1780,6 +1780,11 @@ registry.register({
         setTimeout(() => { stBridge.hideOldMessages(settings.hideKeepCount, settings.visualHideKeep); }, 1000);
         // 记录这一档最后游玩时间/层数，存档列表用
         touchSlot(currentLorebook);
+        if (!window.__nt_quiet) {
+            try {
+                window.dispatchEvent(new CustomEvent('nekotool:auto-refresh', { detail: { book: currentLorebook } }));
+            } catch (_) {}
+        }
         } finally {
             // 一轮结束统一落盘（只写一次）
             await stBridge.commitBatch();
