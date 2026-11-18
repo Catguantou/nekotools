@@ -538,11 +538,17 @@ function buildBigSummaryPrompt() {
     return p;
 }
 
+function externalAutoFullActive() {
+    const api = coreSettings.get('worldsim').refreshApi;
+    return Boolean(api && api.autoFull && String(api.url || '').trim());
+}
+
 function buildSystemMessages(needBig, includeTracking = true, bookName = '', needGenesis = false, needMapGenesis = false, needQuestGenesis = false) {
     const list = [];
-    if (needGenesis) list.push({ role: 'system', content: buildGenesisPrompt() });
-    if (needMapGenesis) list.push({ role: 'system', content: buildMapGenesisPrompt(bookName) });
-    if (needQuestGenesis) list.push({ role: 'system', content: buildQuestGenesisPrompt() });
+    const externalAuto = externalAutoFullActive();
+    if (needGenesis && !externalAuto) list.push({ role: 'system', content: buildGenesisPrompt() });
+    if (needMapGenesis && !externalAuto) list.push({ role: 'system', content: buildMapGenesisPrompt(bookName) });
+    if (needQuestGenesis && !externalAuto) list.push({ role: 'system', content: buildQuestGenesisPrompt() });
     list.push({ role: 'system', content: DIRECTOR_PROMPT });
     if (settings.enableCognition) list.push({ role: 'system', content: buildCognitionPrompt() });
 
@@ -550,7 +556,7 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
     if (settings.enablePreview) list.push({ role: 'system', content: buildPreviewPrompt() });
 
     // 追踪书不存在时不要再要求模型输出追踪 JSON：写了也没地方存，白烧 token
-    if (includeTracking) {
+    if (includeTracking && !externalAuto) {
         list.push(...buildTrackingMessages(bookName));
         if (settings.enableSummary) list.push({ role: 'system', content: buildSummaryPrompt() });
         if (needBig) list.push({ role: 'system', content: buildBigSummaryPrompt() });

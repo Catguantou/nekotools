@@ -2270,6 +2270,11 @@ async function buildAutoRefreshPrompt(book) {
     const userCharName = stBridge.getUserName() || '用户';
     const recordUserChar = settings.recordUserCharacter === true;
     const blocks = [];
+    const recentChat = (stBridge.getContext().chat || [])
+        .slice(-6)
+        .map(m => `${m.is_user ? '用户' : (m.name || '角色')}：${String(m.mes || '').slice(0, 800)}`)
+        .join('\n');
+    if (recentChat) blocks.push(`【最近对话】\n${recentChat.slice(0, 5000)}`);
     if (charNames.length) {
         blocks.push(`【索引】\n${get('索引') || '（空）'}`);
     } else {
