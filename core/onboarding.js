@@ -34,7 +34,7 @@ const STEPS = [
                 <li>请求更新时可以选择用主 API 还是副 API</li>
             </ul>
             <h3>TOOL 菜单</h3>
-            <p class="nt-guide-note">世界时钟、地图、新闻日报、世界日志、角色管理、可办事项、快捷行动、请求更新、存档、手动修改，以及每轮自动全量更新。</p>
+            <p class="nt-guide-note">世界时钟、地图、新闻日报、世界日志、角色管理、可办事项、快捷行动、请求更新、存档、手动修改。请求更新里还可以打开「每轮自动全量更新」。</p>
         `,
     },
     {
@@ -53,7 +53,7 @@ const STEPS = [
         after: () => {
             const btn = document.getElementById('nt-guide-open-api');
             if (btn) btn.onclick = () => {
-                closeGuide(false);
+                closeGuide(true);
                 window.dispatchEvent(new CustomEvent('nekotool:open-api-settings'));
             };
         },

@@ -337,7 +337,7 @@ export function mountPanel() {
                     <div class="nt-section">
                         <div class="nt-sec-head">
                             <span class="nt-index">01</span>
-                            <span class="nt-title">追踪开关</span>
+                            <span class="nt-title">世界模拟开关</span>
                             <div class="nt-sec-line"></div>
                         </div>
                         <div class="nt-grid-layout">
