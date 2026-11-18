@@ -2068,7 +2068,7 @@ async function showQuestsModal() {
     const questHistory = await readQuestHistory(book);
 
     const body = document.createElement('div');
-    body.className = 'nt-quests';
+    body.className = 'nt-quests nt-quests-readonly';
 
     const card = document.createElement('div');
     card.className = 'nt-quest-main';
@@ -2077,31 +2077,28 @@ async function showQuestsModal() {
     title.textContent = '主线';
     card.appendChild(title);
 
-    const fields = {};
-    const addField = (key, placeholder = '') => {
-        const row = document.createElement('label');
-        row.className = 'nt-quest-edit-row';
+    const mainFields = [
+        ['标题', main['标题']],
+        ['目标', main['目标']],
+        ['阶段', main['阶段']],
+        ['进度', `${clampProgress(main['进度'])}%`],
+        ['失败代价', main['失败代价']],
+        ['下一步', main['下一步']],
+    ];
+    for (const [label, value] of mainFields) {
+        if (!value) continue;
+        const row = document.createElement('div');
+        row.className = 'nt-quest-read-row';
         const l = document.createElement('span');
         l.className = 'nt-quest-label';
-        l.textContent = key;
-        const input = document.createElement('input');
-        input.className = 'nt-quest-input';
-        input.placeholder = placeholder;
-        input.value = key === '进度' ? String(clampProgress(main[key])) : (main[key] || '');
-        fields[key] = input;
+        l.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'nt-quest-read-value';
+        v.textContent = value;
         row.appendChild(l);
-        row.appendChild(input);
+        row.appendChild(v);
         card.appendChild(row);
-    };
-    addField('标题');
-    addField('目标');
-    addField('阶段');
-    addField('进度', '0–100');
-    fields['进度'].type = 'number';
-    fields['进度'].min = '0';
-    fields['进度'].max = '100';
-    addField('失败代价');
-    addField('下一步');
+    }
 
     const bar = document.createElement('div');
     bar.className = 'nt-quest-bar';
@@ -2117,40 +2114,39 @@ async function showQuestsModal() {
     head.textContent = `支线（${Object.keys(quests).length}）`;
     body.appendChild(head);
 
-    const rows = document.createElement('div');
-    rows.className = 'nt-quest-edit-list';
-    body.appendChild(rows);
+    if (!Object.keys(quests).length) {
+        const empty = document.createElement('div');
+        empty.className = 'nt-quick-note';
+        empty.textContent = '暂无支线。';
+        body.appendChild(empty);
+    }
 
-    const addQuestRow = (name = '', value = '') => {
-        const row = document.createElement('div');
-        row.className = 'nt-quest-edit-row nt-quest-edit-side';
-        const nameEl = document.createElement('input');
-        nameEl.className = 'nt-quest-input nt-quest-name';
-        nameEl.placeholder = '支线名';
-        nameEl.value = name;
-        if (name) nameEl.readOnly = true;
-        const valueEl = document.createElement('input');
-        valueEl.className = 'nt-quest-input';
-        valueEl.placeholder = '类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子';
-        valueEl.value = value;
-        const del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'nt-quest-del';
-        del.textContent = '删除';
-        del.addEventListener('click', () => row.remove());
-        row.appendChild(nameEl);
-        row.appendChild(valueEl);
-        row.appendChild(del);
-        rows.appendChild(row);
-    };
-    for (const [name, value] of Object.entries(quests)) addQuestRow(name, value);
-
-    const addBtn = document.createElement('button');
-    addBtn.type = 'button';
-    addBtn.className = 'nt-quest-add';
-    addBtn.textContent = '＋ 新增支线';
-    addBtn.addEventListener('click', () => addQuestRow());
-    body.appendChild(addBtn);
+    const sideLabels = ['类型', '目标', '状态', '期限', '失败条件', '钩子'];
+    for (const [name, value] of Object.entries(quests)) {
+        const item = document.createElement('div');
+        item.className = 'nt-quest-read-item';
+        const n = document.createElement('div');
+        n.className = 'nt-quest-read-name';
+        n.textContent = name;
+        item.appendChild(n);
+        const parts = String(value || '').split(/[｜|]/).map(s => s.trim()).filter(Boolean);
+        if (parts.length > 1) {
+            const detail = document.createElement('div');
+            detail.className = 'nt-quest-read-detail';
+            parts.forEach((part, index) => {
+                const line = document.createElement('div');
+                line.textContent = `${sideLabels[index] || ''}${sideLabels[index] ? '：' : ''}${part}`;
+                detail.appendChild(line);
+            });
+            item.appendChild(detail);
+        } else {
+            const detail = document.createElement('div');
+            detail.className = 'nt-quest-read-detail';
+            detail.textContent = value;
+            item.appendChild(detail);
+        }
+        body.appendChild(item);
+    }
 
     if (questHistory.length) {
         const historyHead = document.createElement('div');
@@ -2168,41 +2164,16 @@ async function showQuestsModal() {
         body.appendChild(historyBox);
     }
 
-    const save = async () => {
-        const nextMain = {};
-        for (const [key, input] of Object.entries(fields)) nextMain[key] = input.value.trim();
-        await saveMain(book, nextMain);
-        try {
-            const all = settings.get('worldsim') || {};
-            const slotMeta = { ...(all.slotMeta || {}) };
-            slotMeta[book] = { ...(slotMeta[book] || {}), mainProgress: clampProgress(nextMain['进度']) };
-            settings.set('worldsim', { slotMeta });
-        } catch (_) {}
-
-        const nextQuests = {};
-        rows.querySelectorAll('.nt-quest-edit-side').forEach(row => {
-            const nameEl = row.querySelector('.nt-quest-name');
-            const valueEl = row.querySelectorAll('.nt-quest-input')[1];
-            const name = String(nameEl?.value || '').trim();
-            const value = String(valueEl?.value || '').trim();
-            if (name && value) nextQuests[name] = value;
-        });
-        await saveQuests(book, nextQuests);
-        toast('可办事项已保存', 'success');
-        return true;
-    };
-
     openModal({
         title: '可办事项',
         body,
         wide: true,
         footer: [
-            { label: '保存', primary: true, onClick: save },
-            { label: '关闭' },
+            { label: '手动修改', onClick: () => { closeModal(); showEditModal(); } },
+            { label: '关闭', primary: true },
         ],
     });
 }
-
 
 const mainCompleteShown = new Set();
 
@@ -2257,6 +2228,37 @@ async function backupBeforeWrite() {
         toast(e && e.message ? `自动备份失败，已停止写入：${e.message}` : '自动备份失败，已停止写入', 'error');
         return false;
     }
+}
+
+async function generateRefreshApi(prompt, cfg) {
+    const url = String(cfg.url || '').trim();
+    if (!url) return null;
+    const headers = { 'Content-Type': 'application/json' };
+    if (cfg.key) headers.Authorization = `Bearer ${cfg.key}`;
+    const body = {
+        messages: [
+            { role: 'system', content: prompt },
+            { role: 'user', content: '开始更新。' },
+        ],
+        temperature: 0.7,
+        stream: false,
+    };
+    if (cfg.model) body.model = cfg.model;
+    let res;
+    try {
+        res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    } catch (e) {
+        throw new Error(`外接 API 请求失败（可能是 CORS 或网络）：${e && e.message ? e.message : e}`);
+    }
+    const text = await res.text();
+    if (!res.ok) throw new Error(`外接 API ${res.status}: ${text.slice(0, 300)}`);
+    let data;
+    try { data = JSON.parse(text); } catch { throw new Error('外接 API 返回的不是 JSON'); }
+    return data?.choices?.[0]?.message?.content
+        ?? data?.choices?.[0]?.text
+        ?? data?.content
+        ?? data?.response
+        ?? '';
 }
 
 async function showRefreshModal(preselectName = '') {
@@ -2391,6 +2393,37 @@ async function showRefreshModal(preselectName = '') {
     modeRow.appendChild(mode);
     body.appendChild(modeRow);
 
+    const savedApi = settings.get('worldsim').refreshApi || {};
+    const apiBox = document.createElement('div');
+    apiBox.className = 'nt-refresh-api';
+    const apiHead = document.createElement('div');
+    apiHead.className = 'nt-refresh-section';
+    apiHead.textContent = '外接 API（可选，不填就用酒馆当前 API）';
+    apiBox.appendChild(apiHead);
+    const apiInput = (key, label, placeholder, type = 'text') => {
+        const row = document.createElement('label');
+        row.className = 'nt-refresh-api-row';
+        const l = document.createElement('span');
+        l.textContent = label;
+        const input = document.createElement('input');
+        input.className = 'nt-refresh-api-input';
+        input.type = type;
+        input.placeholder = placeholder;
+        input.value = savedApi[key] || '';
+        row.appendChild(l);
+        row.appendChild(input);
+        apiBox.appendChild(row);
+        return input;
+    };
+    const apiUrl = apiInput('url', 'URL', 'https://api.example.com/v1/chat/completions');
+    const apiKey = apiInput('key', 'Key', 'sk-...', 'password');
+    const apiModel = apiInput('model', 'Model', 'gpt-4o-mini');
+    const apiHint = document.createElement('div');
+    apiHint.className = 'nt-refresh-note';
+    apiHint.textContent = '填 URL 才走外接 API；要求接口兼容 OpenAI Chat Completions，并允许浏览器跨域。Key 只保存在当前酒馆设置里。';
+    apiBox.appendChild(apiHint);
+    body.appendChild(apiBox);
+
     const save = async () => {
         const selected = Object.entries(checks).filter(([, cb]) => cb.checked).map(([k]) => k);
         if (!selected.length) {
@@ -2490,7 +2523,15 @@ ${contract}
 
         try {
             toast('正在生成更新…', 'info');
-            const raw = await generateQuiet(prompt);
+            const apiCfg = {
+                url: apiUrl.value.trim(),
+                key: apiKey.value.trim(),
+                model: apiModel.value.trim(),
+            };
+            settings.set('worldsim', { refreshApi: apiCfg });
+            const raw = apiCfg.url
+                ? await generateRefreshApi(prompt, apiCfg)
+                : await generateQuiet(prompt);
             const text = String(raw || '');
             const a = text.indexOf('{');
             const b = text.lastIndexOf('}');
