@@ -2505,26 +2505,30 @@ async function runAutoFullRefresh() {
 
 async function generateViaStRelay(prompt, cfg) {
     const type = cfg.type || 'openai';
-    const source = type === 'anthropic' ? 'claude' : (type === 'gemini' ? 'makersuite' : 'openai');
-    let url = normalizeRefreshApiUrl(cfg.url, type);
-    if (type === 'openai') url = url.replace(/\/chat\/completions$/i, '');
+    const source = cfg.source || (type === 'anthropic' ? 'claude' : (type === 'gemini' ? 'makersuite' : 'openai'));
+    let url = '';
+    if (cfg.url) {
+        url = normalizeRefreshApiUrl(cfg.url, type);
+        if (type === 'openai') url = url.replace(/\/chat\/completions$/i, '');
+    }
     const token = await (await fetch('/csrf-token')).json();
+    const payload = {
+        chat_completion_source: source,
+        model: cfg.model || undefined,
+        messages: [
+            { role: 'system', content: prompt },
+            { role: 'user', content: '开始更新。' },
+        ],
+        max_tokens: 4096,
+        temperature: 0.7,
+        stream: false,
+    };
+    if (url) payload.reverse_proxy = url;
+    if (cfg.key) payload.proxy_password = cfg.key;
     const res = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
-        body: JSON.stringify({
-            chat_completion_source: source,
-            model: cfg.model || undefined,
-            messages: [
-                { role: 'system', content: prompt },
-                { role: 'user', content: '开始更新。' },
-            ],
-            reverse_proxy: url,
-            proxy_password: cfg.key || '',
-            max_tokens: 4096,
-            temperature: 0.7,
-            stream: false,
-        }),
+        body: JSON.stringify(payload),
     });
     const text = await res.text();
     if (!res.ok) throw new Error(`酒馆转发 API ${res.status}: ${text.slice(0, 300)}`);
@@ -3032,6 +3036,7 @@ ${contract}
                 model: apiModel.value.trim(),
                 type: savedApi.type || 'openai',
                 transport: savedApi.transport || 'relay',
+                source: savedApi.source || undefined,
                 autoFull: autoCb.checked,
                 manualChoice: apiChoice.value,
             };
