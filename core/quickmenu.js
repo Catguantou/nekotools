@@ -2387,6 +2387,8 @@ async function runAutoFullRefresh() {
             summary.items ? `道具 ${summary.items}` : '',
             summary.foreshadow ? `伏笔 ${summary.foreshadow}` : '',
             summary.plot ? `计划 ${summary.plot}` : '',
+            summary.summary ? '小总结' : '',
+            summary.bigSummary ? '大总结' : '',
         ].filter(Boolean);
         if (bits.length) toast(`自动全量更新：${bits.join(' / ')}`, 'success');
     } catch (e) {
@@ -2465,8 +2467,12 @@ async function showRefreshModal(preselectName = '') {
         ['items', '道具'],
         ['foreshadow', '伏笔'],
         ['plot', '计划'],
+        ['summary', '小总结'],
+        ['bigSummary', '大总结'],
     ];
     const checks = {};
+    const catBox = document.createElement('div');
+    catBox.className = 'nt-refresh-cats';
     for (const [key, label] of cats) {
         const lab = document.createElement('label');
         lab.className = 'nt-refresh-item';
@@ -2479,8 +2485,9 @@ async function showRefreshModal(preselectName = '') {
         span.textContent = label;
         lab.appendChild(cb);
         lab.appendChild(span);
-        body.appendChild(lab);
+        catBox.appendChild(lab);
     }
+    body.appendChild(catBox);
 
     const charWrap = document.createElement('div');
     charWrap.className = 'nt-refresh-chars';
@@ -2514,7 +2521,13 @@ async function showRefreshModal(preselectName = '') {
             charWrap.appendChild(row);
         }
     }
-    body.appendChild(charWrap);
+    const charDetails = document.createElement('details');
+    charDetails.className = 'nt-refresh-details';
+    const charSummary = document.createElement('summary');
+    charSummary.textContent = `角色选择（${charList.length}）`;
+    charDetails.appendChild(charSummary);
+    charDetails.appendChild(charWrap);
+    body.appendChild(charDetails);
 
     if (preselectName) {
         Object.values(checks).forEach(cb => { cb.checked = false; });
@@ -2671,7 +2684,14 @@ async function showRefreshModal(preselectName = '') {
     apiHint.className = 'nt-refresh-note';
     apiHint.textContent = '可填基础地址（如 https://host/v1）或完整 .../v1/chat/completions；HTTP 会自动改成 HTTPS，并自动补 /v1。要求接口兼容 OpenAI 且允许浏览器跨域。Key 只保存在当前酒馆设置里。';
     apiBox.appendChild(apiHint);
-    body.appendChild(apiBox);
+    const apiDetails = document.createElement('details');
+    apiDetails.className = 'nt-refresh-details';
+    const apiSummary = document.createElement('summary');
+    apiSummary.textContent = '高级：外接 API / 自动全量';
+    apiDetails.appendChild(apiSummary);
+    apiDetails.appendChild(apiBox);
+    apiDetails.open = Boolean(savedApi.url || savedApi.autoFull);
+    body.appendChild(apiDetails);
 
     testApi.addEventListener('click', async () => {
         const cfg = { url: apiUrl.value.trim(), key: apiKey.value.trim(), model: apiModel.value.trim() };
@@ -2755,6 +2775,18 @@ async function showRefreshModal(preselectName = '') {
         if (selected.includes('items')) blocks.push(`【道具】\n${get('道具') || '（空）'}`);
         if (selected.includes('foreshadow')) blocks.push(`【伏笔】\n${get('伏笔') || '（空）'}`);
         if (selected.includes('plot')) blocks.push(`【计划】\n${get('计划') || '（空）'}`);
+        if (selected.includes('summary')) blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
+        if (selected.includes('bigSummary')) {
+            blocks.push(`【大总结】\n${get('大总结') || '（空）'}`);
+            blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
+        }
+        if (selected.includes('summary') || selected.includes('bigSummary')) {
+            const recentChat = (stBridge.getContext().chat || [])
+                .slice(-6)
+                .map(m => `${m.is_user ? '用户' : (m.name || '角色')}：${String(m.mes || '').slice(0, 1200)}`)
+                .join('\n');
+            if (recentChat) blocks.push(`【最近对话】\n${recentChat.slice(0, 6000)}`);
+        }
 
         const schema = [];
         const userName = stBridge.getUserName() || '用户';
@@ -2769,6 +2801,8 @@ async function showRefreshModal(preselectName = '') {
         if (selected.includes('items')) schema.push('"items": {"add": {"道具名": {"描述":"[类别] 描述","关键词":["具体词1","具体词2"]}}, "del":["道具名"]}');
         if (selected.includes('foreshadow')) schema.push('"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}');
         if (selected.includes('plot')) schema.push('"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}');
+        if (selected.includes('summary')) schema.push('"summary": "100字内，具体事件/承诺/道具/关系变化"');
+        if (selected.includes('bigSummary')) schema.push('"bigSummary": "约2000 token，按时间顺序总结至此剧情，保留关键事件/关系变化/伏笔"');
 
         const contract = buildRefreshContract({
             chars: doChars,
@@ -2778,6 +2812,8 @@ async function showRefreshModal(preselectName = '') {
             foreshadow: selected.includes('foreshadow'),
             map: selected.includes('map'),
             quests: selected.includes('quests'),
+            summary: selected.includes('summary'),
+            bigSummary: selected.includes('bigSummary'),
             userName,
             recordUserChar,
         });

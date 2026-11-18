@@ -1248,6 +1248,8 @@ export function buildRefreshContract({
     foreshadow = false,
     map = false,
     quests = false,
+    summary = false,
+    bigSummary = false,
     userName = '用户',
     recordUserChar = false,
 } = {}) {
@@ -1288,11 +1290,21 @@ export function buildRefreshContract({
 "quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}
 要求：主线只维护长期目标/阶段/进度，不写本轮三种走向或概率；支线只写新增/完成/失败/删除；期限写绝对日期，没有写“无”；失败条件一句话写清；支线名具体 2-8 字，不要抽象标题；赶期限要和地图路程一致。`);
     }
+    if (bigSummary) {
+        parts.push(`【大总结契约】
+"bigSummary": "对本局至此的剧情做一次大总结，约 2000 token，按时间顺序，保留关键事件、人物关系变化、重要伏笔；用【】标时间跨度。"
+要求：这是覆盖式总结，不要写正文；只输出总结文本。`);
+    }
+    if (summary) {
+        parts.push(`【小总结契约】
+"summary": "对本轮/最近一段剧情做 100 字内总结，写具体事件、承诺、道具、关系变化，不要模糊形容；插件会追加到小总结。"
+要求：只写本轮新增内容，不要重复旧总结。`);
+    }
     return parts.join('\n\n');
 }
 
 export async function applyRefreshData(bookName, data, layer = 0) {
-    const summary = { chars: 0, world: 0, map: 0, main: 0, quests: 0, items: 0, foreshadow: 0, plot: 0 };
+    const summary = { chars: 0, world: 0, map: 0, main: 0, quests: 0, items: 0, foreshadow: 0, plot: 0, summary: 0, bigSummary: 0 };
     if (!bookName || !data || typeof data !== 'object') return summary;
     const book = await stBridge.loadWorldInfoAsync(bookName);
     if (!book || !book.entries) return summary;
@@ -1361,6 +1373,32 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         const map = await applyAggregateOps(bookName, '计划', data.plot, 910, { keyword: true });
         summary.plot = map ? Object.keys(map).length : 0;
     }
+    const bigSummaryText = typeof data.bigSummary === 'string' ? data.bigSummary.trim() : '';
+    if (bigSummaryText) {
+        const text = bigSummaryText.slice(0, 50000);
+        await stBridge.updateEntry(bookName, '大总结', text, true, [], {
+            position: 4, depth: 9999, order: 9999, role: 2, insertion_order: 9999,
+        });
+        const latest = await stBridge.loadWorldInfoAsync(bookName);
+        for (const entry of Object.values(latest?.entries || {})) {
+            if (entry.comment === '小总结') entry.content = '（已浓缩入大总结）';
+        }
+        await stBridge.persistLorebook(bookName, latest);
+        summary.bigSummary = 1;
+    } else {
+        const smallText = typeof data.summary === 'string' ? data.summary.trim() : '';
+        if (smallText) {
+            const latest = await stBridge.loadWorldInfoAsync(bookName);
+            let current = '';
+            const entry = Object.values(latest?.entries || {}).find(e => e && e.comment === '小总结');
+            if (entry && entry.content !== '（已浓缩入大总结）') current = `${entry.content}\n`;
+            await stBridge.updateEntry(bookName, '小总结', `${current}${smallText}`.slice(-30000), true, [], {
+                position: 4, depth: 999, order: 999, role: 2, insertion_order: 999,
+            });
+            summary.summary = 1;
+        }
+    }
+
     refreshSnapshots(bookName, book);
     await refreshBriefs(bookName);
     recordWorldChange(bookName, data, layer, questPrune);

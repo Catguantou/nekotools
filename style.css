@@ -4621,3 +4621,37 @@ body {
     color: #dfe4f2;
     font-size: 10px;
 }
+
+/* 请求更新：紧凑排版 */
+#nt-quick-modal .nt-refresh-cats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+}
+#nt-quick-modal .nt-refresh-details {
+    border: 1px solid var(--ntq-line);
+    border-radius: 4px;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.018);
+}
+#nt-quick-modal .nt-refresh-details > summary {
+    cursor: pointer;
+    color: #dfe4f2;
+    font-size: 10.5px;
+    list-style: none;
+}
+#nt-quick-modal .nt-refresh-details > summary::-webkit-details-marker {
+    display: none;
+}
+#nt-quick-modal .nt-refresh-details > summary::before {
+    content: '▸';
+    display: inline-block;
+    width: 13px;
+    color: var(--ntq-dim);
+}
+#nt-quick-modal .nt-refresh-details[open] > summary::before {
+    content: '▾';
+}
+#nt-quick-modal .nt-refresh-details > *:not(summary) {
+    margin-top: 6px;
+}
