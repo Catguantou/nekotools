@@ -416,7 +416,7 @@ function buildCognitionPrompt() {
 function buildStatusPrompt() {
     const tagOpen = '<ws_' + 'status>';
     const tagClose = '</ws_' + 'status>';
-    let p = `<nekotools:status>\n【状态栏终端】必须在本轮正文末尾输出：\n${tagOpen}时间: XXXX年XX月XX日 | 地点: XXX | 天气: XXX | 温度: XX℃${tagClose}\n（前端会自动渲染，不要用代码块包裹，字段用 " | " 分隔）\n</nekotools:status>`;
+    let p = `<nekotools:status>\n【状态栏终端】必须在本轮正文末尾输出：\n${tagOpen}时间: XXXX年XX月XX日 | 地点: XXX | 天气: XXX | 温度: XX℃${tagClose}\n</nekotools:status>`;
     return applyPromptMode('status', p);
 }
 
@@ -577,7 +577,13 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
     if (needGenesis && !externalAuto) list.push({ role: 'system', content: buildGenesisPrompt() });
     if (needMapGenesis && !externalAuto) list.push({ role: 'system', content: buildMapGenesisPrompt(bookName) });
     if (needQuestGenesis && !externalAuto) list.push({ role: 'system', content: buildQuestGenesisPrompt() });
-    list.push({ role: 'system', content: DIRECTOR_PROMPT });
+    // 只留状态栏时不再发送世界模拟核心指令，避免污染正文
+    const hasNonStatusFeature = Boolean(
+        settings.enablePreview || settings.enableChars || settings.enableItems
+        || settings.enablePlot || settings.enableWorld || settings.enableMap
+        || settings.enableQuests || settings.enableCognition || settings.enableForeshadow
+    );
+    if (hasNonStatusFeature) list.push({ role: 'system', content: DIRECTOR_PROMPT });
     if (settings.enableCognition) list.push({ role: 'system', content: buildCognitionPrompt() });
 
     if (settings.enableStatus) list.push({ role: 'system', content: buildStatusPrompt() });
