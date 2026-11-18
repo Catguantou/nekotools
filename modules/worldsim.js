@@ -1637,11 +1637,14 @@ registry.register({
         }
 
         // 后台 tick：插件硬调度角色 + 世界轮值
-        const tickTargets = settings.enableTicks && includeTracking
+        // 副 API 自动全量开启时，主 API 只写正文，不再发 tick 更新提示。
+        const externalAuto = externalAutoFullActive();
+        const tickTargets = settings.enableTicks && includeTracking && !externalAuto
             ? computeTickTargets(bookName, ctx.__nt_replyLayer || chat.length + 1)
             : [];
         const worldEvery = Number(settings.worldTickEvery) || 0;
-        const needWorldTick = settings.enableTicks && worldEvery > 0 && aiCount > 0 && aiCount % worldEvery === 0;
+        const needWorldTick = settings.enableTicks && !externalAuto
+            && worldEvery > 0 && aiCount > 0 && aiCount % worldEvery === 0;
         if (tickTargets.length || needWorldTick) {
             ctx.__nt_pendingSystems.push({
                 role: 'system',
