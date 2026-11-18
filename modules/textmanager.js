@@ -96,7 +96,10 @@ export function upgradeStatusBars(root = document) {
         // 旧消息可能已经是渲染好的 HTML，直接置顶即可
         const existing = textEl.querySelector('.ws-status-bar');
         if (existing) {
-            if (textEl.firstElementChild !== existing) textEl.prepend(existing);
+            if (textEl.firstElementChild !== existing && !textEl.dataset.ntStatusPlaced) {
+                textEl.prepend(existing);
+            }
+            textEl.dataset.ntStatusPlaced = '1';
             return;
         }
         const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
@@ -108,7 +111,10 @@ export function upgradeStatusBars(root = document) {
             const line = after.split('\n')[0];
             node.nodeValue = node.nodeValue.slice(0, idx).replace(/\s+$/, '');
             const bar = buildStatusBar(line);
-            if (bar) textEl.prepend(bar);
+            if (bar) {
+                textEl.prepend(bar);
+                textEl.dataset.ntStatusPlaced = '1';
+            }
             break;
         }
     });

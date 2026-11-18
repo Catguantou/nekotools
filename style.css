@@ -4678,3 +4678,42 @@ body {
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
     pointer-events: none;
 }
+
+/* 手机地图：减少 HUD 占位、让地图可滚动且不被悬浮条遮挡 */
+@media (max-width: 640px) {
+    #nt-quick-modal .nt-map-modal {
+        max-height: calc(100dvh - 20px) !important;
+    }
+    #nt-quick-modal .nt-map-modal .nt-quick-modal-body {
+        -webkit-overflow-scrolling: touch;
+    }
+    #nt-quick-modal .nt-quick-map-hud {
+        gap: 5px;
+        padding: 6px 8px;
+    }
+    #nt-quick-modal .nt-quick-map-crumbs {
+        flex-basis: 100%;
+        gap: 1px;
+    }
+    #nt-quick-modal .nt-quick-map-board {
+        max-height: 46vh;
+        padding: 10px;
+    }
+    #nt-quick-modal .nt-map-canvas {
+        min-height: 210px;
+        aspect-ratio: 4 / 3;
+    }
+    #nt-quick-modal .nt-map-node {
+        padding: 3px 6px;
+    }
+    #nt-quick-modal .nt-map-node-label,
+    #nt-quick-modal .nt-map-node-sub {
+        max-width: 96px;
+        font-size: 9px;
+    }
+    #nt-quick-modal .nt-map-modal .nt-quick-modal-foot {
+        position: sticky;
+        bottom: 0;
+        background: var(--ntq-bg);
+    }
+}

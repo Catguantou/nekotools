@@ -69,7 +69,8 @@ function processBody(bodyStr, url) {
 }
 
 function finish(ctx, gate) {
-    if (!ctx) return;
+    if (!ctx || ctx.__nt_finished) return;
+    ctx.__nt_finished = true;
     const captured = gate ? gate.captured : {};
     for (const mod of registry.enabled()) {
         if (typeof mod.onResponse === 'function') {

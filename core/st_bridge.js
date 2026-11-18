@@ -832,12 +832,15 @@ export const stBridge = {
 
         const dataCut = Number(dataKeep) > 0 ? this.cutoffIndexForKeep(dataKeep) : -1;
         if (dataCut >= 0) {
+            let changed = false;
             for (let i = 0; i < dataCut; i++) {
                 const msg = ctx.chat[i];
                 if (msg.extra && msg.extra.nekotool_favorite) continue;
+                if (msg.extra?.hidden === true) continue;
                 msg.extra = { ...(msg.extra || {}), hidden: true };
+                changed = true;
             }
-            if (typeof ctx.saveChat === 'function') {
+            if (changed && typeof ctx.saveChat === 'function') {
                 ctx.saveChat();
             }
         }

@@ -98,6 +98,7 @@ function closeModal() {
             modalCloser = null;
             try { fn(); } catch (_) {}
         }
+        if (quickMenuEnabled()) showFloatButton();
     }
 }
 
@@ -108,6 +109,7 @@ function closeModal() {
  */
 export function openModal({ title = '', body = null, footer = null, wide = false, onClose = null } = {}) {
     closeModal();
+    hideFloatButton();
 
     const mask = document.createElement('div');
     mask.id = MODAL_ID;
@@ -368,7 +370,7 @@ function hideFloatButton() {
 
 function showFloatButton() {
     const btn = $(FLOAT_ID);
-    if (!btn) return;
+    if (!btn || $(MODAL_ID)) return;
     btn.style.display = '';
     applyFloatPosition(btn, floatState());
 }
@@ -376,43 +378,29 @@ function showFloatButton() {
 function initFloatDrag(btn) {
     let drag = null;
     let suppressClickUntil = 0;
-    btn.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-        try { btn.setPointerCapture(e.pointerId); } catch (_) {}
-        const st = floatState();
-        drag = {
-            id: e.pointerId,
-            startX: e.clientX,
-            startY: e.clientY,
-            startLeft: parseFloat(btn.style.left) || 0,
-            startTop: parseFloat(btn.style.top) || st.top,
-            moved: false,
-            wasHidden: btn.classList.contains('nt-float-hidden') || st.hidden,
-        };
-        btn.classList.add('nt-dragging');
-    });
-    btn.addEventListener('pointermove', (e) => {
+    const onMove = (e) => {
         if (!drag || e.pointerId !== drag.id) return;
         const dx = e.clientX - drag.startX;
         const dy = e.clientY - drag.startY;
         if (Math.hypot(dx, dy) > 6) drag.moved = true;
         if (!drag.moved) return;
+        if (e.cancelable) e.preventDefault();
         const size = btn.offsetWidth || 32;
         const left = Math.max(-(size - 18), Math.min(window.innerWidth - 18, drag.startLeft + dx));
         const top = Math.max(60, Math.min(window.innerHeight - 150, drag.startTop + dy));
         btn.style.left = `${left}px`;
         btn.style.top = `${top}px`;
         btn.style.transition = 'none';
-    });
-    const finish = (e) => {
+    };
+    const onFinish = (e) => {
         if (!drag || e.pointerId !== drag.id) return;
         const d = drag;
         drag = null;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onFinish);
+        window.removeEventListener('pointercancel', onFinish);
         btn.classList.remove('nt-dragging');
-        if (!d.moved) {
-            // 点击交给下面的 click 处理，避免触摸/指针序列里丢事件
-            return;
-        }
+        if (!d.moved) return;
         suppressClickUntil = Date.now() + 400;
         const size = btn.offsetWidth || 32;
         const left = parseFloat(btn.style.left) || 0;
@@ -422,8 +410,25 @@ function initFloatDrag(btn) {
         saveFloatState({ side, top, hidden });
         applyFloatPosition(btn, { side, top, hidden }, true);
     };
-    btn.addEventListener('pointerup', finish);
-    btn.addEventListener('pointercancel', finish);
+    btn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        if (drag) return;
+        const st = floatState();
+        drag = {
+            id: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            startLeft: parseFloat(btn.style.left) || 0,
+            startTop: parseFloat(btn.style.top) || st.top,
+            moved: false,
+        };
+        btn.classList.add('nt-dragging');
+        try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+        // 监听挂到 window：手指移出竖条、或浏览器没给 pointer capture 时也能继续拖
+        window.addEventListener('pointermove', onMove, { passive: false });
+        window.addEventListener('pointerup', onFinish);
+        window.addEventListener('pointercancel', onFinish);
+    });
     btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -436,6 +441,7 @@ function initFloatDrag(btn) {
         togglePop();
     });
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
+    btn.addEventListener('dragstart', (e) => e.preventDefault());
 }
 
 function ensureFloatButton() {
@@ -447,8 +453,9 @@ function ensureFloatButton() {
     }
     if (existing) {
         const pop = $(POP_ID);
-        existing.style.display = pop && !pop.hidden ? 'none' : '';
-        applyFloatPosition(existing, floatState());
+        const modalOpen = Boolean($(MODAL_ID));
+        existing.style.display = (pop && !pop.hidden) || modalOpen ? 'none' : '';
+        if (!existing.classList.contains('nt-dragging')) applyFloatPosition(existing, floatState());
         return;
     }
     const btn = document.createElement('div');
@@ -742,8 +749,18 @@ function charFields(content) {
         });
 }
 
+function activeTrackerBookName() {
+    try {
+        const active = stBridge.getGloballyActivatedWorlds() || [];
+        for (let i = active.length - 1; i >= 0; i--) {
+            if (stBridge.isTrackerBook(active[i])) return active[i];
+        }
+    } catch (_) {}
+    return stBridge.currentTrackerName();
+}
+
 async function showRosterModal(preselectName = '') {
-    const book = stBridge.currentTrackerName();
+    let book = activeTrackerBookName();
     if (!book) {
         toast('请先选择一个角色卡', 'warning');
         return;
@@ -792,7 +809,14 @@ async function showRosterModal(preselectName = '') {
     graphBtn.addEventListener('click', () => showRelationshipModal(book));
     headerEl.appendChild(graphBtn);
 
-    openModal({ title: '角色管理', body, wide: true, footer: [{ label: '关闭', primary: true }] });
+    let rosterPoll = null;
+    openModal({
+        title: '角色管理',
+        body,
+        wide: true,
+        footer: [{ label: '关闭', primary: true }],
+        onClose: () => { if (rosterPoll) clearInterval(rosterPoll); },
+    });
 
     const refresh = async () => {
         cfg = await loadConfig(book, { force: true });
@@ -1110,6 +1134,20 @@ async function showRosterModal(preselectName = '') {
         bar.appendChild(edit);
         right.appendChild(bar);
     }
+
+    rosterPoll = setInterval(async () => {
+        if (!$(MODAL_ID)) {
+            if (rosterPoll) clearInterval(rosterPoll);
+            rosterPoll = null;
+            return;
+        }
+        const next = activeTrackerBookName();
+        if (next && next !== book) {
+            book = next;
+            selected = '';
+            try { await refresh(); } catch (e) { console.warn('[nekotools] 角色面板跟随世界书失败', e); }
+        }
+    }, 1200);
 
     await refresh();
 }
@@ -2362,6 +2400,9 @@ ${contract}
 
 let autoRefreshRunning = false;
 let autoRefreshPending = false;
+let autoRefreshEventAt = 0;
+let autoRefreshSig = '';
+let autoRefreshSigAt = 0;
 
 function showAutoUpdateBanner() {
     let el = document.getElementById('nt-auto-updating');
@@ -3166,6 +3207,8 @@ function refreshQuickMenuVisibility() {
     if (btn) btn.style.display = enabled ? '' : 'none';
     if (!enabled) {
         closePop();
+        const floatBtn = $(FLOAT_ID);
+        if (floatBtn) floatBtn.remove();
         return;
     }
     if (!btn) {
@@ -3238,7 +3281,14 @@ export function mountQuickMenu() {
             showMainCompleteModal(book).catch(err => console.warn('[nekotools] 主线完成弹窗失败', err));
         });
         window.addEventListener('nekotool:quickmenu-toggle', () => refreshQuickMenuVisibility());
-        window.addEventListener('nekotool:auto-refresh', () => {
+        window.addEventListener('nekotool:auto-refresh', (e) => {
+            const now = Date.now();
+            if (now - autoRefreshEventAt < 800) return;
+            autoRefreshEventAt = now;
+            const sig = e && e.detail ? String(e.detail.sig || '') : '';
+            if (sig && sig === autoRefreshSig && now - autoRefreshSigAt < 30000) return;
+            autoRefreshSig = sig;
+            autoRefreshSigAt = now;
             runAutoFullRefresh().catch(err => console.warn('[nekotools] 自动全量更新异常', err));
         });
         setInterval(() => {
