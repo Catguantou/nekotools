@@ -4983,3 +4983,26 @@ body {
     #nt-guide-mask .nt-guide-card { max-height: calc(100dvh - 20px); }
     #nt-guide-mask .nt-guide-body { font-size: 11px; }
 }
+
+/* 修复手机 WebView body fixed 导致引导遮罩高度塌陷 */
+#nt-guide-mask {
+    top: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    box-sizing: border-box;
+    padding: max(12px, env(safe-area-inset-top, 0px)) 12px max(12px, env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
+}
+#nt-guide-mask .nt-guide-card {
+    max-height: calc(100dvh - 24px);
+}
+@media (max-width: 640px) {
+    #nt-guide-mask .nt-guide-card {
+        width: min(420px, 100%);
+        max-height: calc(100dvh - 24px);
+    }
+}
