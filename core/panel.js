@@ -1617,7 +1617,10 @@ export function mountPanel() {
             await deleteSecret(selectedId).catch(() => {});
             profiles = profiles.filter(p => p.id !== selectedId);
             if (settings.get('worldsim').activeSecondaryProfile === selectedId) {
-                settings.set('worldsim', { activeSecondaryProfile: '', apiSubChoice: '' });
+                settings.set('worldsim', { activeSecondaryProfile: '', apiSubChoice: '', refreshApi: {} });
+            }
+            if (settings.get('worldsim').apiMainChoice === `profile:${selectedId}`) {
+                settings.set('worldsim', { apiMainChoice: '' });
             }
             selectedId = '';
             saveProfiles();
