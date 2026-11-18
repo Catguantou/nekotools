@@ -23,7 +23,7 @@ import { readMap, findPath, travelEntries } from './worldmap.js';
 import { refreshChar } from './worldindex.js';
 import { readMain, readQuests, readQuestHistory, clampProgress, saveMain, saveQuests } from './worldquest.js';
 import { generateQuiet } from './st_api.js';
-import { applyRefreshData } from '../modules/worldsim.js';
+import { applyRefreshData, buildRefreshContract } from '../modules/worldsim.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 
@@ -2453,6 +2453,18 @@ async function showRefreshModal(preselectName = '') {
         if (selected.includes('foreshadow')) schema.push('"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}');
         if (selected.includes('plot')) schema.push('"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}');
 
+        const contract = buildRefreshContract({
+            chars: doChars,
+            items: selected.includes('items'),
+            plot: selected.includes('plot'),
+            world: selected.includes('world'),
+            foreshadow: selected.includes('foreshadow'),
+            map: selected.includes('map'),
+            quests: selected.includes('quests'),
+            userName,
+            recordUserChar,
+        });
+
         const charLine = doChars
             ? (effectiveChars.length
                 ? `本轮只更新这些角色：${effectiveChars.join('、')}；不要输出其他人。`
@@ -2470,6 +2482,9 @@ ${blocks.join('\n\n')}
 
 请只更新这些类别，只写本轮需要变化/新增的内容：
 ${schema.join('\n')}
+
+【默认契约】
+${contract}
 要求：人物位置用地图小地点名；没有变化就留空对象；不要编造与当前数据冲突的内容。
 计划/伏笔/道具必须使用对象格式，并带 2–3 个「关键词」：2–6 字，必须是正文会原样出现的具体人名/地名/物件/动作；不要写“XX疑云、XX寻踪”这种标题式抽象词，也不要写句子碎片。`;
 
