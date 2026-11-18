@@ -2792,6 +2792,20 @@ async function showRefreshModal(preselectName = '') {
     apiChoiceRow.appendChild(apiChoice);
     body.appendChild(apiChoiceRow);
 
+    const autoRow = document.createElement('label');
+    autoRow.className = 'nt-refresh-item';
+    const autoCb = document.createElement('input');
+    autoCb.type = 'checkbox';
+    autoCb.checked = savedApi.autoFull === true;
+    const autoText = document.createElement('span');
+    autoText.textContent = '每轮自动全量更新（副 API）';
+    autoRow.appendChild(autoCb);
+    autoRow.appendChild(autoText);
+    body.appendChild(autoRow);
+    autoCb.addEventListener('change', () => {
+        settings.set('worldsim', { refreshApi: { ...(settings.get('worldsim').refreshApi || {}), autoFull: autoCb.checked } });
+    });
+
     const save = async () => {
         const selected = Object.entries(checks).filter(([, cb]) => cb.checked).map(([k]) => k);
         if (!selected.length) {
@@ -2907,7 +2921,7 @@ ${contract}
 
         try {
             toast('正在生成更新…', 'info');
-            const apiCfg = { ...savedApi, manualChoice: apiChoice.value };
+            const apiCfg = { ...savedApi, manualChoice: apiChoice.value, autoFull: autoCb.checked };
             settings.set('worldsim', { refreshApi: apiCfg });
             const useSub = apiChoice.value === 'secondary' && Boolean(apiCfg.url || apiCfg.source);
             const raw = useSub

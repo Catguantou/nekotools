@@ -498,10 +498,8 @@ export function mountPanel() {
                             <input id="nt-api-model" class="nt-data-input" style="min-width:130px;" placeholder="手填模型（可选）">
                         </div>
                         <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
-                            <label class="nt-data-label"><input type="checkbox" id="nt-api-autofull"> 每轮自动全量</label>
                             <button id="nt-api-profile-save" class="nt-btn-text primary">[保存配置]</button>
                             <button id="nt-api-profile-use" class="nt-btn-text">[设为副 API]</button>
-                            <button id="nt-api-test" class="nt-btn-text">[测试酒馆转发]</button>
                             <span id="nt-api-status" class="nt-hint"></span>
                         </div>
                     </div>
@@ -1207,7 +1205,6 @@ export function mountPanel() {
         const keyEl = wrap.querySelector('#nt-api-key');
         const modelSelect = wrap.querySelector('#nt-api-model-select');
         const modelEl = wrap.querySelector('#nt-api-model');
-        const autoFullEl = wrap.querySelector('#nt-api-autofull');
         const statusEl = wrap.querySelector('#nt-api-status');
         const listEl = wrap.querySelector('#nt-api-profile-list');
 
@@ -1304,7 +1301,7 @@ export function mountPanel() {
                     key: p.key || '',
                     model: p.model || '',
                     transport: 'relay',
-                    autoFull: Boolean(autoFullEl.checked),
+                    autoFull: Boolean((settings.get('worldsim').refreshApi || {}).autoFull),
                 },
             });
             statusEl.textContent = '已设为副 API';
@@ -1371,76 +1368,88 @@ export function mountPanel() {
             renderList();
             loadProfile();
         };
+        const fillModels = (list) => {
+            modelSelect.innerHTML = '<option value="">-- 选择模型 --</option>';
+            const seen = new Set();
+            for (const item of list) {
+                const id = typeof item === 'string' ? item : (item && (item.id || item.name));
+                if (!id || seen.has(id)) continue;
+                seen.add(id);
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = id;
+                modelSelect.appendChild(opt);
+            }
+            if (seen.size) modelSelect.value = modelSelect.options[1].value;
+            return seen.size;
+        };
+        const domModels = (source) => {
+            const map = {
+                openai: 'model_openai_select', claude: 'model_claude_select', makersuite: 'model_google_select',
+                custom: 'model_custom_select', openrouter: 'model_openrouter_select',
+                deepseek: 'model_deepseek_select', groq: 'model_groq_select',
+                mistralai: 'model_mistralai_select', xai: 'model_xai_select', cohere: 'model_cohere_select',
+                vertexai: 'model_vertexai_select',
+            };
+            const el = document.getElementById(map[source] || `model_${source}_select`);
+            if (!el || el.tagName !== 'SELECT') return [];
+            return [...el.options].map(o => String(o.value || '').trim()).filter(Boolean);
+        };
         const fetchModels = async () => {
             const source = sourceEl.value || 'openai';
             const rawUrl = urlEl.value.trim();
             const url = rawUrl ? stripChat(normalizeUrl(rawUrl)) : '';
             statusEl.textContent = '抓取模型中…';
+            const local = domModels(source);
+            if (local.length) {
+                fillModels(local);
+                statusEl.textContent = `读取到酒馆模型 ${local.length} 个`;
+                return;
+            }
             try {
                 if (keyEl.value.trim()) await setSecret(secretName(source), keyEl.value.trim());
                 const token = await (await fetch('/csrf-token')).json();
-                const body = {
-                    chat_completion_source: source,
-                    reverse_proxy: url || undefined,
-                    proxy_password: keyEl.value.trim() || undefined,
-                    custom_url: source === 'custom' ? (normalizeUrl(rawUrl) || undefined) : undefined,
-                };
                 const res = await fetch('/api/backends/chat-completions/status', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
-                    body: JSON.stringify(body),
-                });
-                const text = await res.text();
-                if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`);
-                const data = JSON.parse(text);
-                const list = Array.isArray(data.data) ? data.data : [];
-                modelSelect.innerHTML = '<option value="">-- 选择模型 --</option>';
-                for (const item of list) {
-                    const id = typeof item === 'string' ? item : item.id;
-                    if (!id) continue;
-                    const opt = document.createElement('option');
-                    opt.value = id;
-                    opt.textContent = id;
-                    modelSelect.appendChild(opt);
-                }
-                if (list.length) modelSelect.value = modelSelect.options[1]?.value || '';
-                statusEl.textContent = list.length ? `抓到 ${list.length} 个模型` : '没有返回模型，请手填';
-            } catch (e) {
-                statusEl.textContent = `抓取失败：${e.message || e}`;
-            }
-        };
-        const testRelay = async () => {
-            const source = sourceEl.value || 'openai';
-            const model = modelEl.value.trim() || modelSelect.value;
-            if (!model) { statusEl.textContent = '先抓取或手填模型'; return; }
-            const rawUrl = urlEl.value.trim();
-            statusEl.textContent = '酒馆转发测试中…';
-            try {
-                const token = await (await fetch('/csrf-token')).json();
-                const res = await fetch('/api/backends/chat-completions/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
                     body: JSON.stringify({
                         chat_completion_source: source,
-                        model,
-                        messages: [{ role: 'user', content: 'ping' }],
-                        reverse_proxy: rawUrl ? stripChat(normalizeUrl(rawUrl)) : undefined,
+                        reverse_proxy: url || undefined,
                         proxy_password: keyEl.value.trim() || undefined,
                         custom_url: source === 'custom' ? (normalizeUrl(rawUrl) || undefined) : undefined,
-                        max_tokens: 1,
-                        temperature: 0,
-                        stream: false,
                     }),
                 });
-                const text = await res.text();
-                if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 180)}`);
-                statusEl.textContent = '酒馆转发可用';
-            } catch (e) {
-                statusEl.textContent = `酒馆转发失败：${e.message || e}`;
+                if (res.ok) {
+                    const data = await res.json();
+                    const list = Array.isArray(data.data) ? data.data : [];
+                    if (list.length) {
+                        fillModels(list);
+                        statusEl.textContent = `抓到 ${list.length} 个模型`;
+                        return;
+                    }
+                }
+            } catch (_) {}
+            if (rawUrl) {
+                try {
+                    const modelsUrl = new URL(normalizeUrl(rawUrl));
+                    modelsUrl.pathname = `${modelsUrl.pathname.replace(/\/chat\/completions$/i, '')}/models`;
+                    modelsUrl.search = '';
+                    const headers = {};
+                    if (keyEl.value.trim()) headers.Authorization = `Bearer ${keyEl.value.trim()}`;
+                    const res = await fetch(modelsUrl.toString(), { headers });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const list = Array.isArray(data.data) ? data.data : (Array.isArray(data.models) ? data.models : []);
+                        const n = fillModels(list);
+                        if (n) { statusEl.textContent = `抓到 ${n} 个模型`; return; }
+                    }
+                } catch (_) {}
             }
+            statusEl.textContent = '没有抓到模型，请手填';
         };
 
         renderAll();
+        setTimeout(() => { fetchModels(); }, 500);
         sourceEl.addEventListener('change', () => { fetchModels(); });
         modelSelect.addEventListener('change', () => { if (modelSelect.value) modelEl.value = ''; });
         wrap.querySelector('#nt-api-model-fetch').onclick = fetchModels;
@@ -1464,7 +1473,6 @@ export function mountPanel() {
             selectedId = item.id;
             saveProfiles();
             loadProfile();
-            settings.set('worldsim', { refreshApi: { ...(settings.get('worldsim').refreshApi || {}), autoFull: Boolean(autoFullEl.checked) } });
             statusEl.textContent = '已保存';
         };
         wrap.querySelector('#nt-api-profile-del').onclick = () => {
@@ -1479,7 +1487,6 @@ export function mountPanel() {
             statusEl.textContent = '已删除';
         };
         wrap.querySelector('#nt-api-profile-use').onclick = () => useAsSecondary(profileById(selectedId));
-        wrap.querySelector('#nt-api-test').onclick = testRelay;
         mainSelect.addEventListener('change', async () => {
             const value = mainSelect.value;
             settings.set('worldsim', { apiMainChoice: value });
@@ -1494,10 +1501,6 @@ export function mountPanel() {
                 const p = profileById(value.slice(8));
                 if (p) useAsSecondary(p);
             }
-        });
-        autoFullEl.checked = Boolean((settings.get('worldsim').refreshApi || {}).autoFull);
-        autoFullEl.addEventListener('change', () => {
-            settings.set('worldsim', { refreshApi: { ...(settings.get('worldsim').refreshApi || {}), autoFull: autoFullEl.checked } });
         });
     }
 
