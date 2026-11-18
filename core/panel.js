@@ -493,12 +493,17 @@ export function mountPanel() {
                             <button id="nt-api-profile-new" class="nt-btn-text">[新建]</button>
                             <button id="nt-api-profile-del" class="nt-btn-text danger">[删除]</button>
                         </div>
+                        <div id="nt-api-profile-list" class="nt-api-profile-list"></div>
                         <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
                             <input id="nt-api-name" class="nt-data-input" style="min-width:110px;" placeholder="配置名">
                             <select id="nt-api-type" class="nt-edit-select">
                                 <option value="openai">OpenAI 兼容</option>
                                 <option value="anthropic">Anthropic</option>
                                 <option value="gemini">Gemini</option>
+                            </select>
+                            <select id="nt-api-transport" class="nt-edit-select">
+                                <option value="relay">酒馆转发（推荐）</option>
+                                <option value="direct">浏览器直连</option>
                             </select>
                         </div>
                         <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
@@ -1213,6 +1218,7 @@ export function mountPanel() {
         const profileSelect = wrap.querySelector('#nt-api-profile-select');
         const nameEl = wrap.querySelector('#nt-api-name');
         const typeEl = wrap.querySelector('#nt-api-type');
+        const transportEl = wrap.querySelector('#nt-api-transport');
         const urlEl = wrap.querySelector('#nt-api-url');
         const keyEl = wrap.querySelector('#nt-api-key');
         const modelEl = wrap.querySelector('#nt-api-model');
@@ -1227,14 +1233,11 @@ export function mountPanel() {
             const p = profiles.find(x => x.id === selectedId);
             nameEl.value = p ? (p.name || '') : '';
             typeEl.value = p ? (p.type || 'openai') : 'openai';
+            transportEl.value = p ? (p.transport || 'relay') : 'relay';
             urlEl.value = p ? (p.url || '') : '';
             keyEl.value = p ? (p.key || '') : '';
             modelEl.value = p ? (p.model || '') : '';
             statusEl.textContent = p ? '已加载配置' : '';
-        };
-        const saveProfiles = () => {
-            settings.set('worldsim', { apiProfiles: profiles });
-            renderOptions();
         };
         const normalizeUrl = (raw, type) => {
             let s = String(raw || '').trim();
@@ -1256,6 +1259,35 @@ export function mountPanel() {
             const type = typeEl.value;
             const url = normalizeUrl(urlEl.value, type);
             if (!url) { statusEl.textContent = '先填 URL'; return; }
+            if (transportEl.value === 'relay') {
+                if (!modelEl.value.trim()) { statusEl.textContent = '酒馆转发需要先填模型'; return; }
+                statusEl.textContent = '通过酒馆转发测试…';
+                try {
+                    const token = await (await fetch('/csrf-token')).json();
+                    const source = type === 'anthropic' ? 'claude' : (type === 'gemini' ? 'makersuite' : 'openai');
+                    const relayUrl = type === 'openai' ? url.replace(/\/chat\/completions$/i, '') : url;
+                    const res = await fetch('/api/backends/chat-completions/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
+                        body: JSON.stringify({
+                            chat_completion_source: source,
+                            model: modelEl.value.trim(),
+                            messages: [{ role: 'user', content: 'ping' }],
+                            reverse_proxy: relayUrl,
+                            proxy_password: keyEl.value.trim(),
+                            max_tokens: 1,
+                            temperature: 0,
+                            stream: false,
+                        }),
+                    });
+                    const text = await res.text();
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 180)}`);
+                    statusEl.textContent = '酒馆转发可用';
+                } catch (e) {
+                    statusEl.textContent = `酒馆转发失败：${e.message || e}`;
+                }
+                return;
+            }
             statusEl.textContent = '连接中…';
             try {
                 let modelsUrl;
@@ -1297,8 +1329,96 @@ export function mountPanel() {
             }
         };
 
+        const useAsSecondary = () => {
+            const p = profiles.find(x => x.id === selectedId);
+            if (!p) { statusEl.textContent = '先保存并选择一个配置'; return; }
+            settings.set('worldsim', {
+                activeSecondaryProfile: p.id,
+                refreshApi: {
+                    ...(settings.get('worldsim').refreshApi || {}),
+                    url: p.url,
+                    key: p.key,
+                    model: p.model,
+                    type: p.type || 'openai',
+                    transport: p.transport || 'relay',
+                },
+            });
+            statusEl.textContent = '已设为当前副 API';
+            if (window.toastr) toastr.success('已设为当前副 API');
+        };
+        const setSecret = async (key, value) => {
+            const token = await (await fetch('/csrf-token')).json();
+            await fetch('/api/secrets/write', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
+                body: JSON.stringify({ key, value }),
+            });
+        };
+        const applyMain = async (p) => {
+            if (!p) return;
+            const ctx = stBridge.getContext();
+            if (typeof ctx.executeSlashCommandsWithOptions !== 'function') throw new Error('当前酒馆不支持切换 API');
+            if ((p.type || 'openai') === 'openai') {
+                await ctx.executeSlashCommandsWithOptions('/api custom');
+                const base = normalizeUrl(p.url, 'openai').replace(/\/chat\/completions$/i, '');
+                const input = document.querySelector('#custom_api_url_text');
+                if (input) {
+                    input.value = base;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                await setSecret('api_key_custom', p.key || '');
+                if (p.model) await ctx.executeSlashCommandsWithOptions(`/model ${JSON.stringify(p.model)}`);
+            } else {
+                const apiKey = p.type === 'anthropic' ? 'claude' : 'makersuite';
+                await ctx.executeSlashCommandsWithOptions(`/api ${apiKey}`);
+                await setSecret(p.type === 'anthropic' ? 'api_key_claude' : 'api_key_makersuite', p.key || '');
+                if (p.model) await ctx.executeSlashCommandsWithOptions(`/model ${JSON.stringify(p.model)}`);
+            }
+            if (window.toastr) toastr.success(`已同步主 API：${p.name}`);
+        };
+        const renderList = () => {
+            const listEl = wrap.querySelector('#nt-api-profile-list');
+            if (!listEl) return;
+            listEl.innerHTML = profiles.length ? profiles.map(p => `
+                <div class="nt-api-profile-row" data-id="${escapeHtml(p.id)}">
+                    <span class="nt-api-profile-name">${escapeHtml(p.name || p.url)}</span>
+                    <span class="nt-api-profile-meta">${escapeHtml(p.type || 'openai')} / ${escapeHtml(p.transport || 'relay')}</span>
+                    <span class="nt-api-profile-actions">
+                        <button type="button" class="nt-btn-text" data-act="edit">编辑</button>
+                        <button type="button" class="nt-btn-text" data-act="main">主 API</button>
+                        <button type="button" class="nt-btn-text primary" data-act="secondary">副 API</button>
+                    </span>
+                </div>`).join('') : '<div class="nt-hint">还没有保存的 API 配置</div>';
+            listEl.querySelectorAll('.nt-api-profile-row').forEach(row => {
+                const id = row.dataset.id;
+                const p = profiles.find(x => x.id === id);
+                row.querySelector('[data-act="edit"]').onclick = () => {
+                    selectedId = id;
+                    renderOptions();
+                    loadProfile();
+                };
+                row.querySelector('[data-act="main"]').onclick = async () => {
+                    try { await applyMain(p); statusEl.textContent = '主 API 已同步'; }
+                    catch (e) { statusEl.textContent = `主 API 失败：${e.message || e}`; }
+                };
+                row.querySelector('[data-act="secondary"]').onclick = () => {
+                    selectedId = id;
+                    renderOptions();
+                    loadProfile();
+                    useAsSecondary();
+                };
+            });
+        };
+        const saveProfiles = () => {
+            settings.set('worldsim', { apiProfiles: profiles });
+            renderOptions();
+            renderList();
+        };
+
         renderOptions();
         loadProfile();
+        renderList();
         profileSelect.addEventListener('change', () => {
             selectedId = profileSelect.value;
             loadProfile();
@@ -1315,6 +1435,7 @@ export function mountPanel() {
                 id: selectedId || `api_${Date.now()}`,
                 name: nameEl.value.trim() || urlEl.value.trim(),
                 type: typeEl.value,
+                transport: transportEl.value,
                 url: urlEl.value.trim(),
                 key: keyEl.value.trim(),
                 model: modelEl.value.trim(),
@@ -1338,22 +1459,7 @@ export function mountPanel() {
             loadProfile();
             statusEl.textContent = '已删除';
         };
-        wrap.querySelector('#nt-api-profile-use').onclick = () => {
-            const p = profiles.find(x => x.id === selectedId);
-            if (!p) { statusEl.textContent = '先保存并选择一个配置'; return; }
-            settings.set('worldsim', {
-                activeSecondaryProfile: p.id,
-                refreshApi: {
-                    ...(settings.get('worldsim').refreshApi || {}),
-                    url: p.url,
-                    key: p.key,
-                    model: p.model,
-                    type: p.type || 'openai',
-                },
-            });
-            statusEl.textContent = '已设为当前副 API';
-            if (window.toastr) toastr.success('已设为当前副 API');
-        };
+        wrap.querySelector('#nt-api-profile-use').onclick = useAsSecondary;
         wrap.querySelector('#nt-api-test').onclick = testConnection;
         wrap.querySelector('#nt-api-main-apply').onclick = async () => {
             const type = wrap.querySelector('#nt-api-main-type').value;

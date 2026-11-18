@@ -2503,7 +2503,51 @@ async function runAutoFullRefresh() {
     }
 }
 
+async function generateViaStRelay(prompt, cfg) {
+    const type = cfg.type || 'openai';
+    const source = type === 'anthropic' ? 'claude' : (type === 'gemini' ? 'makersuite' : 'openai');
+    let url = normalizeRefreshApiUrl(cfg.url, type);
+    if (type === 'openai') url = url.replace(/\/chat\/completions$/i, '');
+    const token = await (await fetch('/csrf-token')).json();
+    const res = await fetch('/api/backends/chat-completions/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
+        body: JSON.stringify({
+            chat_completion_source: source,
+            model: cfg.model || undefined,
+            messages: [
+                { role: 'system', content: prompt },
+                { role: 'user', content: '开始更新。' },
+            ],
+            reverse_proxy: url,
+            proxy_password: cfg.key || '',
+            max_tokens: 4096,
+            temperature: 0.7,
+            stream: false,
+        }),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`酒馆转发 API ${res.status}: ${text.slice(0, 300)}`);
+    let data = null;
+    try { data = JSON.parse(text); } catch {
+        const line = text.split('\n').reverse().find(l => l.startsWith('data: ') && !l.includes('[DONE]'));
+        if (line) {
+            try { data = JSON.parse(line.slice(6)); } catch {}
+        }
+    }
+    if (!data) throw new Error('酒馆转发返回的不是 JSON');
+    return data?.choices?.[0]?.message?.content
+        ?? data?.choices?.[0]?.text
+        ?? data?.content?.[0]?.text
+        ?? data?.content
+        ?? data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('')
+        ?? '';
+}
+
 async function generateRefreshApi(prompt, cfg) {
+    if ((cfg.transport || 'relay') === 'relay') {
+        return await generateViaStRelay(prompt, cfg);
+    }
     const rawUrl = String(cfg.url || '').trim();
     if (!rawUrl) return null;
     const type = cfg.type || 'openai';
@@ -2987,6 +3031,7 @@ ${contract}
                 key: apiKey.value.trim(),
                 model: apiModel.value.trim(),
                 type: savedApi.type || 'openai',
+                transport: savedApi.transport || 'relay',
                 autoFull: autoCb.checked,
                 manualChoice: apiChoice.value,
             };

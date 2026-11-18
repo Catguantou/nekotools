@@ -4752,3 +4752,42 @@ body {
         font-size: 13px;
     }
 }
+
+/* API 配置列表 */
+#nt-ws-panel .nt-api-profile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 4px 0;
+}
+#nt-ws-panel .nt-api-profile-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.018);
+}
+#nt-ws-panel .nt-api-profile-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #e8ecf5;
+    font-size: 11px;
+}
+#nt-ws-panel .nt-api-profile-meta {
+    color: #7f8798;
+    font-size: 9px;
+}
+#nt-ws-panel .nt-api-profile-actions {
+    display: flex;
+    gap: 4px;
+}
+#nt-ws-panel .nt-api-profile-actions .nt-btn-text {
+    height: 24px;
+    padding: 0 7px;
+    font-size: 9px;
+}
