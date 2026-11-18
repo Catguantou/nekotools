@@ -1,6 +1,7 @@
 import { registry } from './registry.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
+import { saveSecret, getSecret, deleteSecret } from './apivault.js';
 import {
     cleanChatSlop,
     exportPureStoryTxt,
@@ -500,6 +501,10 @@ export function mountPanel() {
                                 <input id="nt-api-vertex-region" class="nt-data-input" placeholder="Region（默认 us-central1）">
                             </div>
                             <textarea id="nt-api-vertex-cred" class="nt-prompt-textarea" style="min-height:70px;" placeholder="填 Vertex API Key 或服务账号 JSON（只写入酒馆 secrets，不保存到插件配置）"></textarea>
+                            <div class="nt-data-row" style="gap:6px; flex-wrap:wrap; margin:0; padding:0;">
+                                <button id="nt-api-vertex-validate" class="nt-btn-text">[验证 JSON]</button>
+                                <span id="nt-api-vertex-status" class="nt-hint"></span>
+                            </div>
                             <span class="nt-hint">Vertex 凭证只写入酒馆 secrets，插件配置只保存 Project / Region / 模型。</span>
                         </div>
                         <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
@@ -1222,6 +1227,7 @@ export function mountPanel() {
         const vertexProjectEl = wrap.querySelector('#nt-api-vertex-project');
         const vertexRegionEl = wrap.querySelector('#nt-api-vertex-region');
         const vertexCredEl = wrap.querySelector('#nt-api-vertex-cred');
+        const vertexStatusEl = wrap.querySelector('#nt-api-vertex-status');
         const statusEl = wrap.querySelector('#nt-api-status');
         const listEl = wrap.querySelector('#nt-api-profile-list');
 
@@ -1300,9 +1306,11 @@ export function mountPanel() {
             const ctx = stBridge.getContext();
             if (typeof ctx.executeSlashCommandsWithOptions !== 'function') throw new Error('当前酒馆不支持切换 API');
             const source = p.source || 'openai';
+            const stored = p.id ? await getSecret(p.id).catch(() => '') : '';
             if (source === 'vertexai') {
                 await ctx.executeSlashCommandsWithOptions('/api vertexai');
-                if (vertexCredEl.value.trim()) await writeVertexSecret(p.vertexAuth || vertexAuthEl.value, vertexCredEl.value.trim());
+                const cred = vertexCredEl.value.trim() || stored;
+                if (cred) await writeVertexSecret(p.vertexAuth || vertexAuthEl.value, cred);
                 const authEl = document.querySelector('#vertexai_auth_mode');
                 if (authEl) {
                     authEl.value = p.vertexAuth || 'express';
@@ -1326,10 +1334,12 @@ export function mountPanel() {
                     input.dispatchEvent(new Event('input', { bubbles: true }));
                     input.dispatchEvent(new Event('change', { bubbles: true }));
                 }
-                if (keyEl.value.trim()) await setSecret('api_key_custom', keyEl.value.trim());
+                const key = keyEl.value.trim() || stored;
+                if (key) await setSecret('api_key_custom', key);
             } else {
                 await ctx.executeSlashCommandsWithOptions(`/api ${source}`);
-                if (keyEl.value.trim()) await setSecret(secretName(source), keyEl.value.trim());
+                const key = keyEl.value.trim() || stored;
+                if (key) await setSecret(secretName(source), key);
             }
             if (p.model) await ctx.executeSlashCommandsWithOptions(`/model ${JSON.stringify(p.model)}`);
             settings.set('worldsim', { apiMainChoice: `profile:${p.id}` });
@@ -1338,16 +1348,20 @@ export function mountPanel() {
         const useAsSecondary = async (p) => {
             if (!p) return;
             selectedId = p.id;
+            const stored = await getSecret(p.id).catch(() => '');
             if (p.source === 'vertexai') {
-                if (vertexCredEl.value.trim()) await writeVertexSecret(p.vertexAuth || vertexAuthEl.value, vertexCredEl.value.trim());
-            } else if (keyEl.value.trim()) {
-                await setSecret(secretName(p.source || 'openai'), keyEl.value.trim());
+                const cred = vertexCredEl.value.trim() || stored;
+                if (cred) await writeVertexSecret(p.vertexAuth || vertexAuthEl.value, cred);
+            } else if (stored) {
+                await setSecret(secretName(p.source || 'openai'), stored);
             }
+            const relaySource = p.source === 'custom' ? 'openai' : (p.source || 'openai');
             settings.set('worldsim', {
                 activeSecondaryProfile: p.id,
                 apiSubChoice: `profile:${p.id}`,
                 refreshApi: {
-                    source: p.source || 'openai',
+                    profileId: p.id,
+                    source: relaySource,
                     url: p.url || '',
                     key: '',
                     model: p.model || '',
@@ -1401,6 +1415,7 @@ export function mountPanel() {
             fillSourceSelect(p ? (p.source || 'openai') : 'openai');
             urlEl.value = p ? (p.url || '') : '';
             keyEl.value = '';
+            keyEl.placeholder = p && p.hasSecret ? 'Key 已加密保存在本机（重新输入可替换）' : 'Key（加密保存在本机）';
             modelEl.value = p ? (p.model || '') : '';
             vertexAuthEl.value = p && p.vertexAuth ? p.vertexAuth : 'express';
             vertexProjectEl.value = p && p.vertexProject ? p.vertexProject : '';
@@ -1466,10 +1481,13 @@ export function mountPanel() {
                 return;
             }
             try {
-                if (source === 'vertexai' && vertexCredEl.value.trim()) {
-                    await writeVertexSecret(vertexAuthEl.value, vertexCredEl.value.trim());
-                } else if (keyEl.value.trim()) {
-                    await setSecret(secretName(source), keyEl.value.trim());
+                const stored = selectedId ? await getSecret(selectedId).catch(() => '') : '';
+                const secret = keyEl.value.trim() || stored;
+                const vertexCred = vertexCredEl.value.trim() || stored;
+                if (source === 'vertexai' && vertexCred) {
+                    await writeVertexSecret(vertexAuthEl.value, vertexCred);
+                } else if (secret) {
+                    await setSecret(secretName(source), secret);
                 }
                 const token = await (await fetch('/csrf-token')).json();
                 const res = await fetch('/api/backends/chat-completions/status', {
@@ -1478,7 +1496,7 @@ export function mountPanel() {
                     body: JSON.stringify({
                         chat_completion_source: source,
                         reverse_proxy: url || undefined,
-                        proxy_password: keyEl.value.trim() || undefined,
+                        proxy_password: secret || undefined,
                         custom_url: source === 'custom' ? (normalizeUrl(rawUrl) || undefined) : undefined,
                         vertexai_auth_mode: source === 'vertexai' ? vertexAuthEl.value : undefined,
                         vertexai_express_project_id: source === 'vertexai' ? vertexProjectEl.value.trim() : undefined,
@@ -1520,22 +1538,43 @@ export function mountPanel() {
             let changed = false;
             for (const p of profiles) {
                 if (!p.key) continue;
+                await saveSecret(p.id, p.key);
                 if (p.source === 'vertexai') await setSecret('api_key_vertexai', p.key);
                 else await setSecret(secretName(p.source || 'openai'), p.key);
                 p.key = '';
+                p.hasSecret = true;
                 changed = true;
             }
             if (changed) settings.set('worldsim', { apiProfiles: profiles });
             const rf = settings.get('worldsim').refreshApi || {};
             if (rf.key) {
+                const vaultId = rf.profileId || settings.get('worldsim').activeSecondaryProfile || 'legacy-sub';
+                await saveSecret(vaultId, rf.key);
                 if ((rf.source || '') === 'vertexai') await setSecret('api_key_vertexai', rf.key);
                 else await setSecret(secretName(rf.source || 'openai'), rf.key);
-                settings.set('worldsim', { refreshApi: { ...rf, key: '' } });
+                settings.set('worldsim', { refreshApi: { ...rf, key: '', profileId: rf.profileId || vaultId } });
             }
         })().catch(() => {});
         setTimeout(() => { fetchModels(); }, 500);
         sourceEl.addEventListener('change', () => { syncVertexBox(); fetchModels(); });
         modelSelect.addEventListener('change', () => { if (modelSelect.value) modelEl.value = ''; });
+        wrap.querySelector('#nt-api-vertex-validate').onclick = () => {
+            const auth = vertexAuthEl.value;
+            const text = vertexCredEl.value.trim();
+            if (!text) { vertexStatusEl.textContent = '还没有填凭证'; return; }
+            if (auth === 'express') {
+                vertexStatusEl.textContent = text.length >= 10 ? 'API Key 格式看起来可以' : 'API Key 太短';
+                return;
+            }
+            try {
+                const data = JSON.parse(text);
+                const missing = ['type', 'project_id', 'private_key', 'client_email'].filter(k => !data[k]);
+                if (data.type !== 'service_account') missing.unshift('type 不是 service_account');
+                vertexStatusEl.textContent = missing.length ? `缺少/错误：${missing.join('、')}` : '服务账号 JSON 校验通过';
+            } catch (e) {
+                vertexStatusEl.textContent = `JSON 解析失败：${e.message || e}`;
+            }
+        };
         wrap.querySelector('#nt-api-model-fetch').onclick = fetchModels;
         wrap.querySelector('#nt-api-profile-new').onclick = () => {
             selectedId = '';
@@ -1544,17 +1583,24 @@ export function mountPanel() {
         };
         wrap.querySelector('#nt-api-profile-save').onclick = async () => {
             const source = sourceEl.value;
-            if (source === 'vertexai' && vertexCredEl.value.trim()) {
-                await writeVertexSecret(vertexAuthEl.value, vertexCredEl.value.trim());
-            } else if (source !== 'vertexai' && keyEl.value.trim()) {
+            const id = selectedId || `api_${Date.now()}`;
+            if (source === 'vertexai') {
+                const cred = vertexCredEl.value.trim();
+                if (cred) {
+                    await saveSecret(id, cred);
+                    await writeVertexSecret(vertexAuthEl.value, cred);
+                }
+            } else if (keyEl.value.trim()) {
+                await saveSecret(id, keyEl.value.trim());
                 await setSecret(secretName(source), keyEl.value.trim());
             }
             const item = {
-                id: selectedId || `api_${Date.now()}`,
+                id,
                 name: nameEl.value.trim() || urlEl.value.trim() || source,
                 source,
                 url: urlEl.value.trim(),
                 key: '',
+                hasSecret: Boolean(profileById(id)?.hasSecret || keyEl.value.trim() || vertexCredEl.value.trim()),
                 model: modelEl.value.trim() || modelSelect.value,
                 ...vertexFields(),
             };
@@ -1566,8 +1612,9 @@ export function mountPanel() {
             loadProfile();
             statusEl.textContent = '已保存';
         };
-        wrap.querySelector('#nt-api-profile-del').onclick = () => {
+        wrap.querySelector('#nt-api-profile-del').onclick = async () => {
             if (!selectedId) return;
+            await deleteSecret(selectedId).catch(() => {});
             profiles = profiles.filter(p => p.id !== selectedId);
             if (settings.get('worldsim').activeSecondaryProfile === selectedId) {
                 settings.set('worldsim', { activeSecondaryProfile: '', apiSubChoice: '' });

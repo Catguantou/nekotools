@@ -27,6 +27,7 @@ import { generateQuiet } from './st_api.js';
 import { applyRefreshData, buildRefreshContract } from '../modules/worldsim.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
+import { getSecret } from './apivault.js';
 
 const BTN_ID = 'nt-quick-btn';
 const POP_ID = 'nt-quick-pop';
@@ -2514,6 +2515,10 @@ async function generateViaStRelay(prompt, cfg) {
     };
     const model = cfg.model
         || String(document.getElementById(modelMap[source] || `model_${source}_select`)?.value || '').trim();
+    let secret = cfg.key || '';
+    if (!secret && cfg.profileId) {
+        try { secret = await getSecret(cfg.profileId); } catch (_) {}
+    }
     let url = '';
     if (cfg.url) {
         url = normalizeRefreshApiUrl(cfg.url, type);
@@ -2532,7 +2537,7 @@ async function generateViaStRelay(prompt, cfg) {
         stream: false,
     };
     if (url) payload.reverse_proxy = url;
-    if (cfg.key) payload.proxy_password = cfg.key;
+    if (secret) payload.proxy_password = secret;
     if (source === 'custom') {
         payload.custom_url = cfg.url || document.querySelector('#custom_api_url_text')?.value || '';
     }
