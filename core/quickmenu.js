@@ -2506,6 +2506,14 @@ async function runAutoFullRefresh() {
 async function generateViaStRelay(prompt, cfg) {
     const type = cfg.type || 'openai';
     const source = cfg.source || (type === 'anthropic' ? 'claude' : (type === 'gemini' ? 'makersuite' : 'openai'));
+    const modelMap = {
+        openai: 'model_openai_select', claude: 'model_claude_select', makersuite: 'model_google_select',
+        custom: 'custom_model_textgenerationwebui', openrouter: 'model_openrouter_select',
+        deepseek: 'model_deepseek_select', groq: 'model_groq_select', mistralai: 'model_mistralai_select',
+        xai: 'model_xai_select', cohere: 'model_cohere_select',
+    };
+    const model = cfg.model
+        || String(document.getElementById(modelMap[source] || `model_${source}_select`)?.value || '').trim();
     let url = '';
     if (cfg.url) {
         url = normalizeRefreshApiUrl(cfg.url, type);
@@ -2514,7 +2522,7 @@ async function generateViaStRelay(prompt, cfg) {
     const token = await (await fetch('/csrf-token')).json();
     const payload = {
         chat_completion_source: source,
-        model: cfg.model || undefined,
+        model: model || undefined,
         messages: [
             { role: 'system', content: prompt },
             { role: 'user', content: '开始更新。' },
