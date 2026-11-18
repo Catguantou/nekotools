@@ -1121,12 +1121,18 @@ body {
     width: 44%;
     background: linear-gradient(100deg, rgba(92, 132, 255, 0.9) 0%, rgba(88, 224, 208, 0.6) 65%, rgba(160, 180, 245, 0.15) 100%);
     opacity: .18;
-    -webkit-mask-image: radial-gradient(circle, #000 1.2px, transparent 1.6px);
-    mask-image: radial-gradient(circle, #000 1.2px, transparent 1.6px);
-    -webkit-mask-size: 6px 6px;
-    mask-size: 6px 6px;
-    -webkit-mask-repeat: repeat;
-    mask-repeat: repeat;
+    -webkit-mask-image:
+        radial-gradient(circle, #000 1.2px, transparent 1.6px),
+        linear-gradient(90deg, #000 0%, #000 38%, transparent 100%);
+    mask-image:
+        radial-gradient(circle, #000 1.2px, transparent 1.6px),
+        linear-gradient(90deg, #000 0%, #000 38%, transparent 100%);
+    -webkit-mask-size: 6px 6px, 100% 100%;
+    mask-size: 6px 6px, 100% 100%;
+    -webkit-mask-repeat: repeat, no-repeat;
+    mask-repeat: repeat, no-repeat;
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
     pointer-events: none;
 }
 .ws-status-bar .plate-tag {
@@ -4740,12 +4746,18 @@ body {
         width: 100%;
         opacity: 0.24;
         background: linear-gradient(100deg, rgba(92, 132, 255, 0.95) 0%, rgba(88, 224, 208, 0.7) 55%, rgba(160, 180, 245, 0.18) 100%);
-        -webkit-mask-image: radial-gradient(circle, #000 1px, transparent 1.35px);
-        mask-image: radial-gradient(circle, #000 1px, transparent 1.35px);
-        -webkit-mask-size: 5px 5px;
-        mask-size: 5px 5px;
-        -webkit-mask-repeat: repeat;
-        mask-repeat: repeat;
+        -webkit-mask-image:
+            radial-gradient(circle, #000 1px, transparent 1.35px),
+            linear-gradient(90deg, #000 0%, #000 32%, transparent 100%);
+        mask-image:
+            radial-gradient(circle, #000 1px, transparent 1.35px),
+            linear-gradient(90deg, #000 0%, #000 32%, transparent 100%);
+        -webkit-mask-size: 5px 5px, 100% 100%;
+        mask-size: 5px 5px, 100% 100%;
+        -webkit-mask-repeat: repeat, no-repeat;
+        mask-repeat: repeat, no-repeat;
+        -webkit-mask-composite: source-in;
+        mask-composite: intersect;
         pointer-events: none;
     }
     .ws-status-bar .plate-fields {
