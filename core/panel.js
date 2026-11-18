@@ -488,7 +488,19 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
                             <input id="nt-api-url" class="nt-data-input" style="flex:1; min-width:180px;" placeholder="URL（可选，自定义/反代接口填写）">
-                            <input id="nt-api-key" class="nt-data-input" style="min-width:150px;" type="password" placeholder="Key（可选）">
+                            <input id="nt-api-key" class="nt-data-input" style="min-width:150px;" type="password" placeholder="Key（只写入酒馆 secrets）">
+                        </div>
+                        <div id="nt-api-vertex-box" class="nt-data-row" style="display:none; flex-direction:column; align-items:stretch; gap:6px;">
+                            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                <select id="nt-api-vertex-auth" class="nt-edit-select">
+                                    <option value="express">Vertex Express（API Key）</option>
+                                    <option value="service_account">Vertex 完整模式（服务账号 JSON）</option>
+                                </select>
+                                <input id="nt-api-vertex-project" class="nt-data-input" placeholder="Project ID（Express 可空）">
+                                <input id="nt-api-vertex-region" class="nt-data-input" placeholder="Region（默认 us-central1）">
+                            </div>
+                            <textarea id="nt-api-vertex-cred" class="nt-prompt-textarea" style="min-height:70px;" placeholder="填 Vertex API Key 或服务账号 JSON（只写入酒馆 secrets，不保存到插件配置）"></textarea>
+                            <span class="nt-hint">Vertex 凭证只写入酒馆 secrets，插件配置只保存 Project / Region / 模型。</span>
                         </div>
                         <div class="nt-data-row" style="gap:6px; flex-wrap:wrap;">
                             <select id="nt-api-model-select" class="nt-edit-select" style="min-width:170px;">
@@ -1205,6 +1217,11 @@ export function mountPanel() {
         const keyEl = wrap.querySelector('#nt-api-key');
         const modelSelect = wrap.querySelector('#nt-api-model-select');
         const modelEl = wrap.querySelector('#nt-api-model');
+        const vertexBox = wrap.querySelector('#nt-api-vertex-box');
+        const vertexAuthEl = wrap.querySelector('#nt-api-vertex-auth');
+        const vertexProjectEl = wrap.querySelector('#nt-api-vertex-project');
+        const vertexRegionEl = wrap.querySelector('#nt-api-vertex-region');
+        const vertexCredEl = wrap.querySelector('#nt-api-vertex-cred');
         const statusEl = wrap.querySelector('#nt-api-status');
         const listEl = wrap.querySelector('#nt-api-profile-list');
 
@@ -1256,6 +1273,18 @@ export function mountPanel() {
                 body: JSON.stringify({ key, value }),
             });
         };
+        const writeVertexSecret = async (auth, cred) => {
+            if (!cred) return;
+            await setSecret(auth === 'service_account' ? 'vertexai_service_account_json' : 'api_key_vertexai', cred);
+        };
+        const syncVertexBox = () => {
+            vertexBox.style.display = sourceEl.value === 'vertexai' ? 'flex' : 'none';
+        };
+        const vertexFields = () => sourceEl.value === 'vertexai' ? {
+            vertexAuth: vertexAuthEl.value,
+            vertexProject: vertexProjectEl.value.trim(),
+            vertexRegion: vertexRegionEl.value.trim(),
+        } : {};
         const modelFor = (source) => {
             const map = {
                 openai: 'model_openai_select', claude: 'model_claude_select', makersuite: 'model_google_select',
@@ -1271,7 +1300,25 @@ export function mountPanel() {
             const ctx = stBridge.getContext();
             if (typeof ctx.executeSlashCommandsWithOptions !== 'function') throw new Error('当前酒馆不支持切换 API');
             const source = p.source || 'openai';
-            if (source === 'custom') {
+            if (source === 'vertexai') {
+                await ctx.executeSlashCommandsWithOptions('/api vertexai');
+                if (vertexCredEl.value.trim()) await writeVertexSecret(p.vertexAuth || vertexAuthEl.value, vertexCredEl.value.trim());
+                const authEl = document.querySelector('#vertexai_auth_mode');
+                if (authEl) {
+                    authEl.value = p.vertexAuth || 'express';
+                    authEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                const projectEl = document.querySelector('#vertexai_express_project_id');
+                if (projectEl && (p.vertexProject || vertexProjectEl.value.trim())) {
+                    projectEl.value = p.vertexProject || vertexProjectEl.value.trim();
+                    projectEl.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                const regionEl = document.querySelector('#vertexai_region');
+                if (regionEl && (p.vertexRegion || vertexRegionEl.value.trim())) {
+                    regionEl.value = p.vertexRegion || vertexRegionEl.value.trim();
+                    regionEl.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            } else if (source === 'custom') {
                 await ctx.executeSlashCommandsWithOptions('/api custom');
                 const input = document.querySelector('#custom_api_url_text');
                 if (input && p.url) {
@@ -1279,10 +1326,10 @@ export function mountPanel() {
                     input.dispatchEvent(new Event('input', { bubbles: true }));
                     input.dispatchEvent(new Event('change', { bubbles: true }));
                 }
-                if (p.key) await setSecret('api_key_custom', p.key);
+                if (keyEl.value.trim()) await setSecret('api_key_custom', keyEl.value.trim());
             } else {
                 await ctx.executeSlashCommandsWithOptions(`/api ${source}`);
-                if (p.key) await setSecret(secretName(source), p.key);
+                if (keyEl.value.trim()) await setSecret(secretName(source), keyEl.value.trim());
             }
             if (p.model) await ctx.executeSlashCommandsWithOptions(`/model ${JSON.stringify(p.model)}`);
             settings.set('worldsim', { apiMainChoice: `profile:${p.id}` });
@@ -1291,16 +1338,23 @@ export function mountPanel() {
         const useAsSecondary = async (p) => {
             if (!p) return;
             selectedId = p.id;
-            if (p.key && p.source) await setSecret(secretName(p.source), p.key);
+            if (p.source === 'vertexai') {
+                if (vertexCredEl.value.trim()) await writeVertexSecret(p.vertexAuth || vertexAuthEl.value, vertexCredEl.value.trim());
+            } else if (keyEl.value.trim()) {
+                await setSecret(secretName(p.source || 'openai'), keyEl.value.trim());
+            }
             settings.set('worldsim', {
                 activeSecondaryProfile: p.id,
                 apiSubChoice: `profile:${p.id}`,
                 refreshApi: {
                     source: p.source || 'openai',
                     url: p.url || '',
-                    key: p.key || '',
+                    key: '',
                     model: p.model || '',
                     transport: 'relay',
+                    vertexAuth: p.vertexAuth || '',
+                    vertexProject: p.vertexProject || '',
+                    vertexRegion: p.vertexRegion || '',
                     autoFull: Boolean((settings.get('worldsim').refreshApi || {}).autoFull),
                 },
             });
@@ -1346,8 +1400,13 @@ export function mountPanel() {
             nameEl.value = p ? (p.name || '') : '';
             fillSourceSelect(p ? (p.source || 'openai') : 'openai');
             urlEl.value = p ? (p.url || '') : '';
-            keyEl.value = p ? (p.key || '') : '';
+            keyEl.value = '';
             modelEl.value = p ? (p.model || '') : '';
+            vertexAuthEl.value = p && p.vertexAuth ? p.vertexAuth : 'express';
+            vertexProjectEl.value = p && p.vertexProject ? p.vertexProject : '';
+            vertexRegionEl.value = p && p.vertexRegion ? p.vertexRegion : 'us-central1';
+            vertexCredEl.value = '';
+            syncVertexBox();
             modelSelect.innerHTML = '<option value="">-- 抓取模型 --</option>';
             if (p && p.model) {
                 const opt = document.createElement('option');
@@ -1407,7 +1466,11 @@ export function mountPanel() {
                 return;
             }
             try {
-                if (keyEl.value.trim()) await setSecret(secretName(source), keyEl.value.trim());
+                if (source === 'vertexai' && vertexCredEl.value.trim()) {
+                    await writeVertexSecret(vertexAuthEl.value, vertexCredEl.value.trim());
+                } else if (keyEl.value.trim()) {
+                    await setSecret(secretName(source), keyEl.value.trim());
+                }
                 const token = await (await fetch('/csrf-token')).json();
                 const res = await fetch('/api/backends/chat-completions/status', {
                     method: 'POST',
@@ -1417,6 +1480,9 @@ export function mountPanel() {
                         reverse_proxy: url || undefined,
                         proxy_password: keyEl.value.trim() || undefined,
                         custom_url: source === 'custom' ? (normalizeUrl(rawUrl) || undefined) : undefined,
+                        vertexai_auth_mode: source === 'vertexai' ? vertexAuthEl.value : undefined,
+                        vertexai_express_project_id: source === 'vertexai' ? vertexProjectEl.value.trim() : undefined,
+                        vertexai_region: source === 'vertexai' ? vertexRegionEl.value.trim() : undefined,
                     }),
                 });
                 if (res.ok) {
@@ -1449,8 +1515,26 @@ export function mountPanel() {
         };
 
         renderAll();
+        // 把旧配置里明文保存的 Key 迁移到酒馆 secrets，然后从插件配置里删掉
+        (async () => {
+            let changed = false;
+            for (const p of profiles) {
+                if (!p.key) continue;
+                if (p.source === 'vertexai') await setSecret('api_key_vertexai', p.key);
+                else await setSecret(secretName(p.source || 'openai'), p.key);
+                p.key = '';
+                changed = true;
+            }
+            if (changed) settings.set('worldsim', { apiProfiles: profiles });
+            const rf = settings.get('worldsim').refreshApi || {};
+            if (rf.key) {
+                if ((rf.source || '') === 'vertexai') await setSecret('api_key_vertexai', rf.key);
+                else await setSecret(secretName(rf.source || 'openai'), rf.key);
+                settings.set('worldsim', { refreshApi: { ...rf, key: '' } });
+            }
+        })().catch(() => {});
         setTimeout(() => { fetchModels(); }, 500);
-        sourceEl.addEventListener('change', () => { fetchModels(); });
+        sourceEl.addEventListener('change', () => { syncVertexBox(); fetchModels(); });
         modelSelect.addEventListener('change', () => { if (modelSelect.value) modelEl.value = ''; });
         wrap.querySelector('#nt-api-model-fetch').onclick = fetchModels;
         wrap.querySelector('#nt-api-profile-new').onclick = () => {
@@ -1458,14 +1542,21 @@ export function mountPanel() {
             loadProfile();
             statusEl.textContent = '填写后保存为新配置';
         };
-        wrap.querySelector('#nt-api-profile-save').onclick = () => {
+        wrap.querySelector('#nt-api-profile-save').onclick = async () => {
+            const source = sourceEl.value;
+            if (source === 'vertexai' && vertexCredEl.value.trim()) {
+                await writeVertexSecret(vertexAuthEl.value, vertexCredEl.value.trim());
+            } else if (source !== 'vertexai' && keyEl.value.trim()) {
+                await setSecret(secretName(source), keyEl.value.trim());
+            }
             const item = {
                 id: selectedId || `api_${Date.now()}`,
-                name: nameEl.value.trim() || urlEl.value.trim() || sourceEl.value,
-                source: sourceEl.value,
+                name: nameEl.value.trim() || urlEl.value.trim() || source,
+                source,
                 url: urlEl.value.trim(),
-                key: keyEl.value.trim(),
+                key: '',
                 model: modelEl.value.trim() || modelSelect.value,
+                ...vertexFields(),
             };
             const index = profiles.findIndex(p => p.id === item.id);
             if (index >= 0) profiles[index] = item;

@@ -2536,6 +2536,11 @@ async function generateViaStRelay(prompt, cfg) {
     if (source === 'custom') {
         payload.custom_url = cfg.url || document.querySelector('#custom_api_url_text')?.value || '';
     }
+    if (source === 'vertexai') {
+        payload.vertexai_auth_mode = cfg.vertexAuth || 'express';
+        payload.vertexai_express_project_id = cfg.vertexProject || undefined;
+        payload.vertexai_region = cfg.vertexRegion || 'us-central1';
+    }
     const res = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
