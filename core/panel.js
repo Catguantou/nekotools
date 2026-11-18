@@ -373,6 +373,7 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row" style="justify-content:flex-start; gap:10px; flex-wrap:wrap;">
                             <button id="nt-prompt-preview" class="nt-btn-text">[预览本轮实际发送]</button>
+                            <button id="nt-prompt-show-all" class="nt-btn-text">[查看全部默认提示词]</button>
                             <button id="nt-prompt-clear-custom" class="nt-btn-text">[清空自定义并用默认]</button>
                             <span id="nt-prompt-count" class="nt-hint"></span>
                         </div>
@@ -1719,7 +1720,8 @@ export function mountPanel() {
         out.style.display = 'block';
         out.textContent = text || '（所有提示词都被关闭，当前不会发送任何 system 提示词）';
         const chars = text.length;
-        wrap.querySelector('#nt-prompt-count').textContent = `约 ${chars} 字符 / ${Math.ceil(chars / 2)} token（粗估） · ${list.length} 段`;
+        const offCount = Object.values(flags).filter(v => !v).length;
+        wrap.querySelector('#nt-prompt-count').textContent = `约 ${chars} 字符 / ${Math.ceil(chars / 2)} token（粗估） · ${list.length} 段${offCount ? ` · 已关闭 ${offCount} 项` : ''}`;
     };
 
     wrap.querySelectorAll('select[data-prompt-mode]').forEach(sel => {
@@ -1751,6 +1753,23 @@ export function mountPanel() {
         ta.addEventListener('input', sync);
         ta.addEventListener('change', sync);
     });
+
+    wrap.querySelector('#nt-prompt-show-all').onclick = () => {
+        const labels = [
+            ['status', '状态栏'], ['preview', '剧情预演'], ['chars', '角色追踪'],
+            ['items', '道具追踪'], ['plot', '计划追踪'], ['world', '世界局势'],
+            ['foreshadow', '草蛇伏笔'], ['summary', '小总结'], ['bigSummary', '大总结'],
+            ['roster', '角色索引'], ['genesis', '开局世界生成'], ['tick', '后台 tick'],
+            ['map', '开局地图生成'], ['quest', '开局主线生成'], ['cognition', '认知隔离'],
+        ];
+        const all = getDefaultPrompts();
+        const text = labels.map(([key, name]) => `【${name}｜${key}】\n${all[key] || '（空）'}`).join('\n\n──────\n\n');
+        const out = wrap.querySelector('#nt-prompt-preview-out');
+        out.style.display = 'block';
+        out.textContent = text;
+        const chars = text.length;
+        wrap.querySelector('#nt-prompt-count').textContent = `全部默认提示词：约 ${chars} 字符 / ${Math.ceil(chars / 2)} token（粗估） · 15 段`;
+    };
 
     wrap.querySelector('#nt-prompt-clear-custom').onclick = () => {
         if (!confirm('清空所有自定义提示词，恢复使用默认？')) return;
