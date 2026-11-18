@@ -2773,158 +2773,24 @@ async function showRefreshModal(preselectName = '') {
     body.appendChild(modeRow);
 
     const savedApi = settings.get('worldsim').refreshApi || {};
-    const apiBox = document.createElement('div');
-    apiBox.className = 'nt-refresh-api';
-    const apiHead = document.createElement('div');
-    apiHead.className = 'nt-refresh-section';
-    apiHead.textContent = '外接 API（可选，不填就用酒馆当前 API）';
-    apiBox.appendChild(apiHead);
-    const apiInput = (key, label, placeholder, type = 'text') => {
-        const row = document.createElement('label');
-        row.className = 'nt-refresh-api-row';
-        const l = document.createElement('span');
-        l.textContent = label;
-        const input = document.createElement('input');
-        input.className = 'nt-refresh-api-input';
-        input.type = type;
-        input.placeholder = placeholder;
-        input.value = savedApi[key] || '';
-        row.appendChild(l);
-        row.appendChild(input);
-        apiBox.appendChild(row);
-        return input;
-    };
-    const apiUrl = apiInput('url', 'URL', 'https://api.example.com/v1 或完整 /v1/chat/completions');
-    const apiKey = apiInput('key', 'Key', 'sk-...', 'password');
-    const modelRow = document.createElement('label');
-    modelRow.className = 'nt-refresh-api-row';
-    const modelLabel = document.createElement('span');
-    modelLabel.textContent = 'Model';
-    const apiModel = document.createElement('select');
-    apiModel.className = 'nt-refresh-api-input';
-    if (savedApi.model) {
-        const opt = document.createElement('option');
-        opt.value = savedApi.model;
-        opt.textContent = savedApi.model;
-        apiModel.appendChild(opt);
-    } else {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = '（先测试连接加载模型）';
-        apiModel.appendChild(opt);
-    }
-    modelRow.appendChild(modelLabel);
-    modelRow.appendChild(apiModel);
-    apiBox.appendChild(modelRow);
-    const apiActions = document.createElement('div');
-    apiActions.className = 'nt-refresh-api-actions';
-    const testApi = document.createElement('button');
-    testApi.type = 'button';
-    testApi.className = 'nt-quest-add';
-    testApi.textContent = '测试连接 / 获取模型';
-    const apiStatus = document.createElement('span');
-    apiStatus.className = 'nt-refresh-api-status';
-    apiActions.appendChild(testApi);
-    apiActions.appendChild(apiStatus);
-    apiBox.appendChild(apiActions);
-    const autoRow = document.createElement('label');
-    autoRow.className = 'nt-refresh-api-row nt-refresh-auto';
-    const autoCb = document.createElement('input');
-    autoCb.type = 'checkbox';
-    autoCb.checked = savedApi.autoFull === true;
-    const autoText = document.createElement('span');
-    autoText.textContent = '每轮自动全量更新（走外接 API）';
-    autoRow.appendChild(autoCb);
-    autoRow.appendChild(autoText);
-    apiBox.appendChild(autoRow);
-    const choiceRow = document.createElement('label');
-    choiceRow.className = 'nt-refresh-api-row';
-    const choiceLabel = document.createElement('span');
-    choiceLabel.textContent = '本次更新使用';
+    const apiChoiceRow = document.createElement('label');
+    apiChoiceRow.className = 'nt-refresh-item';
+    const apiChoiceLabel = document.createElement('span');
+    apiChoiceLabel.textContent = '本次更新使用';
     const apiChoice = document.createElement('select');
-    apiChoice.className = 'nt-refresh-api-input';
+    apiChoice.className = 'nt-edit-select';
     const mainOpt = document.createElement('option');
     mainOpt.value = 'main';
-    mainOpt.textContent = '主 API（酒馆当前）';
+    mainOpt.textContent = '主 API';
     const subOpt = document.createElement('option');
     subOpt.value = 'secondary';
-    subOpt.textContent = '副 API（外接）';
+    subOpt.textContent = '副 API（设置里配置）';
     apiChoice.appendChild(mainOpt);
     apiChoice.appendChild(subOpt);
-    apiChoice.value = savedApi.manualChoice === 'secondary' ? 'secondary' : 'main';
-    choiceRow.appendChild(choiceLabel);
-    choiceRow.appendChild(apiChoice);
-    apiBox.appendChild(choiceRow);
-    const syncApiChoice = () => {
-        const hasUrl = Boolean(apiUrl.value.trim());
-        subOpt.disabled = !hasUrl;
-        if (!hasUrl && apiChoice.value === 'secondary') apiChoice.value = 'main';
-    };
-    syncApiChoice();
-    const persistApi = () => {
-        settings.set('worldsim', {
-            refreshApi: {
-                url: apiUrl.value.trim(),
-                key: apiKey.value.trim(),
-                model: apiModel.value.trim(),
-                autoFull: autoCb.checked,
-                manualChoice: apiChoice.value,
-            },
-        });
-    };
-    for (const input of [apiUrl, apiKey, apiModel]) {
-        input.addEventListener('change', persistApi);
-    }
-    apiUrl.addEventListener('change', syncApiChoice);
-    apiChoice.addEventListener('change', persistApi);
-    autoCb.addEventListener('change', persistApi);
-    const apiHint = document.createElement('div');
-    apiHint.className = 'nt-refresh-note';
-    apiHint.textContent = '可填基础地址（如 https://host/v1）或完整 .../v1/chat/completions；HTTP 会自动改成 HTTPS，并自动补 /v1。要求接口兼容 OpenAI 且允许浏览器跨域。Key 只保存在当前酒馆设置里。';
-    apiBox.appendChild(apiHint);
-    const apiDetails = document.createElement('details');
-    apiDetails.className = 'nt-refresh-details';
-    const apiSummary = document.createElement('summary');
-    apiSummary.textContent = '高级：外接 API / 自动全量';
-    apiDetails.appendChild(apiSummary);
-    apiDetails.appendChild(apiBox);
-    apiDetails.open = Boolean(savedApi.url || savedApi.autoFull);
-    body.appendChild(apiDetails);
-
-    testApi.addEventListener('click', async () => {
-        const cfg = { url: apiUrl.value.trim(), key: apiKey.value.trim(), model: apiModel.value.trim(), type: savedApi.type || 'openai' };
-        if (!cfg.url) {
-            apiStatus.textContent = '先填 URL';
-            return;
-        }
-        testApi.disabled = true;
-        apiStatus.textContent = '连接中…';
-        toast('正在测试外接 API，请稍等…', 'info');
-        try {
-            const models = await fetchRefreshModels(cfg);
-            const previous = apiModel.value;
-            apiModel.textContent = '';
-            for (const id of models) {
-                const opt = document.createElement('option');
-                opt.value = id;
-                opt.textContent = id;
-                apiModel.appendChild(opt);
-            }
-            if (models.length) {
-                apiModel.value = models.includes(previous) ? previous : models[0];
-            }
-            apiUrl.value = normalizeRefreshApiUrl(cfg.url);
-            syncApiChoice();
-            apiStatus.textContent = models.length ? `连接成功，${models.length} 个模型` : '连接成功，但没返回模型列表';
-            toast(apiStatus.textContent, 'success');
-            persistApi();
-        } catch (e) {
-            apiStatus.textContent = `失败：${e && e.message ? e.message : e}`;
-            toast(apiStatus.textContent, 'error');
-        } finally {
-            testApi.disabled = false;
-        }
-    });
+    apiChoice.value = savedApi.manualChoice === 'secondary' && (savedApi.url || savedApi.source) ? 'secondary' : 'main';
+    apiChoiceRow.appendChild(apiChoiceLabel);
+    apiChoiceRow.appendChild(apiChoice);
+    body.appendChild(apiChoiceRow);
 
     const save = async () => {
         const selected = Object.entries(checks).filter(([, cb]) => cb.checked).map(([k]) => k);
@@ -3041,18 +2907,10 @@ ${contract}
 
         try {
             toast('正在生成更新…', 'info');
-            const apiCfg = {
-                url: apiUrl.value.trim(),
-                key: apiKey.value.trim(),
-                model: apiModel.value.trim(),
-                type: savedApi.type || 'openai',
-                transport: savedApi.transport || 'relay',
-                source: savedApi.source || undefined,
-                autoFull: autoCb.checked,
-                manualChoice: apiChoice.value,
-            };
+            const apiCfg = { ...savedApi, manualChoice: apiChoice.value };
             settings.set('worldsim', { refreshApi: apiCfg });
-            const raw = apiCfg.url && apiChoice.value === 'secondary'
+            const useSub = apiChoice.value === 'secondary' && Boolean(apiCfg.url || apiCfg.source);
+            const raw = useSub
                 ? await generateRefreshApi(prompt, apiCfg)
                 : await generateQuiet(prompt);
             const text = String(raw || '');
