@@ -491,8 +491,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
         pushTrackedPrompt(list, 'chars', c + `</nekotools:track.chars>`);
     }
 
-    // 角色索引：不依赖「角色追踪」开关，只要有追踪就维护
-    list.push({ role: 'system', content: buildRosterPrompt(bookName) });
+    // 角色索引跟随角色追踪开关：角色关掉时索引也不再维护
+    if (settings.enableChars && promptMode('chars') !== 'off') {
+        list.push({ role: 'system', content: buildRosterPrompt(bookName) });
+    }
 
     if (settings.enableMap) list.push({ role: 'system', content: buildMapPrompt() });
     if (settings.enableQuests) list.push({ role: 'system', content: buildQuestPrompt() });

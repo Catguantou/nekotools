@@ -360,6 +360,7 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-plot" class="nt-hidden-cb" ${s.enablePlot ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">计划追踪</span><span class="nt-code">T_05</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-world" class="nt-hidden-cb" ${s.enableWorld ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">世界局势</span><span class="nt-code">T_06</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-foreshadow" class="nt-hidden-cb" ${s.enableForeshadow ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">草蛇伏笔</span><span class="nt-code">T_07</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-map" class="nt-hidden-cb" ${s.enableMap ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">地图追踪</span><span class="nt-code">T_08</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quests" class="nt-hidden-cb" ${s.enableQuests ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">主线支线</span><span class="nt-code">T_10</span></label>
                         </div>
                     </div>
@@ -1699,6 +1700,7 @@ export function mountPanel() {
             enableItems: '#nt-ws-items',
             enablePlot: '#nt-ws-plot',
             enableWorld: '#nt-ws-world',
+            enableMap: '#nt-ws-map',
             enableQuests: '#nt-ws-quests',
             enableCognition: '#nt-ws-cognition',
             enableForeshadow: '#nt-ws-foreshadow',
@@ -1738,6 +1740,7 @@ export function mountPanel() {
         '#nt-ws-items': 'enableItems',
         '#nt-ws-plot': 'enablePlot',
         '#nt-ws-world': 'enableWorld',
+        '#nt-ws-map': 'enableMap',
         '#nt-ws-quests': 'enableQuests',
         '#nt-ws-cognition': 'enableCognition',
         '#nt-ws-foreshadow': 'enableForeshadow',
@@ -1771,6 +1774,7 @@ export function mountPanel() {
         s.enableItems = wrap.querySelector('#nt-ws-items').checked;
         s.enablePlot = wrap.querySelector('#nt-ws-plot').checked;
         s.enableWorld = wrap.querySelector('#nt-ws-world').checked;
+        s.enableMap = wrap.querySelector('#nt-ws-map').checked;
         s.enableQuests = wrap.querySelector('#nt-ws-quests').checked;
         s.enableCognition = wrap.querySelector('#nt-ws-cognition').checked;
         s.enableForeshadow = wrap.querySelector('#nt-ws-foreshadow').checked;
