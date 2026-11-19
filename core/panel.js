@@ -198,30 +198,6 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-summary" class="nt-hidden-cb" ${s.enableSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">小总结</span><span class="nt-code">T_08</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-bigsummary" class="nt-hidden-cb" ${s.enableBigSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">大总结</span><span class="nt-code">T_09</span></label>
                         </div>
-                        <div class="nt-subhead">世界规则</div>
-                        <div class="nt-grid-layout nt-rule-grid">
-                            <label class="nt-grid-item" title="时间/在场/关系与严格校验">
-                                <input type="checkbox" id="nt-ws-statecheck" class="nt-hidden-cb" ${s.enableStateCheck ? 'checked' : ''}>
-                                <span class="nt-box"></span>
-                                <span class="nt-text">状态核查</span>
-                                <span class="nt-hint">时间/在场/关系与严格校验</span>
-                                <span class="nt-code">W_01</span>
-                            </label>
-                            <label class="nt-grid-item" title="成就与名声，TOOL 展示">
-                                <input type="checkbox" id="nt-ws-reputation" class="nt-hidden-cb" ${s.enableReputation ? 'checked' : ''}>
-                                <span class="nt-box"></span>
-                                <span class="nt-text">声望系统</span>
-                                <span class="nt-hint">成就与名声，TOOL 展示</span>
-                                <span class="nt-code">W_02</span>
-                            </label>
-                            <label class="nt-grid-item" title="TOOL 里的玩家信息管理">
-                                <input type="checkbox" id="nt-ws-playerpanel" class="nt-hidden-cb" ${s.enablePlayerPanel ? 'checked' : ''}>
-                                <span class="nt-box"></span>
-                                <span class="nt-text">个人信息</span>
-                                <span class="nt-hint">TOOL 里的玩家信息管理</span>
-                                <span class="nt-code">W_03</span>
-                            </label>
-                        </div>
                     </div>
 
                                         <div class="nt-section">
@@ -380,7 +356,6 @@ export function mountPanel() {
                         <div class="nt-grid-layout nt-switch-grid">
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-status" class="nt-hidden-cb" ${s.enableStatus ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">状态栏</span><span class="nt-code">T_01</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-preview" class="nt-hidden-cb" ${s.enablePreview ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">剧情预演</span><span class="nt-code">T_02</span></label>
-                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">信息隔离</span><span class="nt-code">T_11</span></label>
                         </div>
                         <div class="nt-subhead">世界追踪</div>
                         <div class="nt-grid-layout nt-switch-grid">
@@ -391,6 +366,37 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-foreshadow" class="nt-hidden-cb" ${s.enableForeshadow ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">草蛇伏笔</span><span class="nt-code">T_07</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-map" class="nt-hidden-cb" ${s.enableMap ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">地图追踪</span><span class="nt-code">T_08</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quests" class="nt-hidden-cb" ${s.enableQuests ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">主线支线</span><span class="nt-code">T_10</span></label>
+                        </div>
+                        <div class="nt-subhead">世界规则（2.0）</div>
+                        <div class="nt-grid-layout nt-rule-grid">
+                            <label class="nt-grid-item" title="角色已知/秘密隔离">
+                                <input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}>
+                                <span class="nt-box"></span>
+                                <span class="nt-text">信息隔离</span>
+                                <span class="nt-hint">角色已知/秘密隔离</span>
+                                <span class="nt-code">W_00</span>
+                            </label>
+                            <label class="nt-grid-item" title="时间/在场/到期/死亡角色/数值钳制">
+                                <input type="checkbox" id="nt-ws-statecheck" class="nt-hidden-cb" ${s.enableStateCheck ? 'checked' : ''}>
+                                <span class="nt-box"></span>
+                                <span class="nt-text">状态核查</span>
+                                <span class="nt-hint">时间/在场/到期/轻校验</span>
+                                <span class="nt-code">W_01</span>
+                            </label>
+                            <label class="nt-grid-item" title="成就与名声，TOOL 展示">
+                                <input type="checkbox" id="nt-ws-reputation" class="nt-hidden-cb" ${s.enableReputation ? 'checked' : ''}>
+                                <span class="nt-box"></span>
+                                <span class="nt-text">声望系统</span>
+                                <span class="nt-hint">成就与名声，TOOL 展示</span>
+                                <span class="nt-code">W_02</span>
+                            </label>
+                            <label class="nt-grid-item" title="TOOL 里的玩家信息管理">
+                                <input type="checkbox" id="nt-ws-playerpanel" class="nt-hidden-cb" ${s.enablePlayerPanel ? 'checked' : ''}>
+                                <span class="nt-box"></span>
+                                <span class="nt-text">个人信息</span>
+                                <span class="nt-hint">TOOL 里的玩家信息管理</span>
+                                <span class="nt-code">W_03</span>
+                            </label>
                         </div>
                     </div>
 
