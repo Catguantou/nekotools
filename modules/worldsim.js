@@ -159,8 +159,10 @@ function buildTickPrompt({ needWorldTick, targets = [] }) {
     if (targets.length) {
         lines.push('- 只写插件指定的这些角色，不要写名单外的人：');
         for (const t of targets) lines.push(`  · ${t.name}（${t.reason}）`);
-        lines.push('  "tick": {"角色名": {"位置":"地图小地点名","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的事"],"后台运行":"A→B→C"}}');
+        lines.push('  "tick": {"角色名": {"位置":"地图小地点名","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的重要情报"],"后台运行":"A→B→C"}}');
         lines.push('- 玩家不在场也要推进他们自己的计划；tick 写在本轮 ws_update 里。');
+        lines.push('- 已知只保留最重要的 10 条以内；新增前先查重，重复/换说法的不写，旧的次要信息删掉。');
+        lines.push('- 关键记忆严格用「【事件】→ 一句话记忆」，只记重大经验或关键印象；日常流水账不写。');
     }
     if (needWorldTick) {
         lines.push('- 本轮同时做世界 tick：只挑 1 个国家 + 1 个势力推进，优先长期没动作、与当前地区相邻的对象；不要每轮把所有国家/势力都写一遍。主动判断是否有必要新增国家/地区/势力，有必要就新增。');
@@ -814,13 +816,13 @@ ${settings.enableItems || settings.enablePlot || settings.enableForeshadow ? '- 
         const userName = stBridge.getUserName() || '用户';
         const recordUserChar = settings.recordUserCharacter === true;
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"角色":"态度：原因"},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"...","关键词":["昵称","姓氏","尊称"]}}
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"角色":"态度：原因"},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["【事件】→ 一句话记忆"],"特殊变化":"...","关键词":["昵称","姓氏","尊称"]}}
 要求：记录活跃角色${recordUserChar ? `（包括用户角色「${userName}」）` : `（不包括用户角色「${userName}」）`}档案。
 - 位置：优先使用「地图」里的小地点名；没有就写当前地点
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
 - 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
 - 长期目标 / 近期打算：各一句具体内容
-- 关键记忆：【事件】→ 导致了什么转变（本轮只写新增的 1-2 条；已经有的事不要换个说法重复写）
+- 关键记忆：严格只用「【事件】→ 一句话记忆」格式；只有当本轮发生重大经验教训、关键印象或不可逆变化时才新增 1 条；普通日常、重复行动、换种说法复述旧事一律不写，没有就不写
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
 - 人际关系键写对方真实名字
 - 关系固定定性标签：仇恨 / 敌对 / 戒备 / 冷淡 / 无感 / 亲近 / 信任 / 依赖 / 喜爱 / 痴迷
@@ -1078,8 +1080,8 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
         return kept.reverse().map(k => k.text);
     };
 
-    const merged = compactMemories(mergeList(normalizeMemories(old['关键记忆']), normalizeMemories(info && info['关键记忆'])), 14);
-    const mergedKnown = compactMemories(mergeList(normalizeMemories(old['已知']), normalizeMemories(info && info['已知'])), 20);
+    const merged = compactMemories(mergeList(normalizeMemories(old['关键记忆']), normalizeMemories(info && info['关键记忆'])), 10);
+    const mergedKnown = compactMemories(mergeList(normalizeMemories(old['已知']), normalizeMemories(info && info['已知'])), 10);
 
     // 人际关系/日程按 key 合并：本轮没写到的人保留旧状态
     const mergedRel = {

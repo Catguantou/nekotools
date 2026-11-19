@@ -570,6 +570,10 @@ registry.register({
         const observer = new MutationObserver((records) => {
             // 本次变动涉及的消息（供去八股/状态栏共用）
             const touched = new Set();
+            // 聊天初次渲染/新楼层插入时 .mes 是新增节点；流式 token 不会新增 .mes
+            const mesAdded = records.some(rec => Array.from(rec.addedNodes || []).some(node =>
+                node.nodeType === 1 && (node.matches?.('.mes') || node.querySelector?.('.mes'))
+            ));
 
             // ① 同步去八股：MutationObserver 回调在绘制前执行，
             //    在这里改 DOM 用户看不到中间态，所以不会闪。
@@ -654,7 +658,7 @@ registry.register({
                 // 流式输出时 DOM 每 100ms 就会变动一次；只有“楼层数变化”才需要重算视觉屏蔽，
                 // 否则每次 token 都先移除再补回 nt-visual-hidden，整段聊天会不停闪。
                 const liveLen = (stBridge.getContext().chat || []).length;
-                if (observer._visualChatLen !== liveLen) {
+                if (observer._visualChatLen !== liveLen || mesAdded) {
                     observer._visualChatLen = liveLen;
                     stBridge.applyVisualKeep();
                 }
