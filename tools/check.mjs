@@ -345,14 +345,19 @@ try {
 
         const repInput = {
             achievements: [{ name: '镇民之友', reason: '救火', note: '镇上人更信任你', known: '铁砧镇' }],
-            reputations: [{ target: '铁砧镇', view: '敬重' }],
+            reputations: [{ target: '铁砧镇', level: '敬重', reason: '救过镇上的人' }],
         };
         const repText = String(fn('formatReputationContent')(repInput));
-        assert(repText.includes('镇民之友') && repText.includes('敬重'), 'formatReputationContent 丢了成就/名声');
+        assert(repText.includes('镇民之友') && repText.includes('尊敬'), 'formatReputationContent 丢了成就/名声或未归一等级');
+        assert(repText.includes('救过镇上的人'), 'formatReputationContent 丢了名声原因');
         const repParsed = fn('parseReputationContent')(repText);
         assert(String(fn('formatReputationContent')(repParsed)) === repText, '声望内容往返后不一致');
         const repJson = JSON.stringify(repParsed);
-        assert(repJson.includes('镇民之友') && repJson.includes('铁砧镇') && repJson.includes('敬重'), 'parseReputationContent 丢失内容');
+        assert(repJson.includes('镇民之友') && repJson.includes('铁砧镇') && repJson.includes('尊敬'), 'parseReputationContent 丢失内容');
+        assert(Math.max(...repParsed.reputations.map(r => r.level === '尊敬' ? 1 : 0)) === 1, '声望等级未规范为「尊敬」');
+        assert(fn('normalizeReputationLevel')('他们对你非常敬重') === '尊敬', 'normalizeReputationLevel 未识别「敬重」');
+        assert(fn('normalizeReputationLevel')('双方已经敌对') === '敌视', 'normalizeReputationLevel 未识别「敌对」');
+        assert(fn('normalizeReputationLevel')('说不清') === '', 'normalizeReputationLevel 不该硬猜');
 
         const rel = fn('normalizeRelationValue')('好感 80｜信任 75｜标签：朋友');
         assert(typeof rel === 'string' && rel.length > 0 && rel.includes('朋友'), 'normalizeRelationValue 未兼容旧「好感/信任」格式');

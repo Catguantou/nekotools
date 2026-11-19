@@ -401,6 +401,30 @@ export function daysBetween(a, b) {
 
 export const PLAYER_PROFILE_TITLE = '玩家档案';
 export const REPUTATION_TITLE = '声望';
+/** 当前声望固定等级：从最差到最好，只能选一个 */
+export const REPUTATION_LEVELS = ['仇恨', '敌视', '冷淡', '中立', '友善', '尊敬', '崇拜'];
+const REPUTATION_ALIASES = {
+    仇视: '仇恨', 憎恨: '仇恨', 仇恨: '仇恨',
+    敌对: '敌视', 敌意: '敌视', 厌恶: '敌视', 反感: '敌视', 敌视: '敌视',
+    疏远: '冷淡', 冷漠: '冷淡', 冷淡: '冷淡',
+    中立: '中立', 中性: '中立', 普通: '中立', 无感: '中立',
+    友好: '友善', 友善: '友善', 好感: '友善', 亲近: '友善',
+    敬重: '尊敬', 尊敬: '尊敬', 尊重: '尊敬', 认可: '尊敬',
+    崇敬: '崇拜', 崇拜: '崇拜', 仰慕: '崇拜', 敬畏: '崇拜',
+};
+
+/** 把 AI 写的声望看法归一到固定等级；认不出返回空串 */
+export function normalizeReputationLevel(value) {
+    const text = profileText(value);
+    if (!text) return '';
+    for (const level of REPUTATION_LEVELS) {
+        if (text.includes(level)) return level;
+    }
+    for (const [alias, level] of Object.entries(REPUTATION_ALIASES)) {
+        if (text.includes(alias)) return level;
+    }
+    return '';
+}
 
 /** 只认字符串/数字，其余（对象、数组）当空串，避免拼出 [object Object] */
 function profileText(value) {
@@ -546,12 +570,38 @@ function reputationEntry(raw) {
     if (Array.isArray(raw)) {
         const target = profileText(raw[0]);
         if (!target) return null;
-        return { target, view: profileText(raw[1]) };
+        return makeReputation(target, raw[1], raw[2]);
     }
     if (!raw || typeof raw !== 'object') return null;
     const target = profileText(profilePick(raw, ['对象', '地区', '势力', 'target', 'name']));
     if (!target) return null;
-    return { target, view: profileText(profilePick(raw, ['看法', 'view'])) };
+    return makeReputation(
+        target,
+        profilePick(raw, ['等级', 'level', '看法', 'view']),
+        profilePick(raw, ['原因', 'reason']),
+    );
+}
+
+/** 声望记录：等级归一，原因单独保留；旧的两段式「看法」也能读 */
+function makeReputation(target, levelRaw, reasonRaw) {
+    const rawLevel = profileText(levelRaw);
+    const level = normalizeReputationLevel(rawLevel) || normalizeReputationLevel(reasonRaw);
+    let reason = profileText(reasonRaw);
+    if (!level) {
+        // 旧数据是自由文本：整段作为看法保留，不强行改成中立
+        return { target, level: '', reason: '', view: rawLevel || reason };
+    }
+    if (!reason && rawLevel && rawLevel !== level) {
+        const cleaned = rawLevel.replace(/^(等级|看法)\s*[:：]?\s*/, '');
+        const m = cleaned.match(/^[^：:｜|]+[：:｜|]([\s\S]+)$/);
+        reason = (m ? m[1] : cleaned).trim();
+    }
+    return {
+        target,
+        level,
+        reason,
+        view: reason ? `${level}｜${reason}` : level,
+    };
 }
 
 /** 统一玩家档案：中文/英文键都认，输出规范英文键 */
@@ -769,7 +819,8 @@ export function parseReputationContent(content) {
         } else if (kind === '名声') {
             const target = parts[1] || '';
             if (!target) continue;
-            out.reputations.push({ target, view: parts.slice(2).join('｜') });
+            const r = makeReputation(target, parts[2] || '', parts.slice(3).join('｜'));
+            if (r) out.reputations.push(r);
         }
     }
     return out;
@@ -794,14 +845,18 @@ export function formatReputationContent(rep) {
         for (const raw of rawReputations) {
             const r = reputationEntry(raw);
             if (!r) continue;
-            lines.push(`- 名声｜${r.target}｜${r.view}`);
+            if (r.level) lines.push(`- 名声｜${r.target}｜${r.level}${r.reason ? `｜${r.reason}` : ''}`);
+            else lines.push(`- 名声｜${r.target}｜${r.view}`);
         }
     } else if (rawReputations && typeof rawReputations === 'object') {
         // 兼容 { 对象: 看法 } 的映射写法
         for (const [target, view] of Object.entries(rawReputations)) {
             const name = profileText(target);
             if (!name) continue;
-            lines.push(`- 名声｜${name}｜${profileText(view)}`);
+            const r = makeReputation(name, view, '');
+            if (!r) continue;
+            if (r.level) lines.push(`- 名声｜${name}｜${r.level}${r.reason ? `｜${r.reason}` : ''}`);
+            else lines.push(`- 名声｜${name}｜${r.view}`);
         }
     }
 

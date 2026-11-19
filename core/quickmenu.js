@@ -3454,8 +3454,10 @@ function buildReputationSection(rep, titleText, emptyText = '还没有记录') {
             who.className = 'nt-rep-who';
             who.textContent = `${String(row.target || '')}：`;
             const view = document.createElement('span');
-            view.className = 'nt-rep-view';
-            view.textContent = String(row.view || '');
+            view.className = 'nt-rep-view' + (row.level ? ' nt-rep-view-level' : '');
+            view.textContent = row.level
+                ? `${row.level}${row.reason ? `｜${row.reason}` : ''}`
+                : String(row.view || '');
             item.appendChild(who);
             item.appendChild(view);
             list.appendChild(item);

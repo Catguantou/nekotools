@@ -11,7 +11,7 @@ import {
     parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml,
     normalizeMemories, normalizeRelationships, PLAYER_PROFILE_TITLE, REPUTATION_TITLE,
     normalizePlayerProfile, mergePlayerProfile, formatPlayerSummary, formatIndexHeader,
-    formatReputationContent, parseReputationContent,
+    formatReputationContent, parseReputationContent, normalizeReputationLevel,
 } from '../core/worldfmt.js';
 
 const defaultSettings = {
@@ -224,15 +224,27 @@ function toReputationAchievement(raw) {
 
 /** 声望增量里的一条名声（数组/对象/字符串都认） */
 function toReputationFame(raw) {
-    if (Array.isArray(raw)) return { target: safeRepText(raw[0]), view: safeRepText(raw[1]) };
+    if (Array.isArray(raw)) {
+        const levelRaw = safeRepText(raw[1]);
+        const reasonRaw = safeRepText(raw[2]);
+        return {
+            target: safeRepText(raw[0]),
+            level: normalizeReputationLevel(levelRaw) || normalizeReputationLevel(reasonRaw),
+            reason: reasonRaw || (normalizeReputationLevel(levelRaw) ? '' : levelRaw),
+        };
+    }
     if (raw && typeof raw === 'object') {
+        const levelRaw = safeRepText(raw['等级'] ?? raw['看法'] ?? raw.level ?? raw.view);
+        const reasonRaw = safeRepText(raw['原因'] ?? raw.reason);
+        const level = normalizeReputationLevel(levelRaw) || normalizeReputationLevel(reasonRaw);
         return {
             target: safeRepText(raw['对象'] ?? raw['地区'] ?? raw['势力'] ?? raw.target ?? raw.name),
-            view: safeRepText(raw['看法'] ?? raw.view),
+            level,
+            reason: reasonRaw || (level ? '' : levelRaw),
         };
     }
     const parts = safeRepText(raw).split(/[｜|]/).map(s => s.trim());
-    return { target: parts[0] || '', view: parts.slice(1).join('｜') };
+    return { target: parts[0] || '', level: normalizeReputationLevel(parts[1] || ''), reason: parts.slice(2).join('｜') };
 }
 
 /** 声望条目里同一成就/名声只更新有值的字段，AI 少写字段时保留旧内容 */
@@ -268,9 +280,13 @@ function mergeReputationDelta(base, delta) {
         const r = toReputationFame(raw);
         if (!r.target) continue;
         const prev = reputations.get(r.target) || {};
+        const level = r.level || prev.level || '';
+        const reason = r.reason || prev.reason || '';
         reputations.set(r.target, {
             target: r.target,
-            view: r.view || prev.view || '',
+            level,
+            reason,
+            view: level ? (reason ? `${level}｜${reason}` : level) : (reason || prev.view || ''),
         });
     }
 
@@ -311,7 +327,7 @@ function buildReputationLine(book) {
     const rep = parseReputationContent(entry ? entry.content : '');
     const names = [
         ...rep.achievements.map(a => a.name).filter(Boolean).slice(0, 4),
-        ...rep.reputations.map(r => r.target).filter(Boolean).slice(0, 2),
+        ...rep.reputations.filter(r => r.target).slice(0, 3).map(r => r.level ? `${r.target}：${r.level}` : r.target),
     ];
     return `${names.join('、') || '暂无'}（成就 ${rep.achievements.length} 条）`;
 }
@@ -619,9 +635,10 @@ function buildPlayerPrompt() {
 /** 声望声明：只描述 rep 块的 JSON 字段，不写叙事要求（模式由 pushTrackedPrompt 统一处理） */
 function buildReputationPrompt() {
     const p = `<nekotools:track.reputation>
-【声望成就】JSON 字段 "rep": {"成就":[["名称","原因","备注","谁知道"]],"名声":[["地区/势力","看法"]]}
-- 参考游戏成就，通常为用户角色达成某个大目标或成果获得。
-- 也可能因为做了奇怪的事获得搞笑的成就。
+【声望成就】JSON 字段 "rep": {"成就":[["名称","原因","备注","谁知道"]],"名声":[["地区/势力","等级","原因"]]}
+- 名声等级固定只能选一个：仇恨 / 敌视 / 冷淡 / 中立 / 友善 / 尊敬 / 崇拜。
+- 原因写一句话，说明为什么会是这个等级。
+- 参考游戏成就，通常为用户角色达成某个大目标或成果获得；也可能因为做了奇怪的事获得搞笑的成就。
 </nekotools:track.reputation>`;
     return p;
 }
