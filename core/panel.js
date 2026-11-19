@@ -1421,7 +1421,9 @@ export function mountPanel() {
             if (p.source === 'vertexai') {
                 const cred = vertexCredEl.value.trim() || stored;
                 if (cred) await writeVertexSecret(p.vertexAuth || vertexAuthEl.value, cred);
-            } else if (stored) {
+            } else if (stored && !p.url) {
+                // 有地址的副 API 走转发时用 reverse_proxy + proxy_password 隔离，不需要（也不应该）覆盖酒馆全局 Key；
+                // 只有没地址的旧式配置才退回写全局 Key（会替换该接口的主 API Key，属已知取舍）。
                 await setSecret(secretName(p.source || 'openai'), stored);
             }
             const relaySource = p.source === 'custom' ? 'openai' : (p.source || 'openai');
@@ -1531,76 +1533,180 @@ export function mountPanel() {
         const domModels = (source) => {
             const map = {
                 openai: 'model_openai_select', claude: 'model_claude_select', makersuite: 'model_google_select',
-                custom: 'model_custom_select', openrouter: 'model_openrouter_select',
-                deepseek: 'model_deepseek_select', groq: 'model_groq_select',
-                mistralai: 'model_mistralai_select', xai: 'model_xai_select', cohere: 'model_cohere_select',
-                vertexai: 'model_vertexai_select',
+                custom: 'custom_model_textgenerationwebui', openrouter: 'model_openrouter_select',
+                deepseek: 'model_deepseek_select', groq: 'model_groq_select', mistralai: 'model_mistralai_select',
+                xai: 'model_xai_select', cohere: 'model_cohere_select', vertexai: 'model_vertexai_select',
             };
             const el = document.getElementById(map[source] || `model_${source}_select`);
             if (!el || el.tagName !== 'SELECT') return [];
             return [...el.options].map(o => String(o.value || '').trim()).filter(Boolean);
         };
+        // ---------- 按“这套配置自己的地址和 Key”抓模型，不再用酒馆当前主 API 的模型下拉 ----------
+        const chatSourceNow = () => String(document.getElementById('chat_completion_source')?.value || '').trim();
+        const mainProfileId = () => {
+            const choice = String((settings.get('worldsim') || {}).apiMainChoice || '');
+            return choice.startsWith('profile:') ? choice.slice(8) : '';
+        };
+        const isActiveMainProfile = (p) => Boolean(p && p.id && p.id === mainProfileId() && chatSourceNow() === (p.source || 'openai'));
+        const urlObj = (raw) => {
+            let s = String(raw || '').trim();
+            if (!s) return null;
+            if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+            try { return new URL(s); } catch (_) { return null; }
+        };
+        const openaiBase = (raw) => stripChat(normalizeUrl(raw));
+        const claudeModelsUrl = (raw) => {
+            const u = urlObj(raw);
+            if (!u) return '';
+            u.pathname = u.pathname.replace(/\/(v1\/messages|v1\/chat\/completions|chat\/completions|messages)\/?$/i, '')
+                .replace(/\/v1\/?$/i, '').replace(/\/+$/, '');
+            return `${u.origin}${u.pathname}/v1/models`;
+        };
+        const geminiBase = (raw) => {
+            const u = urlObj(raw);
+            if (!u) return '';
+            u.pathname = u.pathname.replace(/\/v1beta.*$/i, '').replace(/\/v1\/?$/i, '').replace(/\/+$/, '');
+            return `${u.origin}${u.pathname}`;
+        };
+        const geminiModelsUrl = (raw) => {
+            const base = geminiBase(raw);
+            return base ? `${base}/v1beta/models` : '';
+        };
+        const officialModels = {
+            openai: { url: 'https://api.openai.com/v1/models', headers: key => ({ Authorization: `Bearer ${key}` }) },
+            claude: { url: 'https://api.anthropic.com/v1/models', headers: key => ({ 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }) },
+            makersuite: { url: 'https://generativelanguage.googleapis.com/v1beta/models', headers: key => ({ 'x-goog-api-key': key }) },
+            deepseek: { url: 'https://api.deepseek.com/v1/models', headers: key => ({ Authorization: `Bearer ${key}` }) },
+            groq: { url: 'https://api.groq.com/openai/v1/models', headers: key => ({ Authorization: `Bearer ${key}` }) },
+            mistralai: { url: 'https://api.mistral.ai/v1/models', headers: key => ({ Authorization: `Bearer ${key}` }) },
+            xai: { url: 'https://api.x.ai/v1/models', headers: key => ({ Authorization: `Bearer ${key}` }) },
+            openrouter: { url: 'https://openrouter.ai/api/v1/models', headers: key => ({ Authorization: `Bearer ${key}` }) },
+        };
+        const parseModels = (data) => {
+            const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.models) ? data.models : []);
+            return list.map(x => (typeof x === 'string' ? x : (x?.id || x?.name))).filter(Boolean);
+        };
+        const fetchModelsDirect = async (modelsUrl, headers) => {
+            if (!modelsUrl) return [];
+            const res = await fetch(modelsUrl, { headers });
+            if (!res.ok) return [];
+            return parseModels(await res.json().catch(() => ({})));
+        };
+        const fetchModelsViaSt = async (body) => {
+            const token = await (await fetch('/csrf-token')).json();
+            const res = await fetch('/api/backends/chat-completions/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) return [];
+            return parseModels(await res.json().catch(() => ({})));
+        };
         const fetchModels = async () => {
             const source = sourceEl.value || 'openai';
             const rawUrl = urlEl.value.trim();
-            const url = rawUrl ? stripChat(normalizeUrl(rawUrl)) : '';
+            const saved = profileById(selectedId);
+            const activeMain = isActiveMainProfile(saved);
             statusEl.textContent = '抓取模型中…';
-            const local = domModels(source);
-            if (local.length) {
-                fillModels(local);
-                statusEl.textContent = `读取到酒馆模型 ${local.length} 个`;
+            const key = keyEl.value.trim() || (selectedId ? await getSecret(selectedId).catch(() => '') : '');
+
+            // 只有“这套配置就是当前生效的主 API”时，酒馆的模型下拉才是它的模型
+            if (activeMain) {
+                if (!rawUrl) {
+                    const local = domModels(source);
+                    if (local.length) {
+                        fillModels(local);
+                        statusEl.textContent = `读取到当前主 API 模型 ${local.length} 个`;
+                        return;
+                    }
+                }
+                // 主 API 且没地址：酒馆 /status 读的是当前全局 Key（就是这套），可以放心查
+                try {
+                    const list = await fetchModelsViaSt({ chat_completion_source: source });
+                    if (list.length) {
+                        fillModels(list);
+                        statusEl.textContent = `抓到当前主 API 模型 ${list.length} 个`;
+                        return;
+                    }
+                } catch (_) {}
+            }
+
+            // 有地址：按这套配置自己的地址 + Key 查（走酒馆转发时用 reverse_proxy/proxy_password 隔离，不碰全局 Key）
+            if (rawUrl) {
+                try {
+                    if (source === 'vertexai') {
+                        statusEl.textContent = 'Vertex 不支持自动抓取，请手填模型';
+                        return;
+                    }
+                    if (source === 'claude') {
+                        const list = await fetchModelsDirect(claudeModelsUrl(rawUrl), {
+                            'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true',
+                        });
+                        if (list.length) {
+                            fillModels(list);
+                            statusEl.textContent = `抓到 ${list.length} 个模型`;
+                            return;
+                        }
+                    } else if (source === 'makersuite') {
+                        const list = await fetchModelsViaSt({
+                            chat_completion_source: 'makersuite',
+                            reverse_proxy: geminiBase(rawUrl) || undefined,
+                            proxy_password: key || undefined,
+                        });
+                        if (list.length) {
+                            fillModels(list);
+                            statusEl.textContent = `抓到 ${list.length} 个模型`;
+                            return;
+                        }
+                        // 酒馆转发失败时按 Gemini 官方格式直连兜底
+                        const direct = await fetchModelsDirect(geminiModelsUrl(rawUrl), key ? { 'x-goog-api-key': key } : {});
+                        if (direct.length) {
+                            fillModels(direct);
+                            statusEl.textContent = `抓到 ${direct.length} 个模型`;
+                            return;
+                        }
+                    } else {
+                        // OpenAI 兼容 / custom / deepseek / groq / mistral / xai / moonshot / openrouter…：
+                        // 统一用 openai 源 + reverse_proxy + proxy_password，酒馆就会用这套配置的地址和 Key
+                        const list = await fetchModelsViaSt({
+                            chat_completion_source: 'openai',
+                            reverse_proxy: openaiBase(rawUrl),
+                            proxy_password: key || undefined,
+                        });
+                        if (list.length) {
+                            fillModels(list);
+                            statusEl.textContent = `抓到 ${list.length} 个模型`;
+                            return;
+                        }
+                        // 酒馆转发失败再直连 /models 兜底
+                        const direct = await fetchModelsDirect(`${openaiBase(rawUrl)}/models`, key ? { Authorization: `Bearer ${key}` } : {});
+                        if (direct.length) {
+                            fillModels(direct);
+                            statusEl.textContent = `抓到 ${direct.length} 个模型`;
+                            return;
+                        }
+                    }
+                } catch (_) {}
+                statusEl.textContent = key
+                    ? '这套配置的模型没抓到：检查地址/Key 或该接口是否支持 /models，也可以手填'
+                    : '这套配置还没有 Key，无法单独抓取；请填 Key 或手填模型';
                 return;
             }
-            try {
-                const stored = selectedId ? await getSecret(selectedId).catch(() => '') : '';
-                const secret = keyEl.value.trim() || stored;
-                const vertexCred = vertexCredEl.value.trim() || stored;
-                if (source === 'vertexai' && vertexCred) {
-                    await writeVertexSecret(vertexAuthEl.value, vertexCred);
-                } else if (secret) {
-                    await setSecret(secretName(source), secret);
-                }
-                const token = await (await fetch('/csrf-token')).json();
-                const res = await fetch('/api/backends/chat-completions/status', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token.token },
-                    body: JSON.stringify({
-                        chat_completion_source: source,
-                        reverse_proxy: url || undefined,
-                        proxy_password: secret || undefined,
-                        custom_url: source === 'custom' ? (normalizeUrl(rawUrl) || undefined) : undefined,
-                        vertexai_auth_mode: source === 'vertexai' ? vertexAuthEl.value : undefined,
-                        vertexai_express_project_id: source === 'vertexai' ? vertexProjectEl.value.trim() : undefined,
-                        vertexai_region: source === 'vertexai' ? vertexRegionEl.value.trim() : undefined,
-                    }),
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    const list = Array.isArray(data.data) ? data.data : [];
+
+            // 没地址、也不是当前主 API：不能借酒馆全局 Key 查（会串到主 API），只按官方地址试一次
+            if (key && officialModels[source]) {
+                try {
+                    const list = await fetchModelsDirect(officialModels[source].url, officialModels[source].headers(key));
                     if (list.length) {
                         fillModels(list);
                         statusEl.textContent = `抓到 ${list.length} 个模型`;
                         return;
                     }
-                }
-            } catch (_) {}
-            if (rawUrl) {
-                try {
-                    const modelsUrl = new URL(normalizeUrl(rawUrl));
-                    modelsUrl.pathname = `${modelsUrl.pathname.replace(/\/chat\/completions$/i, '')}/models`;
-                    modelsUrl.search = '';
-                    const headers = {};
-                    if (keyEl.value.trim()) headers.Authorization = `Bearer ${keyEl.value.trim()}`;
-                    const res = await fetch(modelsUrl.toString(), { headers });
-                    if (res.ok) {
-                        const data = await res.json();
-                        const list = Array.isArray(data.data) ? data.data : (Array.isArray(data.models) ? data.models : []);
-                        const n = fillModels(list);
-                        if (n) { statusEl.textContent = `抓到 ${n} 个模型`; return; }
-                    }
                 } catch (_) {}
             }
-            statusEl.textContent = '没有抓到模型，请手填';
+            statusEl.textContent = key
+                ? '该配置没有地址，酒馆会读全局 Key，无法单独抓取；请手填模型'
+                : '该配置没有地址也没有 Key；请手填模型，或先点“主 API”切到它再抓';
         };
 
         renderAll();
@@ -1616,12 +1722,7 @@ export function mountPanel() {
                     console.warn('[nekotools] 配置 Key 迁移失败，保留明文待下次重试：', p.id, e);
                     continue;
                 }
-                try {
-                    if (p.source === 'vertexai') await setSecret('api_key_vertexai', p.key);
-                    else await setSecret(secretName(p.source || 'openai'), p.key);
-                } catch (e) {
-                    console.warn('[nekotools] 写入酒馆 secrets 失败（不影响本机加密保存）：', e);
-                }
+                // 只迁移到插件本机仓库；不要写酒馆全局 secrets，避免多个配置互相覆盖主 API 的 Key
                 p.key = '';
                 p.hasSecret = true;
                 changed = true;
@@ -1636,12 +1737,7 @@ export function mountPanel() {
                     console.warn('[nekotools] 副 API Key 迁移失败，保留明文待下次重试：', e);
                     return;
                 }
-                try {
-                    if ((rf.source || '') === 'vertexai') await setSecret('api_key_vertexai', rf.key);
-                    else await setSecret(secretName(rf.source || 'openai'), rf.key);
-                } catch (e) {
-                    console.warn('[nekotools] 副 API Key 写入酒馆 secrets 失败：', e);
-                }
+                // 同上：只进本机仓库，不写酒馆全局 secrets
                 settings.set('worldsim', { refreshApi: { ...rf, key: '', profileId: rf.profileId || vaultId } });
             }
         })().catch(() => {});
@@ -1674,15 +1770,12 @@ export function mountPanel() {
         const saveProfile = async () => {
             const source = sourceEl.value;
             const id = selectedId || `api_${Date.now()}`;
+            // 只写插件本机加密仓库；酒馆全局 secrets 只在用户点“主 API/副 API”时同步，避免存第二套把主 API Key 覆盖掉
             if (source === 'vertexai') {
                 const cred = vertexCredEl.value.trim();
-                if (cred) {
-                    await saveSecret(id, cred);
-                    await writeVertexSecret(vertexAuthEl.value, cred);
-                }
+                if (cred) await saveSecret(id, cred);
             } else if (keyEl.value.trim()) {
                 await saveSecret(id, keyEl.value.trim());
-                await setSecret(secretName(source), keyEl.value.trim());
             }
             const item = {
                 id,
@@ -1700,7 +1793,7 @@ export function mountPanel() {
             selectedId = item.id;
             saveProfiles();
             loadProfile();
-            statusEl.textContent = '已保存';
+            statusEl.textContent = '已保存（Key 只存本机；点“主 API/副 API”时才同步到酒馆）';
         };
         wrap.querySelector('#nt-api-profile-save').onclick = () => {
             saveProfile().catch(e => {

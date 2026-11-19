@@ -1,4 +1,4 @@
-import { installFetchHook } from './core/hooks.js';
+﻿import { installFetchHook } from './core/hooks.js';
 import { settings } from './core/settings.js';
 import { registry } from './core/registry.js';
 import { mountPanel } from './core/panel.js';
@@ -16,7 +16,7 @@ function boot() {
     if (booted) return;
     booted = true;
 
-    console.log('[nekotools] 正在启动... build 2026-11-19C / v2.0.0');
+    console.log('[nekotools] 正在启动... build 2026-11-19D / v2.0.1');
     settings.load();
 
     for (const mod of registry.list()) {
