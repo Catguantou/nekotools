@@ -568,7 +568,9 @@ registry.register({
 
             // ① 同步去八股：MutationObserver 回调在绘制前执行，
             //    在这里改 DOM 用户看不到中间态，所以不会闪。
-            if (tmSettings.hideSlopVisual === true) {
+            //    流式生成期间不重写 DOM：每个 token 都重新包 span 会让正文持续闪烁，
+            //    等 MESSAGE_RECEIVED / GENERATION_ENDED 再统一处理一次。
+            if (tmSettings.hideSlopVisual === true && stBridge.getContext().isGenerating !== true) {
                 try {
                     for (const rec of records) {
                         if (rec.type === 'characterData') {
@@ -644,7 +646,13 @@ registry.register({
                 console.warn('[nekotools] 状态栏渲染失败', e);
             }
             try {
-                stBridge.applyVisualKeep();
+                // 流式输出时 DOM 每 100ms 就会变动一次；只有“楼层数变化”才需要重算视觉屏蔽，
+                // 否则每次 token 都先移除再补回 nt-visual-hidden，整段聊天会不停闪。
+                const liveLen = (stBridge.getContext().chat || []).length;
+                if (observer._visualChatLen !== liveLen) {
+                    observer._visualChatLen = liveLen;
+                    stBridge.applyVisualKeep();
+                }
             } catch (e) {
                 console.warn('[nekotools] 视觉屏蔽失败', e);
             }
@@ -666,6 +674,7 @@ registry.register({
             ctx.eventSource.on(name, () => setTimeout(() => {
                 try {
                     upgradeStatusBars();
+                    applySlopVisualAll();
                     stBridge.applyVisualKeep();
                 } catch (e) {
                     console.warn('[nekotools] 状态栏补渲染失败', e);
