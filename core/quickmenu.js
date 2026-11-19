@@ -2551,7 +2551,7 @@ async function runAutoFullRefresh() {
     const book = stBridge.currentTrackerName();
     if (!book) return;
     autoRefreshRunning = true;
-    showAutoUpdateBanner();
+    showAutoUpdateBanner('正在自动全量更新（副 API）…');
     try {
         do {
             autoRefreshPending = false;
@@ -2577,8 +2577,12 @@ async function runAutoFullRefresh() {
                 summary.plot ? `计划 ${summary.plot}` : '',
                 summary.summary ? '小总结' : '',
                 summary.bigSummary ? '大总结' : '',
+                summary.player ? '用户信息' : '',
+                summary.rep ? '声望' : '',
             ].filter(Boolean);
             console.log('[nekotools] 自动全量更新完成', bits.join(' / ') || '无变化');
+            if (bits.length) toast(`自动全量更新完成：${bits.join(' / ')}`, 'success');
+            else toast('自动全量更新完成（没有变化）', 'info');
         } while (autoRefreshPending);
     } catch (e) {
         console.warn('[nekotools] 自动全量更新失败', e);
