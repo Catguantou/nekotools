@@ -621,15 +621,15 @@ function updateClockUi() {
         : '还没有时钟';
 }
 
-// ========== 社会新闻 ==========
+// ========== 新闻日报 ==========
 
 function parseNewsLines(content) {
     const rows = [];
     let section = '';
     for (const raw of String(content || '').split('\n')) {
         const line = raw.trim();
-        if (line === '【社会新闻】') { section = 'news'; continue; }
-        if (line.startsWith('【') && line !== '【社会新闻】') { section = ''; continue; }
+        if (line === '【新闻日报】' || line === '【社会新闻】' || line === '【以下为新闻日报】') { section = 'news'; continue; }
+        if (line.startsWith('【') && line !== '【新闻日报】' && line !== '【社会新闻】' && line !== '【以下为新闻日报】') { section = ''; continue; }
         if (line.startsWith('【以下为')) { section = ''; continue; }
         if (section !== 'news') continue;
         const m = line.match(/^-\s*([^｜|]+)[｜|]([\s\S]*)$/);
@@ -642,7 +642,7 @@ async function readNews(book) {
     const data = await stBridge.loadWorldInfoAsync(book);
     if (!data || !data.entries) return [];
     const entries = Object.values(data.entries);
-    const direct = entries.find(e => e && e.comment === '社会新闻');
+    const direct = entries.find(e => e && (e.comment === '新闻日报' || e.comment === '社会新闻'));
     if (direct) {
         const rows = [];
         for (const line of String(direct.content || '').split('\n')) {
@@ -672,7 +672,7 @@ function showNewsModal() {
         if (!rows.length) {
             const note = document.createElement('div');
             note.className = 'nt-quick-note';
-            note.textContent = '还没有新闻。世界 tick 或开局世界生成后会写进「新闻日报」条目。';
+            note.textContent = '还没有新闻。世界 tick 后会写进「新闻日报」条目。';
             body.appendChild(note);
             openModal({ title: '新闻日报', body, wide: true, footer: [{ label: '关闭', primary: true }] });
             return;
@@ -1575,6 +1575,8 @@ async function showMapModal(opts = {}) {
 
     let mode = 'map';
     let peopleQuery = '';
+    let mapZoom = 1;
+    let mapCanvas = null;
     const state = { level: 'world', region: '', city: '', site: '' };
 
     const setStateFromPath = (p) => {
@@ -1630,6 +1632,14 @@ async function showMapModal(opts = {}) {
         return b;
     };
 
+    const applyMapZoom = () => {
+        if (mapCanvas) mapCanvas.style.zoom = String(mapZoom);
+    };
+    const setMapZoom = (next) => {
+        mapZoom = Math.max(0.6, Math.min(2.2, Math.round(next * 100) / 100));
+        applyMapZoom();
+    };
+
     const renderHUD = () => {
         crumbs.textContent = '';
         const addCrumb = (label, level) => {
@@ -1662,6 +1672,9 @@ async function showMapModal(opts = {}) {
             mode = 'people';
             render();
         }, mode === 'people'));
+        actions.appendChild(makeBtn('＋', () => setMapZoom(mapZoom + 0.15)));
+        actions.appendChild(makeBtn('－', () => setMapZoom(mapZoom - 0.15)));
+        actions.appendChild(makeBtn('重置', () => setMapZoom(1)));
 
         const place = (clockNow && clockNow.place) || cur.site || cur.city || '未知地点';
         const time = (clockNow && clockNow.time) || '';
@@ -1906,7 +1919,17 @@ async function showMapModal(opts = {}) {
         const nodes = document.createElement('div');
         nodes.className = 'nt-map-nodes';
         canvas.appendChild(nodes);
-        content.appendChild(canvas);
+        const zoomWrap = document.createElement('div');
+        zoomWrap.className = 'nt-map-zoom';
+        zoomWrap.appendChild(canvas);
+        content.appendChild(zoomWrap);
+        mapCanvas = canvas;
+        applyMapZoom();
+        zoomWrap.addEventListener('wheel', (e) => {
+            if (e.target.closest('input, textarea')) return;
+            e.preventDefault();
+            setMapZoom(mapZoom + (e.deltaY < 0 ? 0.1 : -0.1));
+        }, { passive: false });
 
         const canvasW = Math.max(240, canvas.clientWidth || 800);
         const canvasH = Math.max(220, canvas.clientHeight || 450);
@@ -2394,7 +2417,7 @@ async function buildAutoRefreshPrompt(book) {
     }
     blocks.push(`【世界·国家】\n${get('世界·国家') || '（空）'}`);
     blocks.push(`【世界·势力】\n${get('世界·势力') || '（空）'}`);
-    blocks.push(`【社会新闻】\n${get('社会新闻') || '（空）'}`);
+    blocks.push(`【新闻日报】\n${get('新闻日报') || '（空）'}`);
     blocks.push(`【地图】\n${get('地图') || '（空）'}`);
     blocks.push(`【主线】\n${get('主线') || '（空）'}`);
     blocks.push(`【支线】\n${get('支线') || '（空）'}`);
@@ -2414,8 +2437,8 @@ async function buildAutoRefreshPrompt(book) {
     }
 
     const schema = [
-        `"chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userCharName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}`,
-        '"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}',
+        `"chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userCharName}":"亲近：原因"},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}`,
+        '"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"新闻日报":{"标题":"事件｜影响｜来源"}}',
         '"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}',
         '"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}',
         '"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}',
@@ -2816,23 +2839,41 @@ async function showRefreshModal(preselectName = '') {
     body.appendChild(modeRow);
 
     const savedApi = settings.get('worldsim').refreshApi || {};
-    const apiChoiceRow = document.createElement('label');
+    let apiChoiceValue = savedApi.manualChoice === 'secondary' && (savedApi.url || savedApi.source) ? 'secondary' : 'main';
+    const apiChoiceRow = document.createElement('div');
     apiChoiceRow.className = 'nt-refresh-item';
     const apiChoiceLabel = document.createElement('span');
     apiChoiceLabel.textContent = '本次更新使用';
-    const apiChoice = document.createElement('select');
-    apiChoice.className = 'nt-edit-select';
-    const mainOpt = document.createElement('option');
-    mainOpt.value = 'main';
-    mainOpt.textContent = '主 API';
-    const subOpt = document.createElement('option');
-    subOpt.value = 'secondary';
-    subOpt.textContent = '副 API（设置里配置）';
-    apiChoice.appendChild(mainOpt);
-    apiChoice.appendChild(subOpt);
-    apiChoice.value = savedApi.manualChoice === 'secondary' && (savedApi.url || savedApi.source) ? 'secondary' : 'main';
+    const apiButtons = document.createElement('div');
+    apiButtons.className = 'nt-refresh-api-buttons';
+    const apiBtnMap = {};
+    const renderApiButtons = () => {
+        for (const [value, btn] of Object.entries(apiBtnMap)) {
+            btn.classList.toggle('primary', value === apiChoiceValue);
+        }
+    };
+    const chooseApi = (value) => {
+        apiChoiceValue = value;
+        settings.set('worldsim', {
+            refreshApi: { ...(settings.get('worldsim').refreshApi || savedApi), manualChoice: value },
+        });
+        renderApiButtons();
+    };
+    for (const [value, text] of [['main', '主 API'], ['secondary', '副 API']]) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'nt-btn-text';
+        btn.textContent = text;
+        btn.title = value === 'secondary' && !(savedApi.url || savedApi.source)
+            ? '副 API 还没在设置里配置'
+            : '';
+        btn.addEventListener('click', () => chooseApi(value));
+        apiBtnMap[value] = btn;
+        apiButtons.appendChild(btn);
+    }
+    renderApiButtons();
     apiChoiceRow.appendChild(apiChoiceLabel);
-    apiChoiceRow.appendChild(apiChoice);
+    apiChoiceRow.appendChild(apiButtons);
     body.appendChild(apiChoiceRow);
 
     const autoRow = document.createElement('label');
@@ -2886,7 +2927,7 @@ async function showRefreshModal(preselectName = '') {
         if (selected.includes('world')) {
             blocks.push(`【世界·国家】\n${get('世界·国家') || '（空）'}`);
             blocks.push(`【世界·势力】\n${get('世界·势力') || '（空）'}`);
-            blocks.push(`【社会新闻】\n${get('社会新闻') || '（空）'}`);
+            blocks.push(`【新闻日报】\n${get('新闻日报') || '（空）'}`);
         }
         if (selected.includes('map')) blocks.push(`【地图】\n${get('地图') || '（空）'}`);
         if (selected.includes('quests')) {
@@ -2912,8 +2953,8 @@ async function showRefreshModal(preselectName = '') {
         const schema = [];
         const userName = stBridge.getUserName() || '用户';
         const recordUserChar = settings.get('worldsim').recordUserCharacter === true;
-        if (doChars) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"好感 X｜信任 Y｜标签：..."},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}`);
-        if (selected.includes('world')) schema.push('"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"}}');
+        if (doChars) schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","人际关系":{"${userName}":"亲近：原因"},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}`);
+        if (selected.includes('world')) schema.push('"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"新闻日报":{"标题":"事件｜影响｜来源"}}');
         if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}');
         if (selected.includes('quests')) {
             schema.push('"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}');
@@ -2964,9 +3005,9 @@ ${contract}
 
         try {
             toast('正在生成更新…', 'info');
-            const apiCfg = { ...savedApi, manualChoice: apiChoice.value, autoFull: autoCb.checked };
+            const apiCfg = { ...(settings.get('worldsim').refreshApi || savedApi), manualChoice: apiChoiceValue, autoFull: autoCb.checked };
             settings.set('worldsim', { refreshApi: apiCfg });
-            const useSub = apiChoice.value === 'secondary' && Boolean(apiCfg.url || apiCfg.source);
+            const useSub = apiChoiceValue === 'secondary' && Boolean(apiCfg.url || apiCfg.source);
             let raw;
             if (useSub) {
                 raw = await generateRefreshApi(prompt, apiCfg);
@@ -3050,7 +3091,7 @@ async function showEditModal() {
         return;
     }
 
-    const titles = ['主线', '支线', '世界·国家', '世界·势力', '社会新闻', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
+    const titles = ['主线', '支线', '世界·国家', '世界·势力', '新闻日报', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
     const body = document.createElement('div');
     body.className = 'nt-edit';
     const select = document.createElement('select');
@@ -3080,7 +3121,7 @@ async function showEditModal() {
         '支线': { order: 812, pos: 0, constant: true },
         '世界·国家': { order: 999, pos: 0, constant: false },
         '世界·势力': { order: 999, pos: 0, constant: false },
-        '社会新闻': { order: 999, pos: 0, constant: false },
+        '新闻日报': { order: 999, pos: 0, constant: false },
         '地图': { order: 830, pos: 0, constant: true },
         '索引': { order: 850, pos: 0, constant: true },
         '道具': { order: 900, pos: 0, constant: false },

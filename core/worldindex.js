@@ -75,7 +75,7 @@ export function buildBriefs(book) {
             return briefLine(p.name, short || p.value, 52);
         }).filter(Boolean);
     }
-    const news = entryLines(find('社会新闻')?.content);
+    const news = entryLines(find('新闻日报')?.content || find('社会新闻')?.content);
     if (news.length) {
         briefs['新闻'] = news.map(p => {
             const event = p.value.split(/[｜|]/)[0] || p.value;

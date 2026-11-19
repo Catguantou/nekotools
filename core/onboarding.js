@@ -2,7 +2,7 @@
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 
-const GUIDE_VERSION = 1;
+const GUIDE_VERSION = 2;
 const MASK_ID = 'nt-guide-mask';
 let mounted = false;
 let currentStep = 0;
@@ -108,18 +108,45 @@ const STEPS = [
         body: () => `
             <div class="nt-guide-map">
                 <div class="nt-guide-map-row"><span class="nt-guide-code">01</span><b>概览</b><span>模块开关、总结开关、运行限制</span></div>
-                <div class="nt-guide-map-row"><span class="nt-guide-code">02</span><b>世界模拟</b><span>状态栏、角色/世界/地图/支线/总结、自定义提示词</span></div>
+                <div class="nt-guide-map-row"><span class="nt-guide-code">02</span><b>世界模拟</b><span>世界追踪（2.0 四开关）、状态栏、自定义提示词</span></div>
                 <div class="nt-guide-map-row"><span class="nt-guide-code">03</span><b>世界书</b><span>世界书管理、条目管理、多选删除/转发</span></div>
                 <div class="nt-guide-map-row"><span class="nt-guide-code">04</span><b>文本</b><span>楼层收藏、纯 TXT 导出、八股清理</span></div>
                 <div class="nt-guide-map-row"><span class="nt-guide-code">05</span><b>设置</b><span>API 配置、数据导入导出、诊断</span></div>
             </div>
             <div class="nt-guide-callout">
-                <span>TOOL 菜单在聊天输入栏旁边，拖到边缘可以半隐藏。</span>
+                <span>TOOL 菜单在聊天输入栏旁边：用户信息、新闻日报、地图缩放都在里面。</span>
             </div>
         `,
     },
     {
         code: '04',
+        title: '世界模拟 2.0 与请求改写',
+        subtitle: '新开关默认关闭；请求改写不是剧情功能',
+        body: () => `
+            <div class="nt-guide-modules">
+                <section class="nt-guide-module">
+                    <div class="nt-guide-module-head"><span class="nt-guide-code">S_02</span><h4>世界模拟 2.0</h4></div>
+                    <ul>
+                        <li><b>信息隔离</b>：角色只能基于自己的五感、记忆和已知情报行动，不能开上帝视角</li>
+                        <li><b>状态核查</b>：程序检查时间倒流、在场、到期、死亡角色和数值，不拦正文</li>
+                        <li><b>声望系统</b>：AI 声明成就/名声，存进世界书，TOOL 的用户信息里看</li>
+                        <li><b>用户信息</b>：TOOL 里查看钱/道具/资产/关系/承诺/声望，默认只读，点「手动编辑」才改</li>
+                        <li>四个开关在 <b>02 世界模拟 → 世界追踪</b> 同一栏，默认全关；关掉时零副作用</li>
+                    </ul>
+                </section>
+                <section class="nt-guide-module">
+                    <div class="nt-guide-module-head"><span class="nt-guide-code">R_01</span><h4>请求改写是干嘛的</h4></div>
+                    <p>把每轮最后一条用户输入做 Base64 编码，并在前面加一段无害的排版垫片；模型先解码再照常续写。</p>
+                    <ul>
+                        <li>用途：绕开部分接口对输入字符/内容传输的限制，<b>不是剧情功能</b>，不写世界书、不改角色</li>
+                        <li>默认开启；如果接口本身不需要，可在 <b>01 概览 → 系统模块</b> 里关掉，关掉后直接发原文</li>
+                    </ul>
+                </section>
+            </div>
+        `,
+    },
+    {
+        code: '05',
         title: '开始使用',
         subtitle: '不会自动扣 API，也不会自动初始化',
         body: () => {
@@ -128,6 +155,7 @@ const STEPS = [
             const ck = (v) => savedChoice === v ? 'checked' : '';
             return `
                 <p class="nt-guide-lead">引导不会自动初始化世界书，也不会自动发请求。先自己玩也可以，需要时再点「请求更新」。</p>
+                <p class="nt-guide-dim">请求更新里选的主/副 API 会保存，刷新页面不会重置。</p>
                 ${hasSub ? `
                 <div class="nt-guide-choice-box">
                     <b>之后手动请求更新默认用：</b>

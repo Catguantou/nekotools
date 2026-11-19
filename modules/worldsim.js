@@ -47,13 +47,13 @@ const defaultSettings = {
     recordUserCharacter: false,
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
-        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '',
+        world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', tick: '', map: '', quest: '', cognition: '',
         player: '', reputation: '',
     },
     promptModes: {
         status: 'append', preview: 'append', chars: 'append', items: 'append', plot: 'append',
         world: 'append', foreshadow: 'append', summary: 'append', bigSummary: 'append', roster: 'append',
-        genesis: 'append', tick: 'append', map: 'append', quest: 'append', cognition: 'append',
+        tick: 'append', map: 'append', quest: 'append', cognition: 'append',
         player: 'append', reputation: 'append',
     }
 };
@@ -102,25 +102,6 @@ const questReady = new Map();
 const questTries = new Map();
 // 每轮只读快照（不写回、不持久化）：索引角色，用于 T1/T2/T3 调度
 const rosterCache = new Map();
-
-/** 开局世界生成：第一次运行时补全整个世界，而不是只提取当前文本 */
-function buildGenesisPrompt() {
-    const tagOpen = '<nekotools:genesis>';
-    const tagClose = '</nekotools:genesis>';
-    let p = `${tagOpen}
-【开局世界生成】这是本局第一次运行。先不要只盯着眼前场景，请基于角色卡、世界书设定、用户角色，补全一个完整的世界快照。
-必须在本轮 ws_update 里输出 "world": {
-  "国家": {"名称": "政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},
-  "势力": {"名称": "类型｜目标｜资源｜与主角关系｜当前动作"},
-  "社会新闻": {"标题": "事件｜影响｜来源"}
-}
-国家固定 7 段字段、势力固定 5 段字段、社会新闻固定 3 段字段，顺序不要乱；缺的写“未知”。
-至少 3 个国家、3 个势力、3 条社会新闻；国家之间要有建交/贸易/冲突/文化渗透等关系，势力要有自己的目标。
-社会新闻只写区域/国家/世界级的公开大事（政策、战争、灾害、经济、科技、宗教、大型事故、国际关系、社会运动），不要围绕主角/用户/单个角色写私事。
-沿用已有设定，不要另起炉灶；不要只写当前文本里已经出现的东西。
-${tagClose}`;
-    return applyPromptMode('genesis', p);
-}
 
 /** 角色等级：索引里的 T1核心 也算 T1 */
 function tierOf(c) {
@@ -182,10 +163,10 @@ function buildTickPrompt({ needWorldTick, targets = [] }) {
         lines.push('- 玩家不在场也要推进他们自己的计划；tick 写在本轮 ws_update 里。');
     }
     if (needWorldTick) {
-        lines.push('- 本轮同时做世界 tick：只更新国家/势力/社会新闻里发生的变化，输出 world。');
+        lines.push('- 本轮同时做世界 tick：只更新国家/势力/新闻日报里发生的变化，输出 world。');
         lines.push('- 顺带检查主线/支线：推进主线一步，完成/失败/新增 0–1 条支线（写 main / quests）。');
     }
-    lines.push('- 若有角色本轮出场/相遇，必须结合他的当前行动解释“为什么在这里”，不能凭空出现。');
+    lines.push('- 合理化角色出场/相遇，不能凭空出现。');
     lines.push('</nekotools:tick>');
 
     let p = lines.join('\n');
@@ -460,12 +441,15 @@ ${tagClose}`;
 function buildQuestPrompt() {
     return `<nekotools:track.quest>
 【主线】JSON 字段 "main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}
-只写本轮变化的字段；主线要自动推进，不要让玩家选择。这里只维护长期目标/阶段/进度，不写本轮三种走向或概率。
+- 只写本轮变化的字段；主线要自动推进，通常结合世界书给予一个重要目标，或者用户在剧情中表现出想做的大事。
+- 这里只维护长期目标/阶段/进度，不写本轮三种走向或概率。
 【支线】JSON 字段 "quests": {"add": {"支线名":"类型｜目标｜状态｜期限｜失败条件｜钩子"}, "del": ["支线名"]}
-只写新增/完成/失败/删除的支线；这里只维护支线状态，不写本轮短期走向；支线是**可执行的目标/钩子**，已经发生的公开事件写进「社会新闻」条目，不要重复。可以自然生成新的支线钩子，但不要围着玩家转。
-支线名要具体（2-8 字，用目标/物件/地点），不要写“XX疑云、XX寻踪”这种标题式抽象名。
-「期限」写绝对日期（如 2009年11月05日），没有期限写“无”；「失败条件」一句话写清怎样算失败。期限已过且状态未完成、或状态写失败的支线，插件会自动删除。
-支线期限要和地图路程一致：如果从当前地点赶过去需要的时间已经超过期限，就不能写成“来得及”。
+- 只写新增/完成/失败/删除的支线；这里只维护支线状态，不写本轮短期走向。
+- 支线是与主线相关的延伸任务。可以自然生成新的支线，但不要围着玩家转。
+- 支线名要具体（2-8 字，用目标/物件/地点），不要写“XX疑云、XX寻踪”这种抽象名。
+- 「期限」写绝对日期（如 2009年11月05日），没有期限写“无”。
+- 「失败条件」一句话写清怎样算失败。期限已过且状态未完成、或状态写失败的支线，插件会自动删除。
+- 支线期限要和地图路程一致：如果从当前地点赶过去需要的时间已经超过期限，就不能写成“来得及”。
 </nekotools:track.quest>`;
 }
 
@@ -595,17 +579,17 @@ function getLorebookName() {
 
 const DIRECTOR_PROMPT = `<nekotools:director>
 【NEKOTOOL 世界模拟器核心指令】
-你是普赛克使用的世界模拟器工具NEKOTOOL，请结合【认知隔离】，严格执行以下任务：
-1. 世界合理化：用户输入先判定成功率与后果，让世界始终保持真实且符合基本逻辑与规律运转。
+你是普赛克使用的世界模拟器工具NEKOTOOL，严格执行以下任务：
+1. 世界合理化：用户输入先判定是否符合逻辑和真实性，让世界始终保持真实且符合基本逻辑与规律运转。
 2. 长线维护：以维持几千层游玩不无聊为目标，必须时刻运行主线与支线，前期埋下的伏笔或计划在未来适时引爆。
-3. 认知隔离：严禁上帝视角。角色只能基于当前五感、已有记忆和信息差行动。暗中计划绝不突然告诉用户。
-4. 输出格式：严格遵守下方系统标签的契约。所有标签必须放在正文末尾，标签内部仅供系统后台记录，不要用代码块包裹，绝对不要在正文中向用户解释这些标签。
+3. 输出格式：严格遵守下方系统标签的契约。所有标签必须放在正文末尾，标签内部仅供系统后台记录，不要用代码块包裹，绝对不要在正文中向用户解释这些标签。
+开局时先读取世界书/角色卡资料，按下方契约生成初始世界内容，不要等用户提醒。
 </nekotools:director>`;
 
-/** 认知隔离：去掉全知视角，角色只能用有限感官与已有记忆行动 */
+/** 信息隔离：去掉全知视角，角色只能用有限感官与已有记忆行动 */
 function buildCognitionPrompt() {
     let p = `<nekotools:cognition>
-【认知隔离 · 最高优先级】
+【信息隔离 · 最高优先级】
 - 去除全知视角，完全以角色的有限认知看待当下。角色只基于当前五感与已有记忆行动，遵守情报的时空限制。
 - 只有用户被引号包裹、实际说出口的对话和明确的表情可以被感知；用户的想法、心理活动、旁白、系统提示严禁被角色得知或回应。
 - 去元认知：禁止打破第四面墙的说明、元叙事、设定解说；禁止“原著/原本轨迹/剧情需要/作为AI”等 meta 发言。
@@ -618,11 +602,16 @@ function buildCognitionPrompt() {
     return applyPromptMode('cognition', p);
 }
 
-/** 个人信息声明：只描述 player 块的 JSON 字段，不写叙事要求（模式由 pushTrackedPrompt 统一处理） */
+/**
+ * 个人信息声明：只描述 player 块的 JSON 字段，不写叙事要求（模式由 pushTrackedPrompt 统一处理）。
+ * TODO(2026-11-19)：面板/开关已统一叫「用户信息」，这里标题仍是「个人信息」；
+ * 用户要求等后续改代码时再统一文案，本期不改。
+ */
 function buildPlayerPrompt() {
     const p = `<nekotools:track.player>
-【个人信息】JSON 字段 "player": {"名字":"可选","身份":"可选","钱":0,"道具":[{"名称","数量","位置","状态","备注"}],"删除道具":["名"],"资产":[{"名称","状态","产出","备注"}],"关系":[{"对象","标签","原因"}],"承诺":[{"谁","什么","期限","状态"}],"状态":["受伤"],"移除状态":["受伤"]}
-只写本轮变化，没有的字段省略；没有变化就省略整个 player。
+【个人信息】JSON 字段 "player": {"名字":"","身份":"","钱":0,"道具":[{"名称","数量","位置","状态","备注"}],"删除道具":["名"],"资产":[{"名称","状态","产出","备注"}],"关系":[{"对象","标签","原因"}],"承诺":[{"谁","什么","期限","状态"}],"状态":[""],"移除状态":[""]}
+- 维护用户角色的基本资料，基本资料从世界书或剧情中总结。
+- 剧情内有更新时新增。
 </nekotools:track.player>`;
     return p;
 }
@@ -630,11 +619,14 @@ function buildPlayerPrompt() {
 /** 声望声明：只描述 rep 块的 JSON 字段，不写叙事要求（模式由 pushTrackedPrompt 统一处理） */
 function buildReputationPrompt() {
     const p = `<nekotools:track.reputation>
-【声望声明】JSON 字段 "rep": {"成就":[["名称","原因","备注","谁知道"]],"名声":[["地区/势力","看法"]]}
-只写本轮新增或变化，没有就省略。
+【声望成就】JSON 字段 "rep": {"成就":[["名称","原因","备注","谁知道"]],"名声":[["地区/势力","看法"]]}
+- 参考游戏成就，通常为用户角色达成某个大目标或成果获得。
+- 也可能因为做了奇怪的事获得搞笑的成就。
 </nekotools:track.reputation>`;
     return p;
 }
+
+/** 状态核查：只写事实约束，不要求额外输出字段（开关开时才注入） */
 
 function buildStatusPrompt() {
     const tagOpen = '<ws_' + 'status>';
@@ -647,20 +639,19 @@ function buildPreviewPrompt() {
     const tagOpen = '<ws_' + 'preview>';
     const tagClose = '</ws_' + 'preview>';
     let p = `<nekotools:preview>
-【剧情推演 · 仅供后台参考 · 绝对禁止向用户直接展示或罗列选项】
-长期主线/支线由「主线」「支线」条目维护；这里**只写本轮短期走势**，不要重复长期目标、任务进度或支线列表。
+【剧情推演】
 你必须把全部推演内容夹在下面两个标签之间，**开始标签和结束标签都必须原样输出**；缺少结束标签会被判为正文泄露：
 ${tagOpen}
-## 1. 行为推演
-评估：结合世界观与当前阻力，用户的行动成功率大约是 XX%。
-三种走向（按概率排序）：
-- 走向1（XX%）：[描述可能导致的后果，不一定是用户想要的]
-- 走向2（XX%）：[描述突发事件或部分成功]
-- 走向3（XX%）：[描述完全的成功]
-## 2. 短期走向（只写接下来 1–3 步）
-下一步：[用户行动后最可能立即发生的反应]
-隐患：[本轮或下一步可能冒出的即时事件/线索，不写长期伏笔清单]
-倾向量表：【喜剧%+悲剧%+正剧%+幽默%+严肃%+欢快%+宏大%】
+行为推演：
+  - 四种走向（按概率排序）：
+    - 走向1：[描述可能导致的后果，不一定是用户想要的]
+    - 走向2：[描述突发事件或部分成功]
+    - 走向3：[描述完全的成功]
+    - 走向4：[描述完全的失败]
+短期走向（只写接下来 1–3 步）
+  - 下一步：[行动后最可能立即发生的反应，绝不是用户下一步会做什么]
+  - 隐患：[本轮或下一步可能冒出的即时事件/线索，不写长期伏笔清单]
+  - 倾向量表：【喜剧%+悲剧%+正剧%+幽默%+严肃%+欢快%+宏大%】
 ${tagClose}
 （标签之外绝对不要重复上述推演内容）`;
 
@@ -688,8 +679,12 @@ function buildTrackingMessages(bookName = '') {
     list.push({
         role: 'system',
         content: `<nekotools:update>
-【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略，标签内含合法 JSON（不要代码块包裹，标签外不加任何其它字符）。
-${contractKeys.join(' / ')} 都只写**本轮变化**：chars 写有变化的角色；tick 写离屏角色的后台行动；其余分类只写增量（add/del），绝不重复输出未变化的内容。
+【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略。
+所有分类的 JSON 必须统一放在 ${tagOpen} ... ${tagClose} 之间；标签外不要输出 JSON，标签内不要用代码块包裹。
+${contractKeys.join(' / ')} 按分类输出；chars/tick 写有变化的角色，其余只写增量。
+【公共规则】
+- 只写本轮变化：没变化的分类省略；add 新增或覆盖，del 删除。
+${settings.enableItems || settings.enablePlot || settings.enableForeshadow ? '- 对象关键词（道具/计划/伏笔）：1–3 个，2–6 字，正文会原样出现的具体词，不写“XX疑云/XX寻踪”这类标题。\n' : ''}${settings.enableChars ? '- 角色关键词：1–6 个，2–20 字，昵称/姓氏/尊称等正文可能出现的叫法，不只写全名。' : ''}
 </nekotools:update>`
     });
 
@@ -697,24 +692,16 @@ ${contractKeys.join(' / ')} 都只写**本轮变化**：chars 写有变化的角
         const userName = stBridge.getUserName() || '用户';
         const recordUserChar = settings.recordUserCharacter === true;
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userName}":"好感 50｜信任 50｜中性：..."},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}
-要求：记录活跃角色${recordUserChar ? `（包括用户角色${userName}）` : `（不包括用户角色${userName}）`}。以下字段尽量写完整，每个字段写完整的句子，不要合并成一句话：
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"角色":"态度：原因"},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["本轮新增1-2条"],"特殊变化":"...","关键词":["昵称","姓氏","尊称"]}}
+要求：记录活跃角色${recordUserChar ? `（包括用户角色「${userName}」）` : `（不包括用户角色「${userName}」）`}档案。
 - 位置：优先使用「地图」里的小地点名；没有就写当前地点
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
 - 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
-- 长期目标：最重要的长期追求
-- 近期打算：短期内最可能采取的下一个具体行动
-- 关键记忆：【事件】→ 导致了什么转变（本轮只写新增的 1-2 条，用数组或换行分隔；插件会追加到旧记忆，不会覆盖）
+- 长期目标 / 近期打算：各一句具体内容
+- 关键记忆：【事件】→ 导致了什么转变（本轮只写新增的 1-2 条）
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
-- 关键词：写 1–6 个正文可能出现的叫法，2–20 字：昵称/小名/外号、西式名字拆开的姓和名、尊称（Mr. Smith、Ms. Smith、Dr. Smith、王先生、李小姐、队长、老板）。不要只写全名，不要写抽象标题。
-可选：身份。
-必填基础：性别 / 外貌（简单一句）/ 人际关系。
-${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输出档案。` : `不要输出用户角色「${userName}」的档案。`}
-人际关系是对象，键写对方真实名字。用户角色就叫「${userName}」；第一次正式遇见之后才写，没遇见就不要写。
-值的格式："好感 X｜信任 Y｜标签：一句原因"。
-好感/信任都是 0-100：好感 0-20 敌意 / 21-40 冷淡 / 41-60 中性 / 61-80 亲近 / 81-100 信赖或爱慕；
-信任 0-20 提防 / 21-40 保留 / 41-60 一般 / 61-80 信任 / 81-100 生死托付。
-只写本轮有变化的人；插件会按人合并，没写到的旧关系保留。姓名由插件自动写，不用输出。
+- 人际关系键写对方真实名字
+- 关系固定定性标签：仇恨 / 敌对 / 戒备 / 冷淡 / 无感 / 亲近 / 信任 / 依赖 / 喜爱 / 痴迷
 `;
         pushTrackedPrompt(list, 'chars', c + `</nekotools:track.chars>`);
     }
@@ -732,10 +719,8 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
     if (settings.enableItems) {
         let c = `<nekotools:track.items>
 【道具追踪】JSON 字段 "items": {"add": {"道具名": {"描述": "[持有者 | 作用 | 来源] 描述", "关键词": ["具体词1", "具体词2"]}}, "del": ["道具名"]}
-要求：只写本轮**变化**的道具，不要重复未变的条目。add 新增或覆盖同名项；del 删除已失去/已用掉的道具。没有变化就写 "items": {}。
-道具名要短（2-8 字），最好就是物品名。
-关键词必填 1–3 个，2–6 字，**正文里会原样出现**的具体词（人名/地名/物件/动作）；不要写“XX疑云、XX寻踪”这种标题式抽象词。
-重点保留未来剧情可能召回的道具。
+- 道具名 2–8 字，最好就是物品名。
+- 重点保留未来剧情可能召回的道具。
 `;
         pushTrackedPrompt(list, 'items', c + `</nekotools:track.items>`);
     }
@@ -743,23 +728,21 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
     if (settings.enablePlot) {
         let c = `<nekotools:track.plot>
 【计划追踪】JSON 字段 "plot": {"add": {"计划名": {"描述": "[执行者 | 目标 | 进度 | 状态] 描述", "关键词": ["具体词1", "具体词2"]}}, "del": ["计划名"]}
-要求：只写本轮**变化**的计划，不要重复未变的条目。add 新增或覆盖；计划结束/作废用 del。没有变化就写 "plot": {}。
-计划名用具体动作/目标短词，不要诗化标题。
-关键词必填 1–3 个，2–6 字，**正文里会原样出现**的具体词（人名/地名/物件/动作）；不要写“XX疑云、XX寻踪”这种标题式抽象词。
-重要：此条目与角色后台动向联动。暗中进行的计划必须严守认知隔离，绝不能提前在正文中让用户或无关角色得知
+- 计划名用具体动作/目标短词，不要诗化标题。
+- 重要：与角色后台动向联动。暗中计划严守信息隔离，绝不提前让用户或无关角色得知。
 `;
         pushTrackedPrompt(list, 'plot', c + `</nekotools:track.plot>`);
     }
 
     if (settings.enableWorld) {
         let c = `<nekotools:track.world>
-【世界局势】JSON 字段 "world": {"国家": {"名称":"政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"}, "势力": {"名称":"类型｜目标｜资源｜与主角关系｜当前动作"}, "社会新闻": {"标题":"事件｜影响｜来源"}, "del": {"国家":["名称"], "势力":["名称"], "社会新闻":["标题"]}}
-要求：国家固定 7 段字段、势力固定 5 段字段、社会新闻固定 3 段字段，顺序不要乱；缺的写“未知”。
-要求：只写本轮**变化**；国家、势力、社会新闻分开维护，不要把所有东西都塞进社会新闻。没有变化就写 "world": {}。
-社会新闻只写**已经发生的公开事实**；可执行的目标/承诺/待办钩子放「支线」，不要写进社会新闻。
-社会新闻必须是**区域性 / 国家性 / 世界性**的大事：政策、战争、灾害、经济、科技、宗教、大型事故、国际关系、社会运动等；不要写主角、用户或单个角色的私事、恋爱日常、今天吃了什么。人物只能作为事件的参与者或受影响者出现。
-新闻日报每游戏日只更新一次：游戏日期没变就不要新增/修改新闻；日期变化后才更新。常驻新闻最多 6 条；新新闻添加，旧新闻失去时效且没有剧情推动价值就删除，还能继续推动剧情则更新为进一步动态；标题和内容不要重复发布。
-世界要自己运转：国家之间会建交/断交/战争/贸易/文化渗透，势力有自己的目标和动作，不要围着主角转。
+【世界局势】JSON 字段 "world": {"国家": {"名称":"政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"}, "势力": {"名称":"类型｜目标｜资源｜与主角关系｜当前动作"}, "新闻日报": {"标题":"事件｜影响｜来源"}, "del": {"国家":["名称"], "势力":["名称"], "新闻日报":["标题"]}}
+- 国家固定 7 段字段、势力固定 5 段字段、新闻日报固定 3 段字段，顺序不要乱；缺的写“未知”。
+- 国家、势力、新闻日报分开维护，不要把所有东西都塞进新闻日报。
+- 新闻日报只写**已经发生的公开事实**；新闻必须是**区域性 / 国家性 / 世界性**的大事：政策、战争、灾害、经济、科技、宗教、大型事故、国际关系、社会运动等。
+- 新闻日报每游戏日只更新一次；一次更新最多 6 条。新新闻添加，旧新闻失去时效且没有剧情推动价值删除，有价值则更新为进一步动态。
+- 不要重复发布类似新闻。
+- 运转：国家之间会建交/断交/战争/贸易/文化渗透，势力有自己的目标和动作，不要围着主角转。
 `;
         pushTrackedPrompt(list, 'world', c + `</nekotools:track.world>`);
     }
@@ -767,9 +750,8 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
     if (settings.enableForeshadow) {
         let c = `<nekotools:track.foreshadow>
 【草蛇伏笔】JSON 字段 "foreshadow": {"add": {"伏笔名": {"描述": "[线索 | 指向/可能的作用] 描述", "关键词": ["具体词1", "具体词2"]}}, "del": ["伏笔名"]}
-要求：只写本轮**新增或修改**的伏笔，不要重复未变的条目。已触发/废弃的伏笔用 del。没有变化就写 "foreshadow": {}。与计划追踪严格分开。
-伏笔名要短（2-8 字），用正文里可能出现的具体物/地/人，不要抽象标题。
-关键词必填 1–3 个，2–6 字，**正文里会原样出现**的具体词（人名/地名/物件/动作）；不要写“XX疑云、XX寻踪”这种标题式抽象词。
+- 与计划追踪严格分开，伏笔一定是现在暗藏、后续可能引发的暗线。
+- 伏笔名 2–8 字，用正文可能出现的具体物/地/人。
 `;
         pushTrackedPrompt(list, 'foreshadow', c + `</nekotools:track.foreshadow>`);
     }
@@ -785,7 +767,11 @@ function buildSummaryPrompt() {
     const tagOpen = '<ws_' + 'summary>';
     const tagClose = '</ws_' + 'summary>';
     let p = `<nekotools:summary>
-【格式契约】必须在末尾输出 ${tagOpen} ... ${tagClose}，开始与结束标签都要有。100字内对本轮剧情进行简洁概括，完整保留角色行为、发展与对话，包括详细日期时间，记录如学习到的经验/领悟/技巧/教训，或者是约定/承诺/性格转变/道具/礼物等等重要内容，确保记录具体且清晰的实际内容，严禁概括为模糊形容词
+【小总结】
+- 必须在末尾输出 ${tagOpen} ... ${tagClose}，开始与结束标签都要有。
+- 100字内对本轮剧情进行简洁概括，完整保留角色行为、发展与对话，包括详细日期时间，可记录关键对话原句。
+- 记录如学习到的经验/领悟/技巧/教训，或者是约定/承诺/性格转变/道具/礼物等等重要内容。
+- 确保记录具体且清晰的实际内容，严禁概括为模糊形容词。
 </nekotools:summary>`;
     return applyPromptMode('summary', p);
 }
@@ -794,8 +780,14 @@ function buildBigSummaryPrompt() {
     const tagOpen = '<ws_' + 'big_summary>';
     const tagClose = '</ws_' + 'big_summary>';
     let p = `<nekotools:bigsummary>
-【格式契约 · 仅本轮触发】必须输出 ${tagOpen} ... ${tagClose}，开始与结束标签都要有。停止所有角色扮演，作为总结助手对本局游戏至此的剧情进行【大总结】。保持中性客观，总体2000token上下对已发生时间进行总结，以自然语言交代清楚发生了什么，且事件时间顺序必须与前文一致，保持时间线清晰度。相近时间事件整合为同一时间跨度，并使用【】对时间跨度进行标记，保留关键事件、人物关系变化、重要伏笔。
-如果世界书里已经有「大总结」：不要从第一楼重新总结，只总结「已有大总结」结束之后新发生的剧情，把新增内容接到旧大总结后面，输出合并后的新大总结；不要重复旧内容。
+【大总结 · 仅本轮触发】
+- 必须输出 ${tagOpen} ... ${tagClose}，开始与结束标签都要有。
+- 停止所有角色扮演，作为总结助手对本局至此的剧情进行【大总结】。
+- 保持中性客观，总体 1000–3000 token。
+- 以自然语言交代清楚发生了什么，保持时间线清晰度。
+- 相近时间事件整合为同一时间跨度，并使用【】对时间跨度进行标记。
+- 保留关键事件、人物关系变化、重要伏笔。
+- 如果世界书里已经有「大总结」：只总结「已有大总结」结束之后新发生的剧情，把新增内容接到旧大总结后面，输出合并后的新大总结。
 </nekotools:bigsummary>`;
     return applyPromptMode('bigSummary', p);
 }
@@ -805,12 +797,11 @@ function externalAutoFullActive() {
     return Boolean(api && api.autoFull && (String(api.url || '').trim() || String(api.source || '').trim()));
 }
 
-function buildSystemMessages(needBig, includeTracking = true, bookName = '', needGenesis = false, needMapGenesis = false, needQuestGenesis = false) {
+function buildSystemMessages(needBig, includeTracking = true, bookName = '', needMapGenesis = false, needQuestGenesis = false) {
     const core = [];
     const contract = [];
     const externalAuto = externalAutoFullActive();
 
-    if (needGenesis && !externalAuto) contract.push(buildGenesisPrompt());
     if (needMapGenesis && !externalAuto) contract.push(buildMapGenesisPrompt(bookName));
     if (needQuestGenesis && !externalAuto) contract.push(buildQuestGenesisPrompt(bookName));
 
@@ -819,6 +810,7 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
         settings.enablePreview || settings.enableChars || settings.enableItems
         || settings.enablePlot || settings.enableWorld || settings.enableMap
         || settings.enableQuests || settings.enableCognition || settings.enableForeshadow
+        || settings.enablePlayerPanel || settings.enableReputation
     );
     if (hasNonStatusFeature) core.push(DIRECTOR_PROMPT);
     if (settings.enableCognition) core.push(buildCognitionPrompt());
@@ -964,7 +956,7 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
 }
 
 /** 世界局势固定三段 */
-const WORLD_SECTIONS = ['国家', '势力', '社会新闻'];
+const WORLD_SECTIONS = ['国家', '势力', '新闻日报'];
 
 /** 至少有一个国家 + 一个势力，才算世界结构建立起来 */
 function worldHasStructure(data) {
@@ -973,14 +965,14 @@ function worldHasStructure(data) {
 }
 
 function parseWorldContent(content) {
-    const data = { 国家: {}, 势力: {}, 社会新闻: {} };
-    let section = '社会新闻';
+    const data = { 国家: {}, 势力: {}, 新闻日报: {} };
+    let section = '新闻日报';
     for (const raw of String(content || '').split('\n')) {
         const line = raw.trim();
         if (!line) continue;
         if (line === '【国家】') { section = '国家'; continue; }
         if (line === '【势力】') { section = '势力'; continue; }
-        if (line === '【社会新闻】') { section = '社会新闻'; continue; }
+        if (line === '【新闻日报】' || line === '【社会新闻】') { section = '新闻日报'; continue; }
         if (line.startsWith('【')) continue;
         const m = line.match(/^-\s*([^｜|]+)[｜|]([\s\S]*)$/);
         if (m) data[section][m[1].trim()] = m[2].trim();
@@ -989,7 +981,7 @@ function parseWorldContent(content) {
 }
 
 function renderWorldContent(data) {
-    const src = { 国家: {}, 势力: {}, 社会新闻: {}, ...(data || {}) };
+    const src = { 国家: {}, 势力: {}, 新闻日报: {}, ...(data || {}) };
     const lines = ['【以下为世界局势】'];
     for (const section of WORLD_SECTIONS) {
         lines.push(`【${section}】`);
@@ -1004,12 +996,13 @@ function renderWorldContent(data) {
     return lines.join('\n');
 }
 
-/** 兼容：新结构（国家/势力/社会新闻）+ 旧的 add/del 平铺 */
+/** 兼容：新结构（国家/势力/新闻日报）+ 旧的 add/del 平铺 */
 function normalizeWorldRaw(raw) {
-    const out = { 国家: {}, 势力: {}, 社会新闻: {}, del: { 国家: [], 势力: [], 社会新闻: [] } };
+    const out = { 国家: {}, 势力: {}, 新闻日报: {}, del: { 国家: [], 势力: [], 新闻日报: [] } };
     if (!raw || typeof raw !== 'object') return out;
 
-    const hasSections = WORLD_SECTIONS.some(s => raw[s] && typeof raw[s] === 'object');
+    const hasSections = WORLD_SECTIONS.some(s => raw[s] && typeof raw[s] === 'object')
+        || (raw['社会新闻'] && typeof raw['社会新闻'] === 'object' && !Array.isArray(raw['社会新闻']));
     if (hasSections) {
         for (const section of WORLD_SECTIONS) {
             const block = raw[section];
@@ -1024,26 +1017,33 @@ function normalizeWorldRaw(raw) {
                 out.del[section] = raw.del[section].map(String);
             }
         }
-        // 新闻 是 社会新闻 的简写
-        if (raw['新闻'] && typeof raw['新闻'] === 'object' && !Array.isArray(raw['新闻'])) {
-            for (const [name, value] of Object.entries(raw['新闻'])) {
-                out.社会新闻[String(name).trim()] = String(value ?? '').trim();
+        // 旧字段名兼容：社会新闻 → 新闻日报
+        if (raw['社会新闻'] && typeof raw['社会新闻'] === 'object' && !Array.isArray(raw['社会新闻'])) {
+            for (const [name, value] of Object.entries(raw['社会新闻'])) {
+                out.新闻日报[String(name).trim()] = String(value ?? '').trim();
             }
         }
-        if (raw.del && Array.isArray(raw.del['新闻'])) out.del.社会新闻.push(...raw.del['新闻'].map(String));
+        if (raw.del && Array.isArray(raw.del['社会新闻'])) out.del.新闻日报.push(...raw.del['社会新闻'].map(String));
+        // 新闻 是 新闻日报 的简写
+        if (raw['新闻'] && typeof raw['新闻'] === 'object' && !Array.isArray(raw['新闻'])) {
+            for (const [name, value] of Object.entries(raw['新闻'])) {
+                out.新闻日报[String(name).trim()] = String(value ?? '').trim();
+            }
+        }
+        if (raw.del && Array.isArray(raw.del['新闻'])) out.del.新闻日报.push(...raw.del['新闻'].map(String));
         return out;
     }
 
-    // 旧平铺：全部归到社会新闻，模型之后可以再分到国家/势力
+    // 旧平铺：全部归到新闻日报，模型之后可以再分到国家/势力
     const source = (raw.add && typeof raw.add === 'object') || Array.isArray(raw.del)
         ? raw
         : { add: raw, del: [] };
     for (const [name, value] of Object.entries(source.add || {})) {
         const n = String(name || '').trim();
         if (!n) continue;
-        out.社会新闻[n] = String(value ?? '').trim();
+        out.新闻日报[n] = String(value ?? '').trim();
     }
-    if (Array.isArray(source.del)) out.del.社会新闻 = source.del.map(String);
+    if (Array.isArray(source.del)) out.del.新闻日报 = source.del.map(String);
     return out;
 }
 
@@ -1060,13 +1060,13 @@ async function applyWorldUpdate(bookName, raw) {
     const ops = normalizeWorldRaw(raw);
     const day = currentGameDay(bookName);
     const meta = getSlotMeta(bookName);
-    const newsOps = Object.keys(ops.社会新闻 || {}).length
-        || (ops.del.社会新闻 || []).length;
+    const newsOps = Object.keys(ops.新闻日报 || {}).length
+        || (ops.del.新闻日报 || []).length;
     const sameNewsDay = Boolean(day) && meta.newsDay === day;
     if (sameNewsDay) {
         // 新闻日报每游戏日只更新一次，同日重复的新闻直接忽略
-        ops.社会新闻 = {};
-        ops.del.社会新闻 = [];
+        ops.新闻日报 = {};
+        ops.del.新闻日报 = [];
     }
 
     for (const section of WORLD_SECTIONS) {
@@ -1079,19 +1079,19 @@ async function applyWorldUpdate(bookName, raw) {
 
     // 常驻新闻最多 6 条，保留最新的；同时去掉内容重复的旧新闻
     const seenNews = new Set();
-    const newsEntries = Object.entries(data.社会新闻 || {});
+    const newsEntries = Object.entries(data.新闻日报 || {});
     for (let i = newsEntries.length - 1; i >= 0; i--) {
         const [name, value] = newsEntries[i];
         const fingerprint = String(value || '').replace(/\s+/g, '').slice(0, 120);
         if (!fingerprint || seenNews.has(fingerprint)) {
-            delete data.社会新闻[name];
+            delete data.新闻日报[name];
         } else {
             seenNews.add(fingerprint);
         }
     }
-    const newsNames = Object.keys(data.社会新闻 || {});
+    const newsNames = Object.keys(data.新闻日报 || {});
     if (newsNames.length > 6) {
-        for (const name of newsNames.slice(0, newsNames.length - 6)) delete data.社会新闻[name];
+        for (const name of newsNames.slice(0, newsNames.length - 6)) delete data.新闻日报[name];
     }
     if (day && newsOps && !sameNewsDay) setSlotMeta(bookName, { newsDay: day });
 
@@ -1101,8 +1101,8 @@ async function applyWorldUpdate(bookName, raw) {
     return data;
 }
 
-const WORLD_TITLES = { 国家: '世界·国家', 势力: '世界·势力', 社会新闻: '社会新闻' };
-const WORLD_ORDERS = { 国家: 800, 势力: 802, 社会新闻: 804 };
+const WORLD_TITLES = { 国家: '世界·国家', 势力: '世界·势力', 新闻日报: '新闻日报' };
+const WORLD_ORDERS = { 国家: 800, 势力: 802, 新闻日报: 804 };
 
 function parseWorldSection(entry) {
     const out = {};
@@ -1114,11 +1114,14 @@ function parseWorldSection(entry) {
 }
 
 function readWorldData(book) {
-    const data = { 国家: {}, 势力: {}, 社会新闻: {} };
+    const data = { 国家: {}, 势力: {}, 新闻日报: {} };
     const old = Object.values(book.entries || {}).find(e => e && e.comment === '世界局势');
     if (old) Object.assign(data, parseWorldContent(old.content));
     for (const section of WORLD_SECTIONS) {
-        const entry = Object.values(book.entries || {}).find(e => e && e.comment === WORLD_TITLES[section]);
+        const title = WORLD_TITLES[section];
+        const entry = Object.values(book.entries || {}).find(e => e && (
+            e.comment === title || (section === '新闻日报' && e.comment === '社会新闻')
+        ));
         if (entry) data[section] = { ...(data[section] || {}), ...parseWorldSection(entry) };
     }
     return data;
@@ -1131,9 +1134,11 @@ function writeWorldEntries(book, data) {
         const names = Object.keys(map);
         stBridge.upsertEntryInBook(book, title, `【以下为${title}】\n${formatAggregate(map)}`, {
             isConstant: false,
-            keywords: section === '社会新闻' ? socialNewsKeys(map, book) : deriveGreenKeys(names),
+            keywords: section === '新闻日报' ? socialNewsKeys(map, book) : deriveGreenKeys(names),
             extra: { position: 0, depth: 0, order: WORLD_ORDERS[section] },
         });
+        // 旧标题迁移：新条目写好后删掉「社会新闻」，避免世界书里两条重复
+        if (section === '新闻日报') removeEntryByComment(book, '社会新闻');
     }
 }
 
@@ -1144,19 +1149,20 @@ function removeEntryByComment(book, title) {
     }
 }
 
-/** 旧平铺世界局势迁移成「世界·国家 / 世界·势力 / 社会新闻」三个绿灯条目 */
+/** 旧平铺世界局势迁移成「世界·国家 / 世界·势力 / 新闻日报」三个绿灯条目 */
 async function migrateWorld(bookName) {
     try {
         const book = await stBridge.loadWorldInfoAsync(bookName, true);
         if (!book || !book.entries) return;
         const old = Object.values(book.entries).find(e => e && e.comment === '世界局势');
+        const hasLegacyNews = Object.values(book.entries).some(e => e && e.comment === '社会新闻');
         const hasNew = WORLD_SECTIONS.some(s => Object.values(book.entries).some(e => e && e.comment === WORLD_TITLES[s]));
-        if (!old && !hasNew) return;
+        if (!old && !hasNew && !hasLegacyNews) return;
         const data = readWorldData(book);
         writeWorldEntries(book, data);
         if (old) removeEntryByComment(book, '世界局势');
         await stBridge.persistLorebook(bookName, book);
-        console.log('[worldsim] 世界局势已拆成 世界·国家 / 世界·势力 / 社会新闻 三个绿灯条目');
+        console.log('[worldsim] 世界局势已拆成 世界·国家 / 世界·势力 / 新闻日报 三个绿灯条目');
     } catch (e) {
         console.warn('[worldsim] 世界局势迁移失败', e);
     }
@@ -1251,7 +1257,7 @@ function deriveAggregateKeys(map, book) {
     return deriveGreenKeys(out, { max: 16 });
 }
 
-/** 社会新闻：关键词来自真实实体；没有实体才退回短标题词 */
+/** 新闻日报：关键词来自真实实体；没有实体才退回短标题词 */
 function socialNewsKeys(map, book) {
     const known = collectKnownNames(book);
     const out = [];
@@ -1432,7 +1438,7 @@ async function cleanupLegacyEntries(bookName) {
 const ENTRY_LAYOUT = {
     '世界·国家': { order: 800, constant: false, keyword: true },
     '世界·势力': { order: 802, constant: false, keyword: true },
-    '社会新闻': { order: 804, constant: false, keyword: true },
+    '新闻日报': { order: 804, constant: false, keyword: true },
     '主线': { order: 810, constant: true, keyword: false },
     '支线': { order: 812, constant: false, keyword: true },
     '地图': { order: 830, constant: false, keyword: true },
@@ -1486,7 +1492,7 @@ async function normalizeEntryLayout(bookName) {
             }
 
             const keys = layout.keyword
-                ? (isChar ? characterKeys(c.slice(3), entry.content) : (c === '地图' ? mapEntryKeys(entry.content) : (c === '社会新闻' ? socialNewsKeys(readAggregate(entry.content), book) : deriveAggregateKeys(readAggregate(entry.content), book))))
+                ? (isChar ? characterKeys(c.slice(3), entry.content) : (c === '地图' ? mapEntryKeys(entry.content) : (c === '新闻日报' ? socialNewsKeys(readAggregate(entry.content), book) : deriveAggregateKeys(readAggregate(entry.content), book))))
                 : [];
             if (JSON.stringify(entry.key || []) !== JSON.stringify(keys)) {
                 entry.key = keys;
@@ -1539,12 +1545,9 @@ function buildRosterPrompt(bookName = '') {
     const tagClose = '</nekotools:track.roster>';
     let p = `${tagOpen}
 【角色索引】JSON 字段 "roster": {"add": {"角色名": "等级｜位置｜最近行动"}, "del": ["角色名"]}
-要求：等级只写 T1/T2/T3/T4；位置必须写「地图」里的小地点名，不要写 T1核心、核心成员、身份这类东西；最近行动写具体动作。
-- 等级：T1 核心 / T2 重要 / T3 配角 / T4 背景
-- 位置：现在在哪
-- 最近行动：最近在做什么（一句话，别写成长篇）
-要求：新角色出场就 add；有变化就重新 add（整条覆盖）；角色死亡、离场、确定不再相关就 del。没有变化就写 "roster": {}。
-不要写玩家/user，不要把地名、设定标题当角色。更新时间由插件自动补，不要自己写层号。
+等级只写 T1/T2/T3/T4（T1 核心 / T2 重要 / T3 配角 / T4 背景）；位置用「地图」里的小地点名；最近行动一句话。
+只维护索引，不写详细状态/关系（详细档案在角色追踪）；新角色 add，有变化整条覆盖，死亡/离场 del。
+不要写玩家/user 或地名/设定标题；层号插件自动补。
 ${tagClose}`;
 
     const cfg = getCachedConfig(bookName);
@@ -1572,7 +1575,7 @@ function worldChangeText(data, questPrune = null) {
     if (data && data.world) {
         const countries = names(data.world['国家']);
         const factions = names(data.world['势力']);
-        const news = names(data.world['社会新闻']);
+        const news = names(data.world['新闻日报']);
         if (countries) bits.push(`国家 ${countries}`);
         if (factions) bits.push(`势力 ${factions}`);
         if (news) bits.push(`新闻 ${news}`);
@@ -1621,8 +1624,8 @@ export function buildRefreshContract({
     const parts = [];
     if (chars) {
         parts.push(`【角色契约】
-"chars": {"角色名": {"性别":"...","外貌":"一句话","位置":"地图小地点名","人际关系":{"对方真名":"好感 0-100｜信任 0-100｜标签：一句原因"},"状态":"动作/衣着/生理状态/本次剧情时间","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["1-2条具体事件"],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}
-要求：只写本轮有变化的角色；每个字段写完整，不要合并；位置必须用地图小地点名；人际关系是对象，键是对方真名；用户角色名是「${userName}」，${recordUserChar ? '可以作为一条普通角色档案输出' : '不要输出它的档案'}；角色索引为空时，按角色卡和当前追踪书初始化主要角色（包括必要 NPC）。
+"chars": {"角色名": {"性别":"...","外貌":"一句话","位置":"地图小地点名","人际关系":{"对方真名":"亲近：一句原因"},"状态":"动作/衣着/生理状态/本次剧情时间","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["1-2条具体事件"],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}
+要求：只写本轮有变化的角色；每个字段写完整，不要合并；位置必须用地图小地点名；人际关系是对象，键是对方真名，值只用定性标签 + 一句原因（敌对/戒备/冷淡/中性/亲近/信任/依赖），旧档数字不用改；用户角色名是「${userName}」，${recordUserChar ? '可以作为一条普通角色档案输出' : '不要输出它的档案'}；角色索引为空时，按角色卡和当前追踪书初始化主要角色（包括必要 NPC）。
 关键词写正文里可能出现的叫法：昵称/小名/外号、西式姓和名分开、尊称（Mr. Smith、Ms. Smith、Dr. Smith、王先生、李小姐、队长、老板等）；2–20 字，不要只写全名，不要写抽象标题。`);
     }
     if (items) {
@@ -1633,7 +1636,7 @@ export function buildRefreshContract({
     if (plot) {
         parts.push(`【计划契约】
 "plot": {"add": {"计划名": {"描述":"[执行者 | 目标 | 进度 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}
-要求：只写本轮变化；计划名用具体动作/目标短词，不要诗化标题；关键词必填 1-3 个，2-6 字，必须是正文会原样出现的具体词；暗中进行的计划要严守认知隔离。`);
+要求：只写本轮变化；计划名用具体动作/目标短词，不要诗化标题；关键词必填 1-3 个，2-6 字，必须是正文会原样出现的具体词；暗中进行的计划要严守信息隔离。`);
     }
     if (foreshadow) {
         parts.push(`【伏笔契约】
@@ -1642,8 +1645,8 @@ export function buildRefreshContract({
     }
     if (world) {
         parts.push(`【世界契约】
-"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"社会新闻":{"标题":"事件｜影响｜来源"},"del":{"国家":["名称"],"势力":["名称"],"社会新闻":["标题"]}}
-要求：国家固定 7 段、势力固定 5 段、社会新闻固定 3 段，顺序不要乱；缺的写“未知”；只写变化；社会新闻只写已经发生的公开事实，可执行目标/钩子放支线；世界要自己运转，不要围着主角转。社会新闻必须是区域性/国家性/世界性的大事（政策、战争、灾害、经济、科技、宗教、大型事故、国际关系、社会运动），不要写主角/用户/单个角色的私事或恋爱日常。新闻日报每游戏日只更新一次；日期未变不要重复发布；常驻最多 6 条，新新闻添加，过期且无剧情用途的删除，能继续推动剧情的更新为进一步动态。`);
+"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"新闻日报":{"标题":"事件｜影响｜来源"},"del":{"国家":["名称"],"势力":["名称"],"新闻日报":["标题"]}}
+要求：国家固定 7 段、势力固定 5 段、新闻日报固定 3 段，顺序不要乱；缺的写“未知”；只写变化；新闻日报只写已经发生的公开事实，可执行目标/钩子放支线；世界要自己运转，不要围着主角转。新闻日报必须是区域性/国家性/世界性的大事（政策、战争、灾害、经济、科技、宗教、大型事故、国际关系、社会运动），不要写主角/用户/单个角色的私事或恋爱日常。新闻日报每游戏日只更新一次；日期未变不要重复发布；常驻最多 6 条，新新闻添加，过期且无剧情用途的删除，能继续推动剧情的更新为进一步动态。`);
     }
     if (map) {
         parts.push(`【地图契约】
@@ -1700,7 +1703,7 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     if (data.world) {
         const world = await applyWorldUpdate(bookName, data.world);
         summary.world = world
-            ? Object.keys(world.国家 || {}).length + Object.keys(world.势力 || {}).length + Object.keys(world.社会新闻 || {}).length
+            ? Object.keys(world.国家 || {}).length + Object.keys(world.势力 || {}).length + Object.keys(world.新闻日报 || {}).length
             : 0;
     }
     if (data.map) {
@@ -1813,7 +1816,6 @@ export function getDefaultPrompts() {
             summary: buildSummaryPrompt(),
             bigSummary: buildBigSummaryPrompt(),
             roster: tagText('nekotools:track.roster'),
-            genesis: buildGenesisPrompt(),
             tick: buildTickPrompt({ needWorldTick: true, targets: [] }),
             map: buildMapPrompt(),
             quest: buildQuestPrompt(),
@@ -1841,7 +1843,7 @@ export function getSystemPromptPreview(customPrompts = {}, promptModes = {}, fla
     }
     try {
         const book = stBridge.currentTrackerName() || '';
-        return buildSystemMessages(false, true, book, false, false, false)
+        return buildSystemMessages(false, true, book, false, false)
             .map(m => String(m && m.content || ''))
             .filter(Boolean);
     } finally {
@@ -2020,18 +2022,10 @@ registry.register({
             console.warn('[worldsim] 追踪书不存在，本轮只注入世界规则与状态栏，跳过追踪契约:', bookName || '(无角色)');
         }
 
-        // 副 API 自动全量开启时，主 API 只写正文：不注入开局生成、不发 tick 更新提示。
-        // 必须放在 genesis 计数之前，否则 externalAuto 下 tries 仍会自增、白白烧掉预算。
+        // 副 API 自动全量开启时，主 API 只写正文：不发 tick 更新提示。
         const externalAuto = externalAutoFullActive();
 
-        // 开局世界生成：世界局势还没内容时，前几轮自动补全整个世界
-        const tries = genesisTries.get(bookName) || 0;
-        const needGenesis = includeTracking && settings.enableWorld && !worldReady.get(bookName) && !externalAuto && tries < 5;
-        if (needGenesis) {
-            genesisTries.set(bookName, tries + 1);
-            console.log(`[worldsim] 注入开局世界生成（第 ${tries + 1} 次）`);
-        }
-
+        // 开局世界初始化交给核心指令里的“开局读取世界书资料生成初始化内容”，不再单独注段
         // 开局地图生成：地图还没足够地点时补全
         const mapTriesNow = mapTries.get(bookName) || 0;
         const needMapGenesis = includeTracking && settings.enableMap && !mapReady.get(bookName) && !externalAuto && mapTriesNow < 5;
@@ -2049,7 +2043,7 @@ registry.register({
         }
         ctx.__nt_includeTracking = includeTracking;
 
-        for (const msg of buildSystemMessages(needBig, includeTracking, bookName, needGenesis, needMapGenesis, needQuestGenesis)) {
+        for (const msg of buildSystemMessages(needBig, includeTracking, bookName, needMapGenesis, needQuestGenesis)) {
             ctx.__nt_pendingSystems.push(msg);
         }
 
@@ -2398,14 +2392,12 @@ registry.register({
 
         // 预览要与首轮实际注入一致：按 onRequest 的条件（只读内存 Map，不自增计数）算出开局生成段
         const externalAuto = externalAutoFullActive();
-        const genesisTriesNow = genesisTries.get(bookName) || 0;
         const mapTriesNow = mapTries.get(bookName) || 0;
         const questTriesNow = questTries.get(bookName) || 0;
-        const needGenesis = exists && settings.enableWorld && !worldReady.get(bookName) && !externalAuto && genesisTriesNow < 5;
         const needMapGenesis = exists && settings.enableMap && !mapReady.get(bookName) && !externalAuto && mapTriesNow < 5;
         const needQuestGenesis = exists && settings.enableQuests && !questReady.get(bookName) && !externalAuto && questTriesNow < 5;
 
-        const systems = buildSystemMessages(false, exists, bookName, needGenesis, needMapGenesis, needQuestGenesis);
+        const systems = buildSystemMessages(false, exists, bookName, needMapGenesis, needQuestGenesis);
         let sysChars = 0;
         lines.push(`\n注入契约：${systems.length} 段`);
         for (const s of systems) {
