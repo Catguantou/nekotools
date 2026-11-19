@@ -2435,27 +2435,49 @@ async function buildAutoRefreshPrompt(book) {
     } else if (wantSmallSummary) {
         blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
     }
+    if (wsCfg.enablePlayerPanel) blocks.push(`【玩家档案】\n${get('玩家档案') || '（空）'}`);
+    if (wsCfg.enableReputation) blocks.push(`【声望】\n${get('声望') || '（空）'}`);
 
-    const schema = [
-        `"chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userCharName}":"亲近：原因"},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}`,
-        '"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"新闻日报":{"标题":"事件｜影响｜来源"}}',
-        '"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}',
-        '"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}',
-        '"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}',
-        '"items": {"add": {"道具名": {"描述":"[类别] 描述","关键词":["具体词1","具体词2"]}}, "del":["道具名"]}',
-        '"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}',
-        '"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}',
-    ];
+    const schema = [];
+    if (wsCfg.enableChars !== false) {
+        schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userCharName}":"亲近：原因"},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}`);
+    }
+    if (wsCfg.enableWorld !== false) schema.push('"world": {"国家":{"名称":"方位｜类型｜政体｜领袖｜经济｜军事｜外交关系｜文化｜当前动向"},"势力":{"名称":"类型｜目标｜资源｜与主角关系｜当前动作"},"新闻日报":{"标题":"事件｜影响｜来源"}}');
+    if (wsCfg.enableMap !== false) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}');
+    if (wsCfg.enableQuests !== false) {
+        schema.push('"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}');
+        schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}');
+    }
+    if (wsCfg.enableItems !== false) schema.push('"items": {"add": {"道具名": {"描述":"[类别] 描述","关键词":["具体词1","具体词2"]}}, "del":["道具名"]}');
+    if (wsCfg.enableForeshadow !== false) schema.push('"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}');
+    if (wsCfg.enablePlot !== false) schema.push('"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}');
     if (wantSmallSummary) schema.push('"summary": "100字内，具体事件/承诺/道具/关系变化"');
     if (wantBigSummary) schema.push('"bigSummary": "约2000 token，按时间顺序总结至此剧情，保留关键事件/关系变化/伏笔"');
+    if (wsCfg.enablePlayerPanel) schema.push('"player": {"名字":"","身份":"","钱":0,"道具":[{"名称","数量","位置","状态","备注"}],"删除道具":["名"],"资产":[{"名称","状态","产出","备注"}],"关系":[{"对象","标签","原因"}],"承诺":[{"谁","什么","期限","状态"}],"状态":[""],"移除状态":[""]}');
+    if (wsCfg.enableReputation) schema.push('"rep": {"成就":[["名称","原因","备注","谁知道"]],"名声":[["地区/势力","等级","原因"]]}');
+
     const contract = buildRefreshContract({
-        chars: true, items: true, plot: true, world: true, foreshadow: true, map: true, quests: true,
-        summary: wantSmallSummary, bigSummary: wantBigSummary,
-        userName: userCharName, recordUserChar,
+        chars: wsCfg.enableChars !== false,
+        items: wsCfg.enableItems !== false,
+        plot: wsCfg.enablePlot !== false,
+        world: wsCfg.enableWorld !== false,
+        foreshadow: wsCfg.enableForeshadow !== false,
+        map: wsCfg.enableMap !== false,
+        quests: wsCfg.enableQuests !== false,
+        summary: wantSmallSummary,
+        bigSummary: wantBigSummary,
+        player: wsCfg.enablePlayerPanel === true,
+        reputation: wsCfg.enableReputation === true,
+        statecheck: wsCfg.enableStateCheck === true,
+        cognition: wsCfg.enableCognition === true,
+        userName: userCharName,
+        recordUserChar,
     });
-    const charLine = charNames.length
-        ? `本轮更新这些角色（T1/T2/T3，T4 跳过）：${charNames.join('、')}；不要输出其他人，不要输出 T4。`
-        : '角色索引为空：请根据角色卡和当前追踪书初始化主要角色（包括必要 NPC），T4 路人不要写。';
+    const charLine = wsCfg.enableChars === false
+        ? '本轮不更新角色档案。'
+        : (charNames.length
+            ? `本轮更新这些角色（T1/T2/T3，T4 跳过）：${charNames.join('、')}；不要输出其他人，不要输出 T4。`
+            : '角色索引为空：请根据角色卡和当前追踪书初始化主要角色（包括必要 NPC），T4 路人不要写。');
     const userLine = recordUserChar
         ? `用户角色「${userCharName}」也可以作为一条角色档案更新。`
         : `不要更新用户角色「${userCharName}」的角色档案。`;
@@ -2725,7 +2747,7 @@ async function showRefreshModal(preselectName = '') {
 
     const cats = [
         ['chars', '角色状态'],
-        ['world', '世界局势'],
+        ['world', '世界局势 / 新闻日报'],
         ['map', '地图'],
         ['quests', '主线 / 支线'],
         ['items', '道具'],
@@ -2734,6 +2756,9 @@ async function showRefreshModal(preselectName = '') {
         ['summary', '小总结'],
         ['bigSummary', '大总结'],
     ];
+    const wsNow = settings.get('worldsim') || {};
+    if (wsNow.enablePlayerPanel === true) cats.push(['player', '用户信息']);
+    if (wsNow.enableReputation === true) cats.push(['rep', '声望 / 成就']);
     const checks = {};
     const catBox = document.createElement('div');
     catBox.className = 'nt-refresh-cats';
@@ -2947,6 +2972,8 @@ async function showRefreshModal(preselectName = '') {
             blocks.push(`【大总结】\n${get('大总结') || '（空）'}`);
             blocks.push(`【小总结】\n${get('小总结') || '（空）'}`);
         }
+        if (selected.includes('player')) blocks.push(`【玩家档案】\n${get('玩家档案') || '（空）'}`);
+        if (selected.includes('rep')) blocks.push(`【声望】\n${get('声望') || '（空）'}`);
         if (selected.includes('summary') || selected.includes('bigSummary')) {
             const recentChat = (stBridge.getContext().chat || [])
                 .slice(-6)
@@ -2970,6 +2997,8 @@ async function showRefreshModal(preselectName = '') {
         if (selected.includes('plot')) schema.push('"plot": {"add": {"计划名": {"描述":"[谁 | 做什么 | 状态] 描述","关键词":["具体词1","具体词2"]}}, "del":["计划名"]}');
         if (selected.includes('summary')) schema.push('"summary": "100字内，具体事件/承诺/道具/关系变化"');
         if (selected.includes('bigSummary')) schema.push('"bigSummary": "约2000 token，按时间顺序总结至此剧情，保留关键事件/关系变化/伏笔"');
+        if (selected.includes('player')) schema.push('"player": {"名字":"","身份":"","钱":0,"道具":[{"名称","数量","位置","状态","备注"}],"删除道具":["名"],"资产":[{"名称","状态","产出","备注"}],"关系":[{"对象","标签","原因"}],"承诺":[{"谁","什么","期限","状态"}],"状态":[""],"移除状态":[""]}');
+        if (selected.includes('rep')) schema.push('"rep": {"成就":[["名称","原因","备注","谁知道"]],"名声":[["地区/势力","等级","原因"]]}');
 
         const contract = buildRefreshContract({
             chars: doChars,
@@ -2981,6 +3010,10 @@ async function showRefreshModal(preselectName = '') {
             quests: selected.includes('quests'),
             summary: selected.includes('summary'),
             bigSummary: selected.includes('bigSummary'),
+            player: selected.includes('player'),
+            reputation: selected.includes('rep'),
+            statecheck: settings.get('worldsim').enableStateCheck === true,
+            cognition: settings.get('worldsim').enableCognition === true,
             userName,
             recordUserChar,
         });

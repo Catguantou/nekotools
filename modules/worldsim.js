@@ -293,6 +293,42 @@ function mergeReputationDelta(base, delta) {
     return { achievements: [...achievements.values()], reputations: [...reputations.values()] };
 }
 
+/** 把 player / rep 增量写进内存中的 book（普通回合和手动请求更新共用） */
+function writePlayerDeltaToBook(book, delta) {
+    if (!book || !delta || typeof delta !== 'object' || Array.isArray(delta)) return false;
+    const profile = mergePlayerProfile(readPlayerProfileFromBook(book), delta);
+    stBridge.upsertEntryInBook(book, PLAYER_PROFILE_TITLE, JSON.stringify(profile, null, 2), {
+        isConstant: true,
+        extra: { disable: true, position: 0, order: 9998, key: [] },
+    });
+    return true;
+}
+
+function writeReputationDeltaToBook(book, delta) {
+    if (!book || !delta || typeof delta !== 'object' || Array.isArray(delta)) return false;
+    const repEntry = findBookEntry(book, REPUTATION_TITLE);
+    const merged = mergeReputationDelta(
+        parseReputationContent(repEntry ? repEntry.content : ''),
+        delta,
+    );
+    const repNames = [
+        ...merged.achievements.map(a => a.name),
+        ...merged.reputations.map(r => r.target),
+    ].filter(Boolean);
+    let repKeys = deriveGreenKeys(repNames);
+    if (!repKeys.length) {
+        repKeys = [...new Set(repNames
+            .map(n => String(n || '').replace(/[「」『』【】\[\]《》<>"'“”‘’\s]/g, '').trim())
+            .filter(n => n.length >= 2 && n.length <= 6))].slice(0, 6);
+    }
+    stBridge.upsertEntryInBook(book, REPUTATION_TITLE, formatReputationContent(merged), {
+        isConstant: false,
+        keywords: repKeys,
+        extra: { position: 0, depth: 0, order: 940 },
+    });
+    return true;
+}
+
 /** 磁盘上的角色条目是否已写死「死亡」——状态核查开启时跳过该角色本轮更新。
  * 只认状态整值（死亡/已死/身亡），避免「正在调查父亲的死亡」这类正常文案被误判冻结。 */
 function characterIsDead(book, name) {
@@ -1635,6 +1671,10 @@ export function buildRefreshContract({
     quests = false,
     summary = false,
     bigSummary = false,
+    player = false,
+    reputation = false,
+    statecheck = false,
+    cognition = false,
     userName = '用户',
     recordUserChar = false,
 } = {}) {
@@ -1686,11 +1726,27 @@ export function buildRefreshContract({
 "summary": "对本轮/最近一段剧情做 100 字内总结，写具体事件、承诺、道具、关系变化，不要模糊形容；插件会追加到小总结。"
 要求：只写本轮新增内容，不要重复旧总结。`);
     }
+    if (player) {
+        parts.push(`【用户信息契约】
+"player": {"名字":"","身份":"","钱":0,"道具":[{"名称","数量","位置","状态","备注"}],"删除道具":["名"],"资产":[{"名称","状态","产出","备注"}],"关系":[{"对象","标签","原因"}],"承诺":[{"谁","什么","期限","状态"}],"状态":[""],"移除状态":[""]}
+要求：只写本轮变化；没有变化就省略 player；钱/数量不能为负。`);
+    }
+    if (reputation) {
+        parts.push(`【声望契约】
+"rep": {"成就":[["名称","原因","备注","谁知道"]],"名声":[["地区/势力","等级","原因"]]}
+要求：名声等级只能选 仇恨 / 敌视 / 冷淡 / 中立 / 友善 / 尊敬 / 崇拜；只写本轮新增或变化。`);
+    }
+    if (statecheck) {
+        parts.push(`【状态核查】时间只前进；地点用地图小地点名；角色移动符合路程；已死亡/离场角色不再行动；支线期限写绝对日期。`);
+    }
+    if (cognition) {
+        parts.push(`【信息隔离】角色只基于自身五感、记忆和已知情报行动；不得提前知道未发生的未来或不在场的事。`);
+    }
     return parts.join('\n\n');
 }
 
 export async function applyRefreshData(bookName, data, layer = 0) {
-    const summary = { chars: 0, world: 0, map: 0, main: 0, quests: 0, items: 0, foreshadow: 0, plot: 0, summary: 0, bigSummary: 0 };
+    const summary = { chars: 0, world: 0, map: 0, main: 0, quests: 0, items: 0, foreshadow: 0, plot: 0, summary: 0, bigSummary: 0, player: 0, rep: 0 };
     if (!bookName || !data || typeof data !== 'object') return summary;
     const book = await stBridge.loadWorldInfoAsync(bookName);
     if (!book || !book.entries) return summary;
@@ -1758,6 +1814,17 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     if (data.plot) {
         const map = await applyAggregateOps(bookName, '计划', data.plot, 910, { keyword: true });
         summary.plot = map ? Object.keys(map).length : 0;
+    }
+    const wantPlayer = settings.enablePlayerPanel === true;
+    const wantRep = settings.enableReputation === true;
+    if (wantPlayer || wantRep) {
+        // 其他类别已经各自写盘；玩家档案/声望必须基于最新书写入，避免用开头加载的旧 book 覆盖前面的更新
+        const latest = await stBridge.loadWorldInfoAsync(bookName);
+        if (latest && latest.entries) {
+            if (wantPlayer && writePlayerDeltaToBook(latest, data.player)) summary.player = 1;
+            if (wantRep && writeReputationDeltaToBook(latest, data.rep)) summary.rep = 1;
+            if (summary.player || summary.rep) await stBridge.persistLorebook(bookName, latest);
+        }
     }
     const bigSummaryText = typeof data.bigSummary === 'string' ? data.bigSummary.trim() : '';
     const smallSummaryText = typeof data.summary === 'string' ? data.summary.trim() : '';
@@ -2314,39 +2381,9 @@ registry.register({
                     if (foreMap) await syncNames(currentLorebook, 'foreshadows', Object.keys(foreMap));
                 }
 
-                // 世界模拟 2.0：玩家档案增量（禁注入条目，走本轮 batch，不单独落盘）
-                if (settings.enablePlayerPanel && data.player && typeof data.player === 'object' && !Array.isArray(data.player)) {
-                    const profile = mergePlayerProfile(readPlayerProfileFromBook(charsBook), data.player);
-                    stBridge.upsertEntryInBook(charsBook, PLAYER_PROFILE_TITLE, JSON.stringify(profile, null, 2), {
-                        isConstant: true,
-                        extra: { disable: true, position: 0, order: 9998, key: [] },
-                    });
-                }
-
-                // 世界模拟 2.0：声望增量（绿灯条目，关键词 = 成就名 + 名声对象）
-                if (settings.enableReputation && data.rep && typeof data.rep === 'object' && !Array.isArray(data.rep)) {
-                    const repEntry = findBookEntry(charsBook, REPUTATION_TITLE);
-                    const mergedRep = mergeReputationDelta(
-                        parseReputationContent(repEntry ? repEntry.content : ''),
-                        data.rep,
-                    );
-                    const repNames = [
-                        ...mergedRep.achievements.map(a => a.name),
-                        ...mergedRep.reputations.map(r => r.target),
-                    ].filter(Boolean);
-                    // 关键词全被过滤时退回清理过的短名，避免 key=[] 绿灯永不激活
-                    let repKeys = deriveGreenKeys(repNames);
-                    if (!repKeys.length) {
-                        repKeys = [...new Set(repNames
-                            .map(n => String(n || '').replace(/[「」『』【】\[\]《》<>"'“”‘’\s]/g, '').trim())
-                            .filter(n => n.length >= 2 && n.length <= 6))].slice(0, 6);
-                    }
-                    stBridge.upsertEntryInBook(charsBook, REPUTATION_TITLE, formatReputationContent(mergedRep), {
-                        isConstant: false,
-                        keywords: repKeys,
-                        extra: { position: 0, depth: 0, order: 940 },
-                    });
-                }
+                // 世界模拟 2.0：玩家档案 / 声望增量（禁注入条目 / 绿灯条目，走本轮 batch）
+                if (settings.enablePlayerPanel) writePlayerDeltaToBook(charsBook, data.player);
+                if (settings.enableReputation) writeReputationDeltaToBook(charsBook, data.rep);
 
                 recordWorldChange(currentLorebook, data, replyLayer, questPrune);
                 // 索引最前面放本轮事实（只在对应开关开启时；空串表示清除旧 header）
