@@ -221,6 +221,7 @@ export function mountPanel() {
                         </div>
                         <div class="nt-data-row">
                             <button id="nt-ws-visual-restore" class="nt-btn-text" style="color:#00ffcc;">[恢复视觉显示]</button>
+                            <button id="nt-ws-visual-reenter" class="nt-btn-text" style="color:#00ffcc;">[重新进入视觉屏蔽]</button>
                             <button id="nt-ws-unhide-summary" class="nt-btn-text" style="color:#00ffcc;">[恢复已总结楼层]</button>
                         </div>
                         <div class="nt-subhead">角色与世界更新</div>
@@ -831,6 +832,16 @@ export function mountPanel() {
     wrap.querySelector('#nt-ws-visual-restore').onclick = () => {
         stBridge.showAllHiddenMessages();
         if (window.toastr) toastr.success('已恢复视觉显示（数据层隐藏未改变）');
+    };
+
+    wrap.querySelector('#nt-ws-visual-reenter').onclick = () => {
+        const keep = Number(settings.get('worldsim').visualHideKeep) || 0;
+        if (keep <= 0) {
+            if (window.toastr) toastr.warning('先设置「视觉屏蔽保留」大于 0');
+            return;
+        }
+        stBridge.applyVisualKeep();
+        if (window.toastr) toastr.success('已重新进入视觉屏蔽');
     };
 
     wrap.querySelector('#nt-ws-unhide-summary').onclick = async () => {

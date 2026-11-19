@@ -12,6 +12,37 @@ import {
     deleteWorldInfo,
 } from './st_api.js';
 
+let visualScrollLock = false;
+let visualGuardChat = null;
+
+function installVisualScrollGuard(chatEl) {
+    if (!chatEl || visualGuardChat === chatEl) return;
+    visualGuardChat = chatEl;
+    const atTop = () => chatEl.scrollTop <= 0;
+    chatEl.addEventListener('wheel', (e) => {
+        if (!visualScrollLock) return;
+        if (atTop() && e.deltaY < 0) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, { capture: true, passive: false });
+    let lastTouchY = 0;
+    chatEl.addEventListener('touchstart', (e) => {
+        lastTouchY = e.touches && e.touches[0] ? e.touches[0].clientY : 0;
+    }, { capture: true, passive: true });
+    chatEl.addEventListener('touchmove', (e) => {
+        if (!visualScrollLock) return;
+        const y = e.touches && e.touches[0] ? e.touches[0].clientY : 0;
+        if (atTop() && y > lastTouchY) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, { capture: true, passive: false });
+    chatEl.addEventListener('scroll', () => {
+        if (visualScrollLock && chatEl.scrollTop < 1) chatEl.scrollTop = 1;
+    }, { passive: true });
+}
+
 function extractStringName(item) {
     if (typeof item === 'string') return item.trim();
     if (item && typeof item === 'object') {
@@ -1164,6 +1195,8 @@ export const stBridge = {
         if (!chatEl || !ctx || !ctx.chat) return;
         const keep = Number(settings.get('worldsim').visualHideKeep) || 0;
         const cutoff = keep > 0 ? this.cutoffIndexForVisualKeep(keep) : -1;
+        visualScrollLock = cutoff >= 0;
+        installVisualScrollGuard(chatEl);
         chatEl.querySelectorAll('.mes.nt-visual-hidden').forEach(el => {
             el.classList.remove('nt-visual-hidden');
         });
@@ -1177,6 +1210,7 @@ export const stBridge = {
 
     /** 恢复全部视觉显示（不动数据层的 hidden） */
     showAllHiddenMessages() {
+        visualScrollLock = false;
         const chatEl = document.getElementById('chat');
         if (chatEl) {
             chatEl.querySelectorAll('.mes.nt-visual-hidden').forEach(el => el.classList.remove('nt-visual-hidden'));
