@@ -29,7 +29,7 @@ import { loadConfig, saveConfig } from './worldcfg.js';
 import { readMap, findPath, travelEntries } from './worldmap.js';
 import { refreshChar } from './worldindex.js';
 import { readMain, readQuests, readQuestHistory, clampProgress, saveMain, saveQuests } from './worldquest.js';
-import { generateQuiet } from './st_api.js';
+import { generateQuiet, getEventSource, getEventTypes } from './st_api.js';
 import { applyRefreshData, buildRefreshContract, refreshIndexHeader } from '../modules/worldsim.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
@@ -2501,6 +2501,20 @@ let autoRefreshPending = false;
 let autoRefreshEventAt = 0;
 let autoRefreshSig = '';
 let autoRefreshSigAt = 0;
+let autoFullMissingWarned = false;
+
+/** 统一入口：worldsim 和酒馆消息事件都可能触发，800ms 内只跑一次；延迟让本轮世界书写盘先完成 */
+function triggerAutoRefresh(sig = '') {
+    const now = Date.now();
+    if (now - autoRefreshEventAt < 800) return;
+    autoRefreshEventAt = now;
+    if (sig && sig === autoRefreshSig && now - autoRefreshSigAt < 30000) return;
+    autoRefreshSig = sig;
+    autoRefreshSigAt = now;
+    setTimeout(() => {
+        runAutoFullRefresh().catch(err => console.warn('[nekotools] 自动全量更新异常', err));
+    }, 600);
+}
 
 function showAutoUpdateBanner(text = '正在全量更新，建议更新结束后再继续下一轮') {
     let el = document.getElementById('nt-auto-updating');
@@ -2520,7 +2534,15 @@ function hideAutoUpdateBanner() {
 
 async function runAutoFullRefresh() {
     const api = settings.get('worldsim').refreshApi || {};
-    if (!api.autoFull || (!String(api.url || '').trim() && !String(api.source || '').trim())) return;
+    if (!api.autoFull) return;
+    if ((!String(api.url || '').trim() && !String(api.source || '').trim())) {
+        if (!autoFullMissingWarned) {
+            autoFullMissingWarned = true;
+            console.warn('[nekotools] 自动全量更新已开启，但没有配置副 API；请先在设置里保存副 API 配置');
+        }
+        return;
+    }
+    autoFullMissingWarned = false;
     if (autoRefreshRunning) {
         autoRefreshPending = true;
         return;
@@ -2910,13 +2932,21 @@ async function showRefreshModal(preselectName = '') {
     autoRow.className = 'nt-refresh-item';
     const autoCb = document.createElement('input');
     autoCb.type = 'checkbox';
-    autoCb.checked = savedApi.autoFull === true;
+    const hasRefreshApi = Boolean(String(savedApi.url || '').trim() || String(savedApi.source || '').trim());
+    autoCb.checked = hasRefreshApi && savedApi.autoFull === true;
+    autoCb.disabled = !hasRefreshApi;
+    autoCb.title = hasRefreshApi ? '' : '先在设置里保存一套副 API 配置，自动全量更新才可用';
     const autoText = document.createElement('span');
-    autoText.textContent = '每轮自动全量更新（副 API）';
+    autoText.textContent = hasRefreshApi ? '每轮自动全量更新（副 API）' : '每轮自动全量更新（需先配置副 API）';
     autoRow.appendChild(autoCb);
     autoRow.appendChild(autoText);
     body.appendChild(autoRow);
     autoCb.addEventListener('change', () => {
+        if (autoCb.checked && !hasRefreshApi) {
+            autoCb.checked = false;
+            toast('自动全量更新需要先在设置里保存副 API 配置', 'warning');
+            return;
+        }
         settings.set('worldsim', { refreshApi: { ...(settings.get('worldsim').refreshApi || {}), autoFull: autoCb.checked } });
     });
 
@@ -3896,15 +3926,21 @@ export function mountQuickMenu() {
         });
         window.addEventListener('nekotool:quickmenu-toggle', () => refreshQuickMenuVisibility());
         window.addEventListener('nekotool:auto-refresh', (e) => {
-            const now = Date.now();
-            if (now - autoRefreshEventAt < 800) return;
-            autoRefreshEventAt = now;
             const sig = e && e.detail ? String(e.detail.sig || '') : '';
-            if (sig && sig === autoRefreshSig && now - autoRefreshSigAt < 30000) return;
-            autoRefreshSig = sig;
-            autoRefreshSigAt = now;
-            runAutoFullRefresh().catch(err => console.warn('[nekotools] 自动全量更新异常', err));
+            triggerAutoRefresh(sig);
         });
+        // 有的用户主 API 是直连外部地址，hooks 不会拦到响应，worldsim 也不会派发 auto-refresh；
+        // 再监听酒馆自己的消息事件作为兜底，direct API 也能触发自动全量。
+        const bindStMessageAutoRefresh = () => {
+            const es = getEventSource();
+            const et = getEventTypes();
+            if (!es || !et || !et.MESSAGE_RECEIVED) return false;
+            if (es.__ntAutoRefreshBound) return true;
+            es.__ntAutoRefreshBound = true;
+            es.on(et.MESSAGE_RECEIVED, () => triggerAutoRefresh(''));
+            return true;
+        };
+        if (!bindStMessageAutoRefresh()) setTimeout(bindStMessageAutoRefresh, 1500);
         setInterval(() => {
             if (!ensureButton()) return;
             if (!$(POP_ID)) buildPop();
