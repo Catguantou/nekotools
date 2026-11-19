@@ -24,7 +24,6 @@ import {
     parseCharacterYaml,
     normalizePlayerProfile,
     formatPlayerSummary,
-    REPUTATION_TITLE,
 } from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
 import { readMap, findPath, travelEntries } from './worldmap.js';
@@ -3155,14 +3154,12 @@ function reputationOn() {
     return cfg.enableReputation === true;
 }
 
-/** 菜单项的开关只在打开菜单时刷新，不重建菜单（避免重复绑事件） */
+/** 菜单项显隐只在打开菜单时刷新（用户信息里合并了声望，任一开关开就显示） */
 function applyPlayerMenuFlags(pop) {
     if (!pop) return;
-    const panel = playerPanelOn();
-    const rep = reputationOn();
+    const show = playerPanelOn() || reputationOn();
     for (const row of pop.querySelectorAll('.nt-quick-item')) {
-        if (row.dataset.key === 'player') row.style.display = panel ? '' : 'none';
-        else if (row.dataset.key === 'reputation') row.style.display = rep ? '' : 'none';
+        if (row.dataset.key === 'player') row.style.display = show ? '' : 'none';
     }
 }
 
@@ -3422,7 +3419,7 @@ function buildReputationSection(rep, titleText, emptyText = '还没有记录') {
     return sec;
 }
 
-async function showPlayerInfoModal() {
+async function showPlayerInfoModal(edit = false) {
     const book = stBridge.currentTrackerName();
     if (!book) {
         toast('请先选择一个角色卡', 'warning');
@@ -3441,6 +3438,74 @@ async function showPlayerInfoModal() {
     const relationRows = Array.isArray(profile.relations) ? profile.relations : [];
     const promiseRows = Array.isArray(profile.promises) ? profile.promises : [];
 
+    if (!edit) {
+        // 只读页：所有信息按行展示，底部只有一个「手动编辑」
+        const addSection = (titleText, rows) => {
+            const sec = playerSection(titleText);
+            if (!rows.length) {
+                const none = document.createElement('div');
+                none.className = 'nt-player-hint';
+                none.textContent = '（无）';
+                sec.appendChild(none);
+            } else {
+                for (const [label, value] of rows) sec.appendChild(playerBriefRow(label, value));
+            }
+            body.appendChild(sec);
+        };
+        addSection('道具', itemRows.map(it => [
+            it.name,
+            [
+                it.count ? `×${it.count}` : '',
+                it.place ? `位置：${it.place}` : '',
+                it.state ? `状态：${it.state}` : '',
+                it.note || '',
+            ].filter(Boolean).join('｜') || '—',
+        ]));
+        addSection('资产', assetRows.map(it => [
+            it.name,
+            [it.state ? `状态：${it.state}` : '', it.income ? `产出：${it.income}` : '', it.note || ''].filter(Boolean).join('｜') || '—',
+        ]));
+        addSection('人际关系', relationRows.map(it => [
+            it.name,
+            [it.tag || '', it.reason || '', it.debt ? `欠：${it.debt}` : ''].filter(Boolean).join('｜') || '—',
+        ]));
+        addSection('承诺', promiseRows.map(it => [
+            it.who,
+            [it.what || '', it.due ? `期限：${it.due}` : '', it.status || ''].filter(Boolean).join('｜') || '—',
+        ]));
+
+        if (reputationOn()) {
+            let rep = null;
+            try {
+                rep = await stBridge.readReputation(book);
+            } catch (e) {
+                console.warn('[nekotools] 声望读取失败', e);
+            }
+            body.appendChild(buildReputationSection(rep, '声望与成就'));
+        }
+
+        const hint = document.createElement('div');
+        hint.className = 'nt-player-hint';
+        hint.textContent = '只读；需要改就点下面的「手动编辑」。';
+        body.appendChild(hint);
+
+        const reopen = (nextEdit) => {
+            closeModal();
+            setTimeout(() => { showPlayerInfoModal(nextEdit).catch(e => toast(String(e?.message || e), 'error')); }, 0);
+        };
+        openModal({
+            title: '用户信息',
+            body,
+            wide: true,
+            footer: [
+                { label: '手动编辑', primary: true, onClick: () => { reopen(true); return false; } },
+                { label: '关闭' },
+            ],
+        });
+        return;
+    }
+
+    // 手动编辑页：只在点「手动编辑」后出现
     const basic = playerSection('身份与金钱');
     const nameInput = playerInput(profile.name);
     const identityInput = playerInput(profile.identity);
@@ -3483,16 +3548,10 @@ async function showPlayerInfoModal() {
     statusSec.appendChild(playerField('状态标签', statusArea, '逗号分隔，例如：受伤，疲惫'));
     body.appendChild(statusSec);
 
-    if (reputationOn()) {
-        let rep = null;
-        try {
-            rep = await stBridge.readReputation(book);
-        } catch (e) {
-            console.warn('[nekotools] 声望读取失败', e);
-            toast('声望读取失败', 'error');
-        }
-        body.appendChild(buildReputationSection(rep, '声望与成就'));
-    }
+    const reopen = (nextEdit) => {
+        closeModal();
+        setTimeout(() => { showPlayerInfoModal(nextEdit).catch(e => toast(String(e?.message || e), 'error')); }, 0);
+    };
 
     const save = async () => {
         const next = normalizePlayerProfile(profile);
@@ -3512,35 +3571,18 @@ async function showPlayerInfoModal() {
         // 让索引顶部的玩家摘要立刻更新（下一轮注入看到的是新数据）
         try { await refreshIndexHeader(book); } catch (_) {}
         toast('已保存', 'success');
-        return true;
+        reopen(false);
+        return false;
     };
 
     openModal({
-        title: '角色信息',
+        title: '用户信息 · 手动编辑',
         body,
         wide: true,
         footer: [
             { label: '保存', primary: true, onClick: save },
-            { label: '关闭' },
+            { label: '取消', onClick: () => { reopen(false); return false; } },
         ],
-    });
-}
-
-async function showReputationModal() {
-    const book = stBridge.currentTrackerName();
-    if (!book) {
-        toast('请先选择一个角色卡', 'warning');
-        return;
-    }
-    const rep = await stBridge.readReputation(book);
-    const body = document.createElement('div');
-    body.className = 'nt-player nt-rep';
-    body.appendChild(buildReputationSection(rep, '成就与名声'));
-    openModal({
-        title: REPUTATION_TITLE,
-        body,
-        wide: true,
-        footer: [{ label: '关闭', primary: true }],
     });
 }
 
@@ -3591,8 +3633,7 @@ function buildPop() {
         { group: '世界', icon: '📰', key: 'news', label: '新闻日报', hint: '每游戏日更新 / 最多6条', enabled: true },
         { group: '世界', icon: '📜', key: 'log', label: '世界日志', hint: '最近的角色 / 世界 / 支线变化', enabled: true },
         { group: '角色', icon: '👥', key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
-        { group: '角色', icon: '🪪', key: 'player', label: '角色信息', hint: '钱 / 道具 / 资产 / 关系', enabled: true },
-        { group: '角色', icon: '🏅', key: 'reputation', label: '声望', hint: '成就 / 名声', enabled: true },
+        { group: '角色', icon: '🪪', key: 'player', label: '用户信息', hint: '钱 / 道具 / 关系 / 声望', enabled: true },
         { group: '角色', icon: '📋', key: 'quests', label: '可办事项', hint: '主线 / 支线，可编辑', enabled: true },
         { group: '行动', icon: '🎯', key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪', enabled: true },
         { group: '行动', icon: '🔄', key: 'refresh', label: '请求更新', hint: '按角色/类别静默更新', enabled: true },
@@ -3633,8 +3674,7 @@ function buildPop() {
             else if (item.key === 'news') showNewsModal();
             else if (item.key === 'log') showWorldLogModal();
             else if (item.key === 'roster') showRosterModal().catch(err => toast(`打开角色管理失败：${err && err.message ? err.message : err}`, 'error'));
-            else if (item.key === 'player') showPlayerInfoModal().catch(err => toast(`打开角色信息失败：${err && err.message ? err.message : err}`, 'error'));
-            else if (item.key === 'reputation') showReputationModal().catch(err => toast(`打开声望失败：${err && err.message ? err.message : err}`, 'error'));
+            else if (item.key === 'player') showPlayerInfoModal().catch(err => toast(`打开用户信息失败：${err && err.message ? err.message : err}`, 'error'));
             else if (item.key === 'action') showActionModal().catch(err => toast(`打开快捷行动失败：${err && err.message ? err.message : err}`, 'error'));
             else if (item.key === 'map') showMapModal().catch(err => toast(`打开地图失败：${err && err.message ? err.message : err}`, 'error'));
             else if (item.key === 'quests') showQuestsModal().catch(err => toast(`打开可办事项失败：${err && err.message ? err.message : err}`, 'error'));
