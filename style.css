@@ -5533,9 +5533,10 @@ body {
 }
 #nt-quick-modal .nt-rep-row {
     display: flex;
-    align-items: baseline;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 6px 10px;
     padding: 6px 9px;
     border: 1px solid var(--ntq-line);
     border-radius: 2px;
@@ -5543,20 +5544,23 @@ body {
     font-size: 11px;
 }
 #nt-quick-modal .nt-rep-who {
-    min-width: 0;
+    flex: 0 0 auto;
+    max-width: 45%;
     color: var(--ntq-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 #nt-quick-modal .nt-rep-view {
-    flex: none;
+    flex: 1 1 240px;
+    min-width: 0;
+    max-width: 100%;
     padding: 0 7px;
     border: 1px solid rgba(110, 140, 225, 0.35);
     border-radius: 999px;
     color: #b9c6ee;
     font-size: 10px;
-    line-height: 1.7;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 #nt-quick-modal .nt-rep-empty {
     padding: 12px 8px;
