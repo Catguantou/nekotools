@@ -820,7 +820,7 @@ ${settings.enableItems || settings.enablePlot || settings.enableForeshadow ? '- 
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
 - 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
 - 长期目标 / 近期打算：各一句具体内容
-- 关键记忆：【事件】→ 导致了什么转变（本轮只写新增的 1-2 条）
+- 关键记忆：【事件】→ 导致了什么转变（本轮只写新增的 1-2 条；已经有的事不要换个说法重复写）
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
 - 人际关系键写对方真实名字
 - 关系固定定性标签：仇恨 / 敌对 / 戒备 / 冷淡 / 无感 / 亲近 / 信任 / 依赖 / 喜爱 / 痴迷
@@ -1043,8 +1043,43 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
         return out;
     };
 
-    const merged = mergeList(normalizeMemories(old['关键记忆']), normalizeMemories(info && info['关键记忆']));
-    const mergedKnown = mergeList(normalizeMemories(old['已知']), normalizeMemories(info && info['已知']));
+    // 模型会反复把同一件事换个说法写进关键记忆/已知；按相似度去重，只保留最新的 N 条
+    const memoryNorm = (s) => String(s || '')
+        .replace(/^【[^】]*】\s*/, '')
+        .replace(/[\s，。！？、：；…\-—～~·"'“”‘’（）()【】\[\]]/g, '')
+        .replace(/^\d{4}年\d{1,2}月\d{1,2}日/, '')
+        .slice(0, 120);
+    const bigrams = (s) => {
+        const out = new Set();
+        for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+        return out;
+    };
+    const tooSimilar = (a, b) => {
+        if (!a || !b) return false;
+        if (a === b) return true;
+        if (a.length >= 8 && b.includes(a)) return true;
+        if (b.length >= 8 && a.includes(b)) return true;
+        const ba = bigrams(a), bb = bigrams(b);
+        if (!ba.size || !bb.size) return false;
+        let inter = 0;
+        for (const x of ba) if (bb.has(x)) inter++;
+        return inter / Math.max(ba.size, bb.size) > 0.72;
+    };
+    const compactMemories = (list, max) => {
+        const kept = [];
+        for (let i = list.length - 1; i >= 0; i--) {
+            const text = String(list[i] || '').trim();
+            const key = memoryNorm(text);
+            if (!key) continue;
+            if (kept.some(k => tooSimilar(key, k.key))) continue;
+            kept.push({ text, key });
+            if (kept.length >= max) break;
+        }
+        return kept.reverse().map(k => k.text);
+    };
+
+    const merged = compactMemories(mergeList(normalizeMemories(old['关键记忆']), normalizeMemories(info && info['关键记忆'])), 14);
+    const mergedKnown = compactMemories(mergeList(normalizeMemories(old['已知']), normalizeMemories(info && info['已知'])), 20);
 
     // 人际关系/日程按 key 合并：本轮没写到的人保留旧状态
     const mergedRel = {
