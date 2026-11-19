@@ -2556,12 +2556,28 @@ async function runAutoFullRefresh() {
         do {
             autoRefreshPending = false;
             const prompt = await buildAutoRefreshPrompt(book);
-            const raw = await generateRefreshApi(prompt, api);
-            const text = String(raw || '');
-            const a = text.indexOf('{');
-            const b = text.lastIndexOf('}');
-            if (a < 0 || b <= a) throw new Error('模型没有返回 JSON');
-            const data = JSON.parse(text.slice(a, b + 1));
+            let raw = '';
+            let data = null;
+            let lastError = null;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    if (attempt > 1) {
+                        showAutoUpdateBanner(`正在自动全量更新（副 API，第 ${attempt}/3 次尝试）…`);
+                    }
+                    raw = await generateRefreshApi(prompt, api);
+                    const text = String(raw || '');
+                    const a = text.indexOf('{');
+                    const b = text.lastIndexOf('}');
+                    if (a < 0 || b <= a) throw new Error('模型没有返回 JSON');
+                    data = JSON.parse(text.slice(a, b + 1));
+                    break;
+                } catch (e) {
+                    lastError = e;
+                    console.warn(`[nekotools] 自动全量更新第 ${attempt}/3 次失败`, e);
+                    if (attempt < 3) await new Promise(r => setTimeout(r, 3000));
+                }
+            }
+            if (!data) throw lastError || new Error('自动全量更新失败');
             const summary = await applyRefreshData(book, data, currentLayerNo());
             if (summary.summary || summary.bigSummary) {
                 await stBridge.hideSummarizedMessages(Number(settings.get('worldsim').hideKeepCount) || 0, book);
@@ -2656,12 +2672,19 @@ async function generateViaStRelay(prompt, cfg) {
             }
         }
         if (!data) throw new Error('酒馆转发返回的不是 JSON');
-        return data?.choices?.[0]?.message?.content
+        if (data.error) {
+            const err = data.error;
+            const msg = typeof err === 'string' ? err : (err.message || JSON.stringify(err));
+            throw new Error(`副 API 报错：${String(msg).slice(0, 300)}`);
+        }
+        const content = data?.choices?.[0]?.message?.content
             ?? data?.choices?.[0]?.text
             ?? data?.content?.[0]?.text
             ?? data?.content
             ?? data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('')
             ?? '';
+        if (!String(content).trim()) throw new Error('副 API 返回了空内容');
+        return content;
     } finally {
         clearTimeout(timer);
     }
