@@ -2377,6 +2377,36 @@ async function fetchRefreshModels(cfg) {
     return list.map(x => typeof x === 'string' ? x : (x?.id || x?.name)).filter(Boolean);
 }
 
+async function buildRefreshGaps(book) {
+    const gaps = [];
+    try {
+        const map = await readMap(book);
+        const sites = Object.values(map.sites || {}).flatMap(x => Object.keys(x || {}));
+        const clock = getSlotClock(book) || {};
+        const place = String(clock.place || '').trim();
+        if (place && sites.length && !sites.some(s => place.includes(s) || s.includes(place))) {
+            gaps.push(`当前地点「${place}」不在地图，补地点或修正位置`);
+        }
+        for (const cities of Object.values(map.cities || {})) {
+            for (const city of Object.keys(cities || {})) {
+                if (!Object.keys((map.sites || {})[city] || {}).length) gaps.push(`城市「${city}」还没有小地点`);
+            }
+        }
+        const roster = await readRoster(book);
+        for (const c of roster.slice(0, 12)) {
+            const name = String(c && c.name || '').trim();
+            if (!name) continue;
+            const entry = await readCharacterEntry(book, name);
+            if (!entry) gaps.push(`索引角色「${name}」没有角色条目，补最小档案`);
+        }
+        const bookData = await stBridge.loadWorldInfoAsync(book, true);
+        const news = bookData && Object.values(bookData.entries || {}).find(e => e && e.comment === '新闻日报');
+        const newsCount = String(news && news.content || '').split('\n').filter(l => /^-\s*/.test(l.trim())).length;
+        if (newsCount < 6) gaps.push(`新闻日报只有 ${newsCount} 条，未满 6 条可补新新闻`);
+    } catch (_) {}
+    return [...new Set(gaps)].slice(0, 8);
+}
+
 async function buildAutoRefreshPrompt(book) {
     const bookData = await stBridge.loadWorldInfoAsync(book);
     const get = (title) => {
@@ -2437,7 +2467,8 @@ async function buildAutoRefreshPrompt(book) {
     }
     if (wsCfg.enablePlayerPanel) blocks.push(`【玩家档案】\n${get('玩家档案') || '（空）'}`);
     if (wsCfg.enableReputation) blocks.push(`【声望】\n${get('声望') || '（空）'}`);
-
+    const gaps = await buildRefreshGaps(book);
+    if (gaps.length) blocks.push(`【程序检查到的缺口】\n${gaps.map(g => `- ${g}`).join('\n')}\n本轮优先补这些结构缺口；没有合理内容也不要硬编。`);
     const schema = [];
     if (wsCfg.enableChars !== false) {
         schema.push(`"chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"${userCharName}":"亲近：原因"},"状态":"...","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["..."],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}`);
@@ -2602,6 +2633,11 @@ async function runAutoFullRefresh() {
             console.log('[nekotools] 自动全量更新完成', bits.join(' / ') || '无变化');
             if (bits.length) toast(`自动全量更新完成：${bits.join(' / ')}`, 'success');
             else toast('自动全量更新完成（没有变化）', 'info');
+            const remaining = await buildRefreshGaps(book);
+            if (remaining.length) {
+                console.warn('[nekotools] 全量更新后仍有结构缺口', remaining);
+                toast(`仍有缺口：${remaining.slice(0, 3).join('；')}`, 'warning');
+            }
         } while (autoRefreshPending);
     } catch (e) {
         console.warn('[nekotools] 自动全量更新失败', e);
@@ -3075,6 +3111,8 @@ async function showRefreshModal(preselectName = '') {
             if (recentChat) blocks.push(`【最近对话】\n${recentChat.slice(0, 6000)}`);
         }
 
+        const gaps = await buildRefreshGaps(book);
+        if (gaps.length) blocks.push(`【程序检查到的缺口】\n${gaps.map(g => `- ${g}`).join('\n')}\n本轮优先补这些结构缺口；没有合理内容也不要硬编。`);
         const schema = [];
         const userName = stBridge.getUserName() || '用户';
         const recordUserChar = settings.get('worldsim').recordUserCharacter === true;

@@ -163,7 +163,7 @@ function buildTickPrompt({ needWorldTick, targets = [] }) {
         lines.push('- 玩家不在场也要推进他们自己的计划；tick 写在本轮 ws_update 里。');
     }
     if (needWorldTick) {
-        lines.push('- 本轮同时做世界 tick：只更新国家/势力/新闻日报里发生的变化，输出 world。');
+        lines.push('- 本轮同时做世界 tick：只挑 1 个国家 + 1 个势力推进，优先长期没动作、与当前地区相邻的对象；不要每轮把所有国家/势力都写一遍。主动判断是否有必要新增国家/地区/势力，有必要就新增。');
         lines.push('- 顺带检查主线/支线：推进主线一步，完成/失败/新增 0–1 条支线（写 main / quests）。');
     }
     lines.push('- 合理化角色出场/相遇，不能凭空出现。');
@@ -337,6 +337,41 @@ function characterIsDead(book, name) {
     return /^\s*状态\s*[:：]\s*["'“”]?(?:已死亡|已死|死亡|身亡|已身亡)["'“”]?\s*$/m.test(String(entry.content || ''));
 }
 
+/** 索引里已经出现的角色，至少要有一条最小角色条目；T4 只限制详细字段，不是不记录 */
+function reconcileRosterEntries(book, layer = 0) {
+    if (!book || !book.entries) return 0;
+    const idx = findBookEntry(book, INDEX_TITLE);
+    const roster = idx ? parseIndex(idx.content).chars : [];
+    const user = stBridge.getUserName();
+    let changed = 0;
+    for (const c of roster) {
+        const name = String(c && c.name || '').trim();
+        if (!name || (user && name === user)) continue;
+        if (findBookEntry(book, `角色·${name}`)) continue;
+        const content = formatCharacterYaml(name, {
+            等级: String(c.tier || 'T4').trim(),
+            位置: String(c.location || '').trim(),
+            状态: '待补（索引有记录，详细档案尚未建立）',
+            最近行动: String(c.action || '').trim(),
+            更新于: layer > 0 ? `第 ${layer} 层` : '',
+        });
+        stBridge.upsertEntryInBook(book, `角色·${name}`, content, {
+            isConstant: false,
+            keywords: characterKeys(name, content),
+            extra: { position: 0, depth: 0, order: 860 },
+        });
+        changed++;
+    }
+    return changed;
+}
+
+/** 批量写盘前，把索引里悬空的角色补成最小条目 */
+function auditBookStructure(bookName, book, layer = 0) {
+    const fixed = reconcileRosterEntries(book, layer);
+    if (fixed) console.log(`[worldsim] 补建 ${fixed} 个最小角色条目（索引已有名字）`);
+    return fixed;
+}
+
 /**
  * 对外：重建索引顶部事实块（TOOL 保存玩家档案/声望后调用，让下一轮注入的摘要立刻更新）。
  * 不传 bookName 时用当前追踪档；失败不影响主流程。
@@ -349,6 +384,9 @@ export async function refreshIndexHeader(bookName = '') {
         if (!book || !book.entries) return false;
         // 在场行来自 rosterCache；保存玩家档案/声望前先按最新书刷新，避免写到旧在场或把在场行清掉
         refreshSnapshots(name, book);
+        if (auditBookStructure(name, book, Number((getSlotClock(name) || {}).layer) || 0)) {
+            await stBridge.persistLorebook(name, book);
+        }
         const header = buildIndexHeader(name, book);
         return await refreshBriefs(name, null, header);
     } catch (e) {
@@ -378,6 +416,33 @@ function indexHeaderEnabled() {
         || settings.enableReputation === true;
 }
 
+/** 程序侧能确定的结构问题：地点对不上、城市没地点、死者仍在场 */
+function auditWorldWarnings(bookName, book) {
+    if (!book || !book.entries) return [];
+    const out = [];
+    const clock = getSlotClock(bookName) || {};
+    const place = String(clock.place || '').trim();
+    const map = parseMap((findBookEntry(book, MAP_TITLE) || {}).content || '');
+    const sites = Object.values(map.sites || {}).flatMap(list => Object.keys(list || {}));
+    if (place && sites.length && !sites.some(site => place.includes(site) || site.includes(place))) {
+        out.push(`地点不在图：${place}`);
+    }
+    const emptyCities = [];
+    for (const cities of Object.values(map.cities || {})) {
+        for (const city of Object.keys(cities || {})) {
+            if (!Object.keys((map.sites || {})[city] || {}).length) emptyCities.push(city);
+        }
+    }
+    if (emptyCities.length) out.push(`待补地点：${emptyCities.slice(0, 2).join('、')}`);
+    if (place) {
+        for (const c of rosterCache.get(bookName) || []) {
+            if (!c || String(c.location || '').trim() !== place) continue;
+            if (characterIsDead(book, c.name)) out.push(`已死亡仍在场：${c.name}`);
+        }
+    }
+    return out;
+}
+
 function buildIndexHeader(bookName, book) {
     if (!indexHeaderEnabled()) return '';
     const useState = settings.enableStateCheck === true;
@@ -387,6 +452,9 @@ function buildIndexHeader(bookName, book) {
     const clock = getSlotClock(bookName) || {};
     const present = [];
     const warnings = [];
+
+    const audit = auditWorldWarnings(bookName, book);
+    if (audit.length) warnings.push(...audit.slice(0, 3));
 
     if (useState) {
         const place = String(clock.place || '').trim();
@@ -456,7 +524,7 @@ function buildMapPrompt() {
   "sites": {"城市名": {"地点名": "方位：南｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}},
   "del": {"regions": ["..."], "cities": ["..."], "sites": ["..."]}
 }
-只写本轮新出现/变化的地点；当前地点由插件自动写。不设地点数量上限：剧情走到新国家、新城市、新地区，就继续新增，不要因为已有几个地点就停止扩展。方位用 北/南/东/西/中/东北/西北/东南/西南，同层要分散。地点名**全局唯一**，不要重名；重名用“城市·地点”区分。地点名要能在正文里出现，且位置必须使用这里的小地点名。
+只写本轮新出现/变化的地点；当前地点由插件自动写。不设地点数量上限：剧情走到新国家、新城市、新地区，就继续新增，不要因为已有几个地点就停止扩展。如果当前城市已在地图里、但小地点少于 4 个，本轮补 1–2 个周边地点。方位用 北/南/东/西/中/东北/西北/东南/西南，同层要分散。地点名**全局唯一**，不要重名；重名用“城市·地点”区分。地点名要能在正文里出现，且位置必须使用这里的小地点名。
 **每个出口都要有路程**：出口：A、B｜路程：A=1天、B=10分钟；时间从本地出发；角色移动、NPC 赶来、支线赶期限都以这个为准。
 </nekotools:track.map>`;
     return p;
@@ -675,6 +743,7 @@ function buildReputationPrompt() {
 - 名声等级固定只能选一个：仇恨 / 敌视 / 冷淡 / 中立 / 友善 / 尊敬 / 崇拜。
 - 原因写一句话，说明为什么会是这个等级。
 - 参考游戏成就，通常为用户角色达成某个大目标或成果获得；也可能因为做了奇怪的事获得搞笑的成就。
+- 如果本轮完成/失败支线、主线推进、进入新国家/势力核心、救下/杀死重要 NPC、获得/失去关键道具、公开身份或改变某地声望等级，检查一次是否产生成就；没有就明确不写，不要硬凑。
 </nekotools:track.reputation>`;
     return p;
 }
@@ -1601,6 +1670,7 @@ function buildRosterPrompt(bookName = '') {
     let p = `${tagOpen}
 【角色索引】JSON 字段 "roster": {"add": {"角色名": "等级｜位置｜最近行动"}, "del": ["角色名"]}
 等级只写 T1/T2/T3/T4（T1 核心 / T2 重要 / T3 配角 / T4 背景）；位置用「地图」里的小地点名；最近行动一句话。
+正文里出现名字、并有台词/动作的角色，即使只是 T4，也要进索引并有一条最小角色档案（姓名/等级/位置/状态/最近行动）；T4 只限制不写详细字段，不是不记录。
 只维护索引，不写详细状态/关系（详细档案在角色追踪）；新角色 add，有变化整条覆盖，死亡/离场 del。
 不要写玩家/user 或地名/设定标题；层号插件自动补。
 ${tagClose}`;
@@ -1858,6 +1928,7 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     }
 
     // 索引顶部事实与普通回合保持一致；开关全关时 header 为空串（清除旧 header）
+    if (auditBookStructure(bookName, book, layer)) await stBridge.persistLorebook(bookName, book);
     const freshBook = await stBridge.loadWorldInfoAsync(bookName, true);
     refreshSnapshots(bookName, freshBook || book);
     const headerBook = indexHeaderEnabled() ? freshBook : null;
@@ -2343,6 +2414,7 @@ registry.register({
                 }
                 await applyTierDowngrades(currentLorebook, replyLayer);
                 refreshSnapshots(currentLorebook, charsBook);
+                auditBookStructure(currentLorebook, charsBook, replyLayer);
                 if (data.items && settings.enableItems) {
                     const itemMap = await applyAggregateOps(currentLorebook, '道具', data.items, 900, { keyword: true });
                     if (itemMap) await syncNames(currentLorebook, 'items', Object.keys(itemMap));
