@@ -18,13 +18,20 @@ import {
     removeCharacterEntry,
     addRosterName,
 } from './slots.js';
-import { slotLabel, parseStatusFields, parseCharacterYaml } from './worldfmt.js';
+import {
+    slotLabel,
+    parseStatusFields,
+    parseCharacterYaml,
+    normalizePlayerProfile,
+    formatPlayerSummary,
+    REPUTATION_TITLE,
+} from './worldfmt.js';
 import { loadConfig, saveConfig } from './worldcfg.js';
 import { readMap, findPath, travelEntries } from './worldmap.js';
 import { refreshChar } from './worldindex.js';
 import { readMain, readQuests, readQuestHistory, clampProgress, saveMain, saveQuests } from './worldquest.js';
 import { generateQuiet } from './st_api.js';
-import { applyRefreshData, buildRefreshContract } from '../modules/worldsim.js';
+import { applyRefreshData, buildRefreshContract, refreshIndexHeader } from '../modules/worldsim.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 import { getSecret } from './apivault.js';
@@ -524,6 +531,8 @@ function placePop() {
 function openPop() {
     const pop = $(POP_ID);
     if (!pop) return;
+    // 开关变化不重建菜单：每次打开时按当前设置刷新两个入口的显隐
+    try { applyPlayerMenuFlags(pop); } catch (err) { console.warn('[nekotools] 刷新玩家菜单项失败', err); }
     if (window.matchMedia('(max-width: 640px)').matches) {
         try { document.activeElement?.blur(); } catch (_) {}
     }
@@ -3134,6 +3143,407 @@ async function showEditModal() {
     });
 }
 
+// ========== 玩家信息 / 声望 ==========
+
+function playerPanelOn() {
+    const cfg = settings.get('worldsim') || {};
+    return cfg.enablePlayerPanel === true;
+}
+
+function reputationOn() {
+    const cfg = settings.get('worldsim') || {};
+    return cfg.enableReputation === true;
+}
+
+/** 菜单项的开关只在打开菜单时刷新，不重建菜单（避免重复绑事件） */
+function applyPlayerMenuFlags(pop) {
+    if (!pop) return;
+    const panel = playerPanelOn();
+    const rep = reputationOn();
+    for (const row of pop.querySelectorAll('.nt-quick-item')) {
+        if (row.dataset.key === 'player') row.style.display = panel ? '' : 'none';
+        else if (row.dataset.key === 'reputation') row.style.display = rep ? '' : 'none';
+    }
+}
+
+function playerLine(parts) {
+    const list = parts.map(v => String(v ?? '').trim());
+    while (list.length && !list[list.length - 1]) list.pop();
+    return list.join('｜');
+}
+
+function playerSplit(line) {
+    return String(line ?? '').split(/[｜|]/).map(s => s.trim());
+}
+
+function playerLines(text) {
+    return String(text ?? '').split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+function playerTags(value) {
+    if (Array.isArray(value)) return value.map(v => String(v ?? '').trim()).filter(Boolean);
+    if (typeof value === 'string') return value.split(/[，,、;；\n]/).map(s => s.trim()).filter(Boolean);
+    return [];
+}
+
+function playerAmount(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, n) : fallback;
+}
+
+function playerCount(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
+}
+
+function playerSection(titleText) {
+    const sec = document.createElement('div');
+    sec.className = 'nt-player-section';
+    if (titleText) {
+        const title = document.createElement('div');
+        title.className = 'nt-player-section-title';
+        title.textContent = titleText;
+        sec.appendChild(title);
+    }
+    return sec;
+}
+
+function playerField(labelText, control, hintText) {
+    const field = document.createElement('label');
+    field.className = 'nt-player-field';
+    const label = document.createElement('span');
+    label.className = 'nt-player-label';
+    label.textContent = labelText;
+    field.appendChild(label);
+    field.appendChild(control);
+    if (hintText) {
+        const hint = document.createElement('span');
+        hint.className = 'nt-player-hint';
+        hint.textContent = hintText;
+        field.appendChild(hint);
+    }
+    return field;
+}
+
+function playerInput(value, type = 'text') {
+    const input = document.createElement('input');
+    input.type = type;
+    input.className = 'nt-player-input';
+    input.value = value === undefined || value === null ? '' : String(value);
+    if (type === 'number') {
+        input.min = '0';
+        input.step = '1';
+    }
+    return input;
+}
+
+function playerArea(value, rows = 4, placeholder = '') {
+    const area = document.createElement('textarea');
+    area.className = 'nt-player-area';
+    area.rows = rows;
+    area.value = value === undefined || value === null ? '' : String(value);
+    if (placeholder) area.placeholder = placeholder;
+    return area;
+}
+
+function playerBriefRow(labelText, value) {
+    const row = document.createElement('div');
+    row.className = 'nt-player-brief-row';
+    const label = document.createElement('span');
+    label.className = 'nt-player-brief-label';
+    label.textContent = labelText;
+    const val = document.createElement('span');
+    val.className = 'nt-player-brief-value';
+    if (value instanceof Node) val.appendChild(value);
+    else val.textContent = String(value ?? '');
+    row.appendChild(label);
+    row.appendChild(val);
+    return row;
+}
+
+function playerTagsEl(tags) {
+    if (!tags.length) {
+        const none = document.createElement('span');
+        none.className = 'nt-player-hint';
+        none.textContent = '无';
+        return none;
+    }
+    const wrap = document.createElement('span');
+    wrap.className = 'nt-player-tags';
+    for (const tag of tags) {
+        const el = document.createElement('span');
+        el.className = 'nt-player-tag';
+        el.textContent = tag;
+        wrap.appendChild(el);
+    }
+    return wrap;
+}
+
+function parsePlayerItems(text) {
+    return playerLines(text).map(line => {
+        const p = playerSplit(line);
+        if (!p[0]) return null;
+        return { name: p[0], count: playerCount(p[1]), place: p[2] || '', state: p[3] || '', note: p[4] || '' };
+    }).filter(Boolean);
+}
+
+function parsePlayerAssets(text) {
+    return playerLines(text).map(line => {
+        const p = playerSplit(line);
+        if (!p[0]) return null;
+        return { name: p[0], state: p[1] || '', income: p[2] || '', note: p[3] || '' };
+    }).filter(Boolean);
+}
+
+function parsePlayerRelations(text) {
+    return playerLines(text).map(line => {
+        const p = playerSplit(line);
+        if (!p[0]) return null;
+        return { name: p[0], tag: p[1] || '', reason: p[2] || '' };
+    }).filter(Boolean);
+}
+
+function parsePlayerPromises(text) {
+    return playerLines(text).map(line => {
+        const p = playerSplit(line);
+        if (!p[0]) return null;
+        return { who: p[0], what: p[1] || '', due: p[2] || '', status: p[3] || '' };
+    }).filter(Boolean);
+}
+
+/** debt（欠人情）不在编辑格子里露出来，但保存时不能丢 */
+function keepRelationDebt(rows, previous) {
+    const old = Array.isArray(previous) ? previous : [];
+    return rows.map(row => {
+        const prev = old.find(x => x && String(x.name || '').trim() === row.name);
+        return prev && prev.debt ? { ...row, debt: prev.debt } : row;
+    });
+}
+
+function playerReadClock(book) {
+    let clock = null;
+    try { clock = readClock(); } catch (_) {}
+    if (!clock || (!clock.time && !clock.place)) {
+        try {
+            const meta = getSlotMeta(book);
+            if (meta && meta.clock) clock = meta.clock;
+        } catch (_) {}
+    }
+    return clock;
+}
+
+function buildPlayerBrief(book, profile) {
+    const sec = playerSection('概况');
+    sec.classList.add('nt-player-brief');
+    const name = String(profile.name ?? '').trim();
+    const identity = String(profile.identity ?? '').trim();
+    sec.appendChild(playerBriefRow('名字', name || '未填写'));
+    sec.appendChild(playerBriefRow('身份', identity || '未填写'));
+
+    const clock = playerReadClock(book);
+    sec.appendChild(playerBriefRow('当前时间', clock && clock.time ? clock.time : '未知'));
+    sec.appendChild(playerBriefRow('当前地点', clock && clock.place ? clock.place : '未知'));
+    sec.appendChild(playerBriefRow('状态标签', playerTagsEl(playerTags(profile.status))));
+
+    let summary = '';
+    try { summary = String(formatPlayerSummary(profile) || '').trim(); } catch (_) {}
+    if (summary) {
+        const hint = document.createElement('div');
+        hint.className = 'nt-player-hint';
+        hint.textContent = summary;
+        sec.appendChild(hint);
+    }
+    return sec;
+}
+
+function buildReputationSection(rep, titleText, emptyText = '还没有记录') {
+    const sec = playerSection(titleText);
+    sec.classList.add('nt-rep');
+    const achievements = rep && Array.isArray(rep.achievements) ? rep.achievements : [];
+    const reputations = rep && Array.isArray(rep.reputations) ? rep.reputations : [];
+
+    if (!achievements.length && !reputations.length) {
+        const empty = document.createElement('div');
+        empty.className = 'nt-rep-empty';
+        empty.textContent = emptyText;
+        sec.appendChild(empty);
+        return sec;
+    }
+
+    if (achievements.length) {
+        const sub = document.createElement('div');
+        sub.className = 'nt-rep-section-title';
+        sub.textContent = '成就';
+        sec.appendChild(sub);
+        for (const ach of achievements) {
+            const card = document.createElement('div');
+            card.className = 'nt-rep-card';
+            const name = document.createElement('div');
+            name.className = 'nt-rep-card-name';
+            name.textContent = String(ach.name || '未命名成就');
+            card.appendChild(name);
+            for (const [cls, label, value] of [
+                ['nt-rep-card-reason', '原因：', ach.reason],
+                ['nt-rep-card-note', '备注：', ach.note],
+                ['nt-rep-card-known', '谁知道：', ach.known],
+            ]) {
+                if (!value) continue;
+                const el = document.createElement('div');
+                el.className = cls;
+                el.textContent = label + String(value);
+                card.appendChild(el);
+            }
+            sec.appendChild(card);
+        }
+    }
+
+    if (reputations.length) {
+        const sub = document.createElement('div');
+        sub.className = 'nt-rep-section-title';
+        sub.textContent = '名声';
+        sec.appendChild(sub);
+        const list = document.createElement('div');
+        list.className = 'nt-rep-list';
+        for (const row of reputations) {
+            const item = document.createElement('div');
+            item.className = 'nt-rep-row';
+            const who = document.createElement('span');
+            who.className = 'nt-rep-who';
+            who.textContent = `${String(row.target || '')}：`;
+            const view = document.createElement('span');
+            view.className = 'nt-rep-view';
+            view.textContent = String(row.view || '');
+            item.appendChild(who);
+            item.appendChild(view);
+            list.appendChild(item);
+        }
+        sec.appendChild(list);
+    }
+    return sec;
+}
+
+async function showPlayerInfoModal() {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+
+    const loaded = await stBridge.loadPlayerProfile(book);
+    const profile = normalizePlayerProfile(loaded || {});
+
+    const body = document.createElement('div');
+    body.className = 'nt-player';
+    body.appendChild(buildPlayerBrief(book, profile));
+
+    const itemRows = Array.isArray(profile.items) ? profile.items : [];
+    const assetRows = Array.isArray(profile.assets) ? profile.assets : [];
+    const relationRows = Array.isArray(profile.relations) ? profile.relations : [];
+    const promiseRows = Array.isArray(profile.promises) ? profile.promises : [];
+
+    const basic = playerSection('身份与金钱');
+    const nameInput = playerInput(profile.name);
+    const identityInput = playerInput(profile.identity);
+    const moneyInput = playerInput(profile.money, 'number');
+    basic.appendChild(playerField('名字', nameInput));
+    basic.appendChild(playerField('身份', identityInput));
+    basic.appendChild(playerField('钱', moneyInput, '只填数字，留空按 0 算'));
+    body.appendChild(basic);
+
+    const itemsSec = playerSection('道具');
+    const itemsArea = playerArea(itemRows.map(it => playerLine([
+        it.name, it.count, it.place, it.state, it.note,
+    ])).join('\n'), 5, '名称｜数量｜位置｜状态｜备注');
+    itemsSec.appendChild(playerField('道具清单', itemsArea, '每行：名称｜数量｜位置｜状态｜备注'));
+    body.appendChild(itemsSec);
+
+    const assetsSec = playerSection('资产');
+    const assetsArea = playerArea(assetRows.map(it => playerLine([
+        it.name, it.state, it.income, it.note,
+    ])).join('\n'), 4, '名称｜状态｜产出｜备注');
+    assetsSec.appendChild(playerField('资产清单', assetsArea, '每行：名称｜状态｜产出｜备注'));
+    body.appendChild(assetsSec);
+
+    const relationsSec = playerSection('人际关系');
+    const relationsArea = playerArea(relationRows.map(it => playerLine([
+        it.name, it.tag, it.reason,
+    ])).join('\n'), 4, '对象｜标签｜原因');
+    relationsSec.appendChild(playerField('关系清单', relationsArea, '每行：对象｜标签｜原因'));
+    body.appendChild(relationsSec);
+
+    const promisesSec = playerSection('承诺');
+    const promisesArea = playerArea(promiseRows.map(it => playerLine([
+        it.who, it.what, it.due, it.status,
+    ])).join('\n'), 4, '谁｜什么｜期限｜状态');
+    promisesSec.appendChild(playerField('承诺清单', promisesArea, '每行：谁｜什么｜期限｜状态'));
+    body.appendChild(promisesSec);
+
+    const statusSec = playerSection('状态');
+    const statusArea = playerArea(playerTags(profile.status).join('，'), 2, '受伤，疲惫');
+    statusSec.appendChild(playerField('状态标签', statusArea, '逗号分隔，例如：受伤，疲惫'));
+    body.appendChild(statusSec);
+
+    if (reputationOn()) {
+        let rep = null;
+        try {
+            rep = await stBridge.readReputation(book);
+        } catch (e) {
+            console.warn('[nekotools] 声望读取失败', e);
+            toast('声望读取失败', 'error');
+        }
+        body.appendChild(buildReputationSection(rep, '声望与成就'));
+    }
+
+    const save = async () => {
+        const next = normalizePlayerProfile(profile);
+        next.name = nameInput.value.trim();
+        next.identity = identityInput.value.trim();
+        next.money = playerAmount(moneyInput.value, 0);
+        next.items = parsePlayerItems(itemsArea.value);
+        next.assets = parsePlayerAssets(assetsArea.value);
+        next.relations = keepRelationDebt(parsePlayerRelations(relationsArea.value), profile.relations);
+        next.promises = parsePlayerPromises(promisesArea.value);
+        next.status = playerTags(statusArea.value);
+        const ok = await stBridge.savePlayerProfile(book, next);
+        if (ok === false) {
+            toast('保存失败：追踪书不存在或写入被拒绝', 'error');
+            return false;
+        }
+        // 让索引顶部的玩家摘要立刻更新（下一轮注入看到的是新数据）
+        try { await refreshIndexHeader(book); } catch (_) {}
+        toast('已保存', 'success');
+        return true;
+    };
+
+    openModal({
+        title: '角色信息',
+        body,
+        wide: true,
+        footer: [
+            { label: '保存', primary: true, onClick: save },
+            { label: '关闭' },
+        ],
+    });
+}
+
+async function showReputationModal() {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+    const rep = await stBridge.readReputation(book);
+    const body = document.createElement('div');
+    body.className = 'nt-player nt-rep';
+    body.appendChild(buildReputationSection(rep, '成就与名声'));
+    openModal({
+        title: REPUTATION_TITLE,
+        body,
+        wide: true,
+        footer: [{ label: '关闭', primary: true }],
+    });
+}
+
 function buildPop() {
     if ($(POP_ID)) return;
 
@@ -3181,6 +3591,8 @@ function buildPop() {
         { group: '世界', icon: '📰', key: 'news', label: '新闻日报', hint: '每游戏日更新 / 最多6条', enabled: true },
         { group: '世界', icon: '📜', key: 'log', label: '世界日志', hint: '最近的角色 / 世界 / 支线变化', enabled: true },
         { group: '角色', icon: '👥', key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
+        { group: '角色', icon: '🪪', key: 'player', label: '角色信息', hint: '钱 / 道具 / 资产 / 关系', enabled: true },
+        { group: '角色', icon: '🏅', key: 'reputation', label: '声望', hint: '成就 / 名声', enabled: true },
         { group: '角色', icon: '📋', key: 'quests', label: '可办事项', hint: '主线 / 支线，可编辑', enabled: true },
         { group: '行动', icon: '🎯', key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪', enabled: true },
         { group: '行动', icon: '🔄', key: 'refresh', label: '请求更新', hint: '按角色/类别静默更新', enabled: true },
@@ -3221,6 +3633,8 @@ function buildPop() {
             else if (item.key === 'news') showNewsModal();
             else if (item.key === 'log') showWorldLogModal();
             else if (item.key === 'roster') showRosterModal().catch(err => toast(`打开角色管理失败：${err && err.message ? err.message : err}`, 'error'));
+            else if (item.key === 'player') showPlayerInfoModal().catch(err => toast(`打开角色信息失败：${err && err.message ? err.message : err}`, 'error'));
+            else if (item.key === 'reputation') showReputationModal().catch(err => toast(`打开声望失败：${err && err.message ? err.message : err}`, 'error'));
             else if (item.key === 'action') showActionModal().catch(err => toast(`打开快捷行动失败：${err && err.message ? err.message : err}`, 'error'));
             else if (item.key === 'map') showMapModal().catch(err => toast(`打开地图失败：${err && err.message ? err.message : err}`, 'error'));
             else if (item.key === 'quests') showQuestsModal().catch(err => toast(`打开可办事项失败：${err && err.message ? err.message : err}`, 'error'));
@@ -3231,6 +3645,7 @@ function buildPop() {
         });
         list.appendChild(row);
     }
+    applyPlayerMenuFlags(list);
 
     pop.appendChild(head);
     pop.appendChild(status);

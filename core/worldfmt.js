@@ -395,6 +395,454 @@ export function daysBetween(a, b) {
     return gameDayNumber(b) - gameDayNumber(a);
 }
 
+// ========== 玩家档案 / 声望 / 定性关系 ==========
+// 世界模拟 2.0：玩家档案存「玩家档案」条目（禁注入），声望存「声望」条目（绿灯）。
+// 解析一律容错：空值/坏数据返回空结构，不抛异常。
+
+export const PLAYER_PROFILE_TITLE = '玩家档案';
+export const REPUTATION_TITLE = '声望';
+
+/** 只认字符串/数字，其余（对象、数组）当空串，避免拼出 [object Object] */
+function profileText(value) {
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    return '';
+}
+
+/** 字符串/数组 → 去重后的字符串数组（字符串按换行、顿号、逗号拆） */
+function profileList(value) {
+    if (Array.isArray(value)) {
+        return [...new Set(value.map(profileText).filter(Boolean))];
+    }
+    const text = profileText(value);
+    if (!text) return [];
+    return [...new Set(text.split(/[\n、,，;；]+/).map(s => s.trim()).filter(Boolean))];
+}
+
+/** 钱/数量：抠出数字，钳到 >= 0；坏数据归 0 */
+function profileAmount(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? Math.max(0, value) : 0;
+    const text = String(value ?? '').replace(/[^\d.\-]/g, '');
+    if (!text) return 0;
+    const num = Number(text);
+    return Number.isFinite(num) ? Math.max(0, num) : 0;
+}
+
+/** 数量取整（>=0）；钱保留小数 */
+function profileCount(value) {
+    return Math.floor(profileAmount(value));
+}
+
+/** 取第一个存在（非 undefined/null）的键值，用来兼容中文/英文两套键 */
+function profilePick(obj, keys) {
+    if (!obj || typeof obj !== 'object') return undefined;
+    for (const key of keys) {
+        const value = obj[key];
+        if (value !== undefined && value !== null) return value;
+    }
+    return undefined;
+}
+
+function mergeUniqueList(base, extra) {
+    const out = Array.isArray(base) ? [...base] : [];
+    for (const item of Array.isArray(extra) ? extra : []) {
+        if (item && !out.includes(item)) out.push(item);
+    }
+    return out;
+}
+
+function itemEntry(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const name = profileText(profilePick(raw, ['名称', 'name']));
+    if (!name) return null;
+    return {
+        name,
+        count: profileCount(profilePick(raw, ['数量', 'count'])),
+        place: profileText(profilePick(raw, ['位置', 'place', '地点'])),
+        state: profileText(profilePick(raw, ['状态', 'state', 'status'])),
+        note: profileText(profilePick(raw, ['备注', 'note'])),
+    };
+}
+
+function assetEntry(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const name = profileText(profilePick(raw, ['名称', 'name']));
+    if (!name) return null;
+    return {
+        name,
+        state: profileText(profilePick(raw, ['状态', 'state', 'status'])),
+        income: profileText(profilePick(raw, ['产出', 'income', 'output'])),
+        note: profileText(profilePick(raw, ['备注', 'note'])),
+    };
+}
+
+function relationEntry(raw) {
+    if (Array.isArray(raw)) {
+        const name = profileText(raw[0]);
+        if (!name) return null;
+        return {
+            name,
+            tag: profileText(raw[1]),
+            reason: profileText(raw[2]),
+            debt: profileText(raw[3]),
+        };
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const name = profileText(profilePick(raw, ['对象', 'name', 'target']));
+    if (!name) return null;
+    return {
+        name,
+        tag: profileText(profilePick(raw, ['标签', 'tag'])),
+        reason: profileText(profilePick(raw, ['原因', 'reason'])),
+        debt: profileText(profilePick(raw, ['欠', 'debt'])),
+    };
+}
+
+function promiseEntry(raw) {
+    if (Array.isArray(raw)) {
+        const who = profileText(raw[0]);
+        if (!who) return null;
+        return {
+            who,
+            what: profileText(raw[1]),
+            due: profileText(raw[2]),
+            status: profileText(raw[3]),
+        };
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const who = profileText(profilePick(raw, ['谁', 'who']));
+    if (!who) return null;
+    return {
+        who,
+        what: profileText(profilePick(raw, ['什么', 'what'])),
+        due: profileText(profilePick(raw, ['期限', 'due'])),
+        status: profileText(profilePick(raw, ['状态', 'status'])),
+    };
+}
+
+function achievementEntry(raw) {
+    if (Array.isArray(raw)) {
+        const name = profileText(raw[0]);
+        if (!name) return null;
+        return {
+            name,
+            reason: profileText(raw[1]),
+            note: profileText(raw[2]),
+            known: profileText(raw[3]),
+        };
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const name = profileText(profilePick(raw, ['名称', 'name']));
+    if (!name) return null;
+    return {
+        name,
+        reason: profileText(profilePick(raw, ['原因', 'reason'])),
+        note: profileText(profilePick(raw, ['备注', 'note'])),
+        known: profileText(profilePick(raw, ['谁知道', 'known', 'knownBy'])),
+    };
+}
+
+function reputationEntry(raw) {
+    if (Array.isArray(raw)) {
+        const target = profileText(raw[0]);
+        if (!target) return null;
+        return { target, view: profileText(raw[1]) };
+    }
+    if (!raw || typeof raw !== 'object') return null;
+    const target = profileText(profilePick(raw, ['对象', '地区', '势力', 'target', 'name']));
+    if (!target) return null;
+    return { target, view: profileText(profilePick(raw, ['看法', 'view'])) };
+}
+
+/** 统一玩家档案：中文/英文键都认，输出规范英文键 */
+export function normalizePlayerProfile(raw) {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const profile = {
+        name: profileText(profilePick(src, ['名字', 'name'])),
+        identity: profileText(profilePick(src, ['身份', 'identity'])),
+        status: profileList(profilePick(src, ['状态', 'status'])),
+        money: profileAmount(profilePick(src, ['钱', 'money'])),
+        assets: [],
+        items: [],
+        relations: [],
+        promises: [],
+        knowledge: profileList(profilePick(src, ['知识', 'knowledge'])),
+    };
+
+    const items = profilePick(src, ['道具', 'items']);
+    if (Array.isArray(items)) {
+        for (const raw of items) {
+            const item = itemEntry(raw);
+            if (item) profile.items.push(item);
+        }
+    }
+    const assets = profilePick(src, ['资产', 'assets']);
+    if (Array.isArray(assets)) {
+        for (const raw of assets) {
+            const asset = assetEntry(raw);
+            if (asset) profile.assets.push(asset);
+        }
+    }
+    const relations = profilePick(src, ['关系', 'relations']);
+    if (Array.isArray(relations)) {
+        for (const raw of relations) {
+            const rel = relationEntry(raw);
+            if (rel) profile.relations.push(rel);
+        }
+    }
+    const promises = profilePick(src, ['承诺', 'promises']);
+    if (Array.isArray(promises)) {
+        for (const raw of promises) {
+            const promise = promiseEntry(raw);
+            if (promise) profile.promises.push(promise);
+        }
+    }
+    return profile;
+}
+
+/**
+ * 合并玩家档案增量（AI 声明用中文键）。
+ * 名字/身份：有值才覆盖；钱/数量：钳到 >=0；道具/资产/关系/承诺按名字合并；
+ * 状态/知识按集合追加去重；「删除道具」按名字删。
+ */
+export function mergePlayerProfile(base, delta) {
+    const current = normalizePlayerProfile(base);
+    const src = delta && typeof delta === 'object' && !Array.isArray(delta) ? delta : {};
+    if (!Object.keys(src).length) return current;
+
+    const money = profilePick(src, ['钱', 'money']);
+    const next = {
+        name: profileText(profilePick(src, ['名字', 'name'])) || current.name,
+        identity: profileText(profilePick(src, ['身份', 'identity'])) || current.identity,
+        status: mergeUniqueList(current.status, profileList(profilePick(src, ['状态', 'status']))),
+        money: money === undefined ? current.money : profileAmount(money),
+        assets: current.assets.map(a => ({ ...a })),
+        items: current.items.map(i => ({ ...i })),
+        relations: current.relations.map(r => ({ ...r })),
+        promises: current.promises.map(p => ({ ...p })),
+        knowledge: mergeUniqueList(current.knowledge, profileList(profilePick(src, ['知识', 'knowledge']))),
+    };
+    // 状态可以显式移除（伤好了/醉醒了），不做只增不减
+    const removeStatus = profileList(profilePick(src, ['移除状态', 'removeStatus']));
+    if (removeStatus.length) {
+        next.status = next.status.filter(s => !removeStatus.includes(s));
+    }
+
+    const items = profilePick(src, ['道具', 'items']);
+    if (Array.isArray(items)) {
+        for (const raw of items) {
+            const incoming = itemEntry(raw);
+            if (!incoming) continue;
+            let item = next.items.find(i => i.name === incoming.name);
+            if (!item) {
+                item = { name: incoming.name, count: 0, place: '', state: '', note: '' };
+                next.items.push(item);
+            }
+            const count = profilePick(raw, ['数量', 'count']);
+            if (count !== undefined && count !== null && String(count).trim() !== '') {
+                item.count = profileCount(count);
+            }
+            if (incoming.place) item.place = incoming.place;
+            if (incoming.state) item.state = incoming.state;
+            if (incoming.note) item.note = incoming.note;
+        }
+    }
+    for (const name of profileList(profilePick(src, ['删除道具', 'deleteItems']))) {
+        next.items = next.items.filter(i => i.name !== name);
+    }
+
+    const assets = profilePick(src, ['资产', 'assets']);
+    if (Array.isArray(assets)) {
+        for (const raw of assets) {
+            const incoming = assetEntry(raw);
+            if (!incoming) continue;
+            let asset = next.assets.find(a => a.name === incoming.name);
+            if (!asset) {
+                asset = { name: incoming.name, state: '', income: '', note: '' };
+                next.assets.push(asset);
+            }
+            if (incoming.state) asset.state = incoming.state;
+            if (incoming.income) asset.income = incoming.income;
+            if (incoming.note) asset.note = incoming.note;
+        }
+    }
+
+    const relations = profilePick(src, ['关系', 'relations']);
+    if (Array.isArray(relations)) {
+        for (const raw of relations) {
+            const incoming = relationEntry(raw);
+            if (!incoming) continue;
+            let rel = next.relations.find(r => r.name === incoming.name);
+            if (!rel) {
+                rel = { name: incoming.name, tag: '', reason: '', debt: '' };
+                next.relations.push(rel);
+            }
+            if (incoming.tag) rel.tag = incoming.tag;
+            if (incoming.reason) rel.reason = incoming.reason;
+            if (incoming.debt) rel.debt = incoming.debt;
+        }
+    }
+
+    const promises = profilePick(src, ['承诺', 'promises']);
+    if (Array.isArray(promises)) {
+        for (const raw of promises) {
+            const incoming = promiseEntry(raw);
+            if (!incoming) continue;
+            // 有「什么」时按 谁+什么 认；只有「谁」时按谁更新最近一条
+            let promise = incoming.what
+                ? next.promises.find(p => p.who === incoming.who && p.what === incoming.what)
+                : next.promises.find(p => p.who === incoming.who);
+            if (!promise) {
+                promise = { who: incoming.who, what: incoming.what, due: incoming.due, status: incoming.status };
+                next.promises.push(promise);
+            } else {
+                if (incoming.what) promise.what = incoming.what;
+                if (incoming.due) promise.due = incoming.due;
+                if (incoming.status) promise.status = incoming.status;
+            }
+        }
+    }
+
+    return next;
+}
+
+/** 索引顶部的一行玩家摘要：玩家：名字｜钱 12｜物品：剑×1、药×2｜状态：受伤 */
+export function formatPlayerSummary(profile) {
+    const p = normalizePlayerProfile(profile);
+    const parts = [`玩家：${p.name || '未知'}`];
+    parts.push(`钱 ${p.money}`);
+    const items = p.items
+        .slice(0, 6)
+        .map(item => (item.count > 0 ? `${item.name}×${item.count}` : item.name));
+    if (items.length) parts.push(`物品：${items.join('、')}`);
+    if (p.status.length) parts.push(`状态：${p.status.slice(0, 6).join('、')}`);
+    return parts.join('｜');
+}
+
+/**
+ * 索引顶部事实块（常量放在索引最前面，每轮整段重写，不会叠加）：
+ *   【当前】时间｜地点｜在场：A、B
+ *   【提醒】…
+ *   玩家：…
+ *   声望：…
+ */
+export function formatIndexHeader({ time = '', place = '', present = [], warnings = [], playerLine = '', repLine = '' } = {}) {
+    const lines = [];
+    const here = [];
+    const t = profileText(time);
+    const p = profileText(place);
+    const who = profileList(present);
+    if (t) here.push(t);
+    if (p) here.push(p);
+    if (who.length) here.push(`在场：${who.join('、')}`);
+    if (here.length) lines.push(`【当前】${here.join('｜')}`);
+
+    const warn = profileList(warnings);
+    if (warn.length) lines.push(`【提醒】${warn.join('；')}`);
+
+    const player = profileText(playerLine);
+    if (player) lines.push(/^玩家[：:]/.test(player) ? player : `玩家：${player}`);
+
+    const rep = profileText(repLine);
+    if (rep) lines.push(/^(声望[：:]|【声望】)/.test(rep) ? rep : `声望：${rep}`);
+
+    return lines.join('\n');
+}
+
+/** 解析「声望」条目：成就一行一条、名声一行一条；空/坏数据返回空数组 */
+export function parseReputationContent(content) {
+    const out = { achievements: [], reputations: [] };
+    for (const rawLine of String(content ?? '').split('\n')) {
+        const line = rawLine.trim().replace(/^[-*·]\s*/, '');
+        if (!line) continue;
+        const parts = line.split(/[｜|]/).map(s => s.trim());
+        const kind = parts[0];
+        if (kind === '成就') {
+            const name = parts[1] || '';
+            if (!name) continue;
+            out.achievements.push({
+                name,
+                reason: parts[2] || '',
+                note: parts[3] || '',
+                known: parts[4] || '',
+            });
+        } else if (kind === '名声') {
+            const target = parts[1] || '';
+            if (!target) continue;
+            out.reputations.push({ target, view: parts.slice(2).join('｜') });
+        }
+    }
+    return out;
+}
+
+/** 生成「声望」条目文本；中文键/英文键都认 */
+export function formatReputationContent(rep) {
+    const src = rep && typeof rep === 'object' ? rep : {};
+    const lines = [];
+
+    const rawAchievements = profilePick(src, ['成就', 'achievements']);
+    if (Array.isArray(rawAchievements)) {
+        for (const raw of rawAchievements) {
+            const a = achievementEntry(raw);
+            if (!a) continue;
+            lines.push(`- 成就｜${a.name}｜${a.reason}｜${a.note}｜${a.known}`);
+        }
+    }
+
+    const rawReputations = profilePick(src, ['名声', 'reputations', 'fame']);
+    if (Array.isArray(rawReputations)) {
+        for (const raw of rawReputations) {
+            const r = reputationEntry(raw);
+            if (!r) continue;
+            lines.push(`- 名声｜${r.target}｜${r.view}`);
+        }
+    } else if (rawReputations && typeof rawReputations === 'object') {
+        // 兼容 { 对象: 看法 } 的映射写法
+        for (const [target, view] of Object.entries(rawReputations)) {
+            const name = profileText(target);
+            if (!name) continue;
+            lines.push(`- 名声｜${name}｜${profileText(view)}`);
+        }
+    }
+
+    return lines.join('\n');
+}
+
+/** 旧关系数值转定性标签；新格式原样返回 */
+export function normalizeRelationValue(value) {
+    const text = profileText(value);
+    if (!text) return '';
+    const favMatch = text.match(/好感\s*[:：]?\s*(\d{1,3})/);
+    const trustMatch = text.match(/信任\s*[:：]?\s*(\d{1,3})/);
+    // 没有好感/信任数值 = 已经是定性写法，原样返回
+    if (!favMatch && !trustMatch) return text;
+
+    let reason = '';
+    const tagMatch = text.match(/标签\s*[:：]\s*([\s\S]*)$/);
+    if (tagMatch) {
+        reason = tagMatch[1].trim();
+    } else {
+        const rest = text.split(/[｜|]/)
+            .map(s => s.trim())
+            .filter(s => s && !/^(好感|信任)/.test(s));
+        reason = rest.join('；');
+    }
+
+    const fav = favMatch ? Number(favMatch[1]) : 50;
+    const trust = trustMatch ? Number(trustMatch[1]) : 50;
+    const tag = relationTagOf(fav, trust);
+    return reason ? `${tag}：${reason}` : tag;
+}
+
+/** 好感/信任 → 定性标签（陌生/戒备/亲近/信任/依赖/敌对） */
+function relationTagOf(fav, trust) {
+    if (fav <= 20) return '敌对';
+    if (fav <= 40) return '戒备';
+    if (fav <= 60) return '陌生';
+    if (fav <= 80) return '亲近';
+    return trust >= 81 ? '依赖' : '信任';
+}
+
 /**
  * 生成存档文件对象。
  * book 传 ST 原样的世界书对象（{ entries: {...} }），内部深拷贝，避免调用方后续改动污染。

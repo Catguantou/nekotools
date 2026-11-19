@@ -5,9 +5,14 @@ import { touchSlot, getSlotClock, setSlotClock, appendSlotLog, getSlotMeta, setS
 import { loadConfig, getCachedConfig } from '../core/worldcfg.js';
 import { migrateIndex, syncChars, syncNames, refreshChar, refreshBriefs, parseIndex, INDEX_TITLE } from '../core/worldindex.js';
 import { applyMapOps, setCurrent, mapHasStructure, parseMap, migrateMap, MAP_TITLE } from '../core/worldmap.js';
-import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent } from '../core/worldquest.js';
+import { applyMain, applyQuests, pruneQuests, parseMain, mainHasContent, parseQuests, parseQuestValue } from '../core/worldquest.js';
 import { deriveGreenKeys, deriveNewsKeys, parseKeywordSpec, extractStructuredKeys, isAbstractName } from '../core/worldkeys.js';
-import { parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml, normalizeMemories, normalizeRelationships } from '../core/worldfmt.js';
+import {
+    parseStatusFields, parseGameDate, daysBetween, stripRosterLayer, formatCharacterYaml, parseCharacterYaml,
+    normalizeMemories, normalizeRelationships, PLAYER_PROFILE_TITLE, REPUTATION_TITLE,
+    normalizePlayerProfile, mergePlayerProfile, formatPlayerSummary, formatIndexHeader,
+    formatReputationContent, parseReputationContent,
+} from '../core/worldfmt.js';
 
 const defaultSettings = {
     enabled: true,
@@ -19,7 +24,11 @@ const defaultSettings = {
     enableWorld: true,
     enableMap: true,
     enableQuests: true,
-    enableCognition: true,
+    // 世界模拟 2.0：四组新功能默认全关（关掉时零副作用）
+    enableStateCheck: false,
+    enableCognition: false,
+    enableReputation: false,
+    enablePlayerPanel: false,
     enableForeshadow: true,
     enableSummary: true,
     enableBigSummary: true,
@@ -39,11 +48,13 @@ const defaultSettings = {
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
         world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', genesis: '', tick: '', map: '', quest: '', cognition: '',
+        player: '', reputation: '',
     },
     promptModes: {
         status: 'append', preview: 'append', chars: 'append', items: 'append', plot: 'append',
         world: 'append', foreshadow: 'append', summary: 'append', bigSummary: 'append', roster: 'append',
         genesis: 'append', tick: 'append', map: 'append', quest: 'append', cognition: 'append',
+        player: 'append', reputation: 'append',
     }
 };
 
@@ -186,6 +197,196 @@ function refreshSnapshots(bookName, book) {
     if (!bookName || !book || !book.entries) return;
     const idx = Object.values(book.entries).find(e => e && e.comment === INDEX_TITLE);
     rosterCache.set(bookName, idx ? parseIndex(idx.content).chars : []);
+}
+
+// ========== 世界模拟 2.0：玩家档案 / 声望 / 索引顶部事实 ==========
+
+/** 在已加载的 book 对象里按条目名找条目（本轮 batch 直接复用，不额外读盘） */
+function findBookEntry(book, title) {
+    if (!book || !book.entries) return null;
+    return Object.values(book.entries).find(e => e && e.comment === title) || null;
+}
+
+/** 从已加载的 book 读玩家档案；没有/坏数据按空档案处理 */
+function readPlayerProfileFromBook(book) {
+    const entry = findBookEntry(book, PLAYER_PROFILE_TITLE);
+    if (!entry) return normalizePlayerProfile({});
+    try {
+        return normalizePlayerProfile(JSON.parse(entry.content));
+    } catch (_) {
+        return normalizePlayerProfile({});
+    }
+}
+
+/** 只认字符串/数字，对象/数组当空串，避免声望写出 [object Object] */
+function safeRepText(value) {
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    return '';
+}
+
+/** 声望增量里的一条成就（数组/对象/字符串都认） */
+function toReputationAchievement(raw) {
+    if (Array.isArray(raw)) {
+        return { name: safeRepText(raw[0]), reason: safeRepText(raw[1]), note: safeRepText(raw[2]), known: safeRepText(raw[3]) };
+    }
+    if (raw && typeof raw === 'object') {
+        return {
+            name: safeRepText(raw['名称'] ?? raw.name),
+            reason: safeRepText(raw['原因'] ?? raw.reason),
+            note: safeRepText(raw['备注'] ?? raw.note),
+            known: safeRepText(raw['谁知道'] ?? raw.known ?? raw.knownBy),
+        };
+    }
+    return { name: safeRepText(raw), reason: '', note: '', known: '' };
+}
+
+/** 声望增量里的一条名声（数组/对象/字符串都认） */
+function toReputationFame(raw) {
+    if (Array.isArray(raw)) return { target: safeRepText(raw[0]), view: safeRepText(raw[1]) };
+    if (raw && typeof raw === 'object') {
+        return {
+            target: safeRepText(raw['对象'] ?? raw['地区'] ?? raw['势力'] ?? raw.target ?? raw.name),
+            view: safeRepText(raw['看法'] ?? raw.view),
+        };
+    }
+    const parts = safeRepText(raw).split(/[｜|]/).map(s => s.trim());
+    return { target: parts[0] || '', view: parts.slice(1).join('｜') };
+}
+
+/** 声望条目里同一成就/名声只更新有值的字段，AI 少写字段时保留旧内容 */
+function mergeReputationDelta(base, delta) {
+    const src = delta && typeof delta === 'object' && !Array.isArray(delta) ? delta : {};
+    const current = base && typeof base === 'object' ? base : {};
+    const achievements = new Map();
+    for (const a of Array.isArray(current.achievements) ? current.achievements : []) {
+        if (a && a.name) achievements.set(a.name, { ...a });
+    }
+    const rawAchievements = Array.isArray(src['成就']) ? src['成就']
+        : (Array.isArray(src.achievements) ? src.achievements : []);
+    for (const raw of rawAchievements) {
+        const a = toReputationAchievement(raw);
+        if (!a.name) continue;
+        const prev = achievements.get(a.name) || {};
+        achievements.set(a.name, {
+            name: a.name,
+            reason: a.reason || prev.reason || '',
+            note: a.note || prev.note || '',
+            known: a.known || prev.known || '',
+        });
+    }
+
+    const reputations = new Map();
+    for (const r of Array.isArray(current.reputations) ? current.reputations : []) {
+        if (r && r.target) reputations.set(r.target, { ...r });
+    }
+    const rawFame = Array.isArray(src['名声']) ? src['名声']
+        : (Array.isArray(src.reputations) ? src.reputations
+            : (src.fame && typeof src.fame === 'object' && !Array.isArray(src.fame) ? src.fame : []));
+    for (const raw of rawFame) {
+        const r = toReputationFame(raw);
+        if (!r.target) continue;
+        const prev = reputations.get(r.target) || {};
+        reputations.set(r.target, {
+            target: r.target,
+            view: r.view || prev.view || '',
+        });
+    }
+
+    return { achievements: [...achievements.values()], reputations: [...reputations.values()] };
+}
+
+/** 磁盘上的角色条目是否已写死「死亡」——状态核查开启时跳过该角色本轮更新。
+ * 只认状态整值（死亡/已死/身亡），避免「正在调查父亲的死亡」这类正常文案被误判冻结。 */
+function characterIsDead(book, name) {
+    const entry = findBookEntry(book, `角色·${name}`);
+    if (!entry) return false;
+    return /^\s*状态\s*[:：]\s*["'“”]?(?:已死亡|已死|死亡|身亡|已身亡)["'“”]?\s*$/m.test(String(entry.content || ''));
+}
+
+/**
+ * 对外：重建索引顶部事实块（TOOL 保存玩家档案/声望后调用，让下一轮注入的摘要立刻更新）。
+ * 不传 bookName 时用当前追踪档；失败不影响主流程。
+ */
+export async function refreshIndexHeader(bookName = '') {
+    const name = bookName || getLorebookName();
+    if (!name) return false;
+    try {
+        const book = await stBridge.loadWorldInfoAsync(name, true);
+        if (!book || !book.entries) return false;
+        // 在场行来自 rosterCache；保存玩家档案/声望前先按最新书刷新，避免写到旧在场或把在场行清掉
+        refreshSnapshots(name, book);
+        const header = buildIndexHeader(name, book);
+        return await refreshBriefs(name, null, header);
+    } catch (e) {
+        console.warn('[worldsim] 重建索引顶部事实失败', e);
+        return false;
+    }
+}
+
+/** 索引里的声望摘要：只放成就名/名声对象 + 成就条数，控制 token */
+function buildReputationLine(book) {
+    const entry = findBookEntry(book, REPUTATION_TITLE);
+    const rep = parseReputationContent(entry ? entry.content : '');
+    const names = [
+        ...rep.achievements.map(a => a.name).filter(Boolean).slice(0, 4),
+        ...rep.reputations.map(r => r.target).filter(Boolean).slice(0, 2),
+    ];
+    return `${names.join('、') || '暂无'}（成就 ${rep.achievements.length} 条）`;
+}
+
+/**
+ * 索引顶部事实块：只在对应开关开启时生成。
+ * 状态核查 → 时间/地点/在场 + 1 天内到期或已过期的支线；个人信息 → 玩家摘要；声望 → 声望摘要。
+ */
+function indexHeaderEnabled() {
+    return settings.enableStateCheck === true
+        || settings.enablePlayerPanel === true
+        || settings.enableReputation === true;
+}
+
+function buildIndexHeader(bookName, book) {
+    if (!indexHeaderEnabled()) return '';
+    const useState = settings.enableStateCheck === true;
+    const usePlayer = settings.enablePlayerPanel === true;
+    const useRep = settings.enableReputation === true;
+
+    const clock = getSlotClock(bookName) || {};
+    const present = [];
+    const warnings = [];
+
+    if (useState) {
+        const place = String(clock.place || '').trim();
+        if (place) {
+            for (const c of rosterCache.get(bookName) || []) {
+                if (!c || String(c.location || '').trim() !== place) continue;
+                const tier = String(c.tier || '').trim();
+                present.push(tier ? `${c.name}(${tier})` : String(c.name || ''));
+                if (present.length >= 6) break;
+            }
+        }
+        const today = parseGameDate(clock.time || '');
+        if (today) {
+            const questEntry = findBookEntry(book, '支线');
+            const quests = parseQuests(questEntry ? questEntry.content : '');
+            for (const [name, value] of Object.entries(quests)) {
+                const quest = parseQuestValue(value);
+                if (!quest.deadline) continue;
+                if (/^(已)?(完成|成功|达成|解决|失败|过期|放弃|取消|失效)/.test(String(quest.status || '').trim())) continue;
+                const deadline = parseGameDate(quest.deadline);
+                if (!deadline) continue;
+                const left = daysBetween(today, deadline);
+                if (left > 1) continue;
+                warnings.push(left < 0 ? `${name}（已过期 ${quest.deadline}）` : `${name}（${quest.deadline}）`);
+                if (warnings.length >= 3) break;
+            }
+        }
+    }
+
+    const playerLine = usePlayer ? formatPlayerSummary(readPlayerProfileFromBook(book)) : '';
+    const repLine = useRep ? `【声望】${buildReputationLine(book)}` : '';
+    const reminders = warnings.length ? [`到期：${warnings.join('、')}`] : [];
+    return formatIndexHeader({ time: clock.time, place: clock.place, present, warnings: reminders, playerLine, repLine });
 }
 
 /** 开局地图生成：从世界书地点出发，补全周边可探索地点 */
@@ -417,6 +618,24 @@ function buildCognitionPrompt() {
     return applyPromptMode('cognition', p);
 }
 
+/** 个人信息声明：只描述 player 块的 JSON 字段，不写叙事要求（模式由 pushTrackedPrompt 统一处理） */
+function buildPlayerPrompt() {
+    const p = `<nekotools:track.player>
+【个人信息】JSON 字段 "player": {"名字":"可选","身份":"可选","钱":0,"道具":[{"名称","数量","位置","状态","备注"}],"删除道具":["名"],"资产":[{"名称","状态","产出","备注"}],"关系":[{"对象","标签","原因"}],"承诺":[{"谁","什么","期限","状态"}],"状态":["受伤"],"移除状态":["受伤"]}
+只写本轮变化，没有的字段省略；没有变化就省略整个 player。
+</nekotools:track.player>`;
+    return p;
+}
+
+/** 声望声明：只描述 rep 块的 JSON 字段，不写叙事要求（模式由 pushTrackedPrompt 统一处理） */
+function buildReputationPrompt() {
+    const p = `<nekotools:track.reputation>
+【声望声明】JSON 字段 "rep": {"成就":[["名称","原因","备注","谁知道"]],"名声":[["地区/势力","看法"]]}
+只写本轮新增或变化，没有就省略。
+</nekotools:track.reputation>`;
+    return p;
+}
+
 function buildStatusPrompt() {
     const tagOpen = '<ws_' + 'status>';
     const tagClose = '</ws_' + 'status>';
@@ -456,16 +675,21 @@ function buildTrackingMessages(bookName = '') {
         || (settings.enableWorld && promptMode('world') !== 'off')
         || (settings.enableForeshadow && promptMode('foreshadow') !== 'off')
         || (settings.enableMap && promptMode('map') !== 'off')
-        || (settings.enableQuests && promptMode('quest') !== 'off');
+        || (settings.enableQuests && promptMode('quest') !== 'off')
+        || (settings.enablePlayerPanel && promptMode('player') !== 'off')
+        || (settings.enableReputation && promptMode('reputation') !== 'off');
     if (!anyEnabled) return list;
 
     const tagOpen = '<ws_' + 'update>';
     const tagClose = '</ws_' + 'update>';
+    const contractKeys = ['chars', 'tick', 'items', 'plot', 'world', 'map', 'main', 'quests', 'foreshadow', 'roster'];
+    if (settings.enablePlayerPanel && promptMode('player') !== 'off') contractKeys.push('player');
+    if (settings.enableReputation && promptMode('reputation') !== 'off') contractKeys.push('rep');
     list.push({
         role: 'system',
         content: `<nekotools:update>
 【状态数据流契约】必须在本轮回复末尾输出 ${tagOpen} ... ${tagClose}，两者都不能省略，标签内含合法 JSON（不要代码块包裹，标签外不加任何其它字符）。
-chars / tick / items / plot / world / map / main / quests / foreshadow / roster 都只写**本轮变化**：chars 写有变化的角色；tick 写离屏角色的后台行动；其余分类只写增量（add/del），绝不重复输出未变化的内容。
+${contractKeys.join(' / ')} 都只写**本轮变化**：chars 写有变化的角色；tick 写离屏角色的后台行动；其余分类只写增量（add/del），绝不重复输出未变化的内容。
 </nekotools:update>`
     });
 
@@ -549,6 +773,10 @@ ${recordUserChar ? `用户角色「${userName}」也作为一条普通角色输�
 `;
         pushTrackedPrompt(list, 'foreshadow', c + `</nekotools:track.foreshadow>`);
     }
+
+    // 世界模拟 2.0：个人信息 / 声望只在对应开关打开时要求声明
+    if (settings.enablePlayerPanel) pushTrackedPrompt(list, 'player', buildPlayerPrompt());
+    if (settings.enableReputation) pushTrackedPrompt(list, 'reputation', buildReputationPrompt());
 
     return list.filter(m => String(m && m.content || '').trim());
 }
@@ -1144,7 +1372,15 @@ async function applyClock(bookName, captured, replyLayer = 0) {
     }
 
     const oldDate = parseGameDate(oldClock.time);
-    const newDate = parseGameDate(merged.time);
+    let newDate = parseGameDate(merged.time);
+
+    // 状态核查：时间倒流时只保留旧时间，地点/天气等本轮字段照常合并（只警告，不拦正文）
+    if (settings.enableStateCheck && oldDate && newDate && daysBetween(oldDate, newDate) < 0) {
+        console.warn('[worldsim] 时间倒流，已忽略本次时钟时间');
+        merged.time = oldClock.time;
+        newDate = parseGameDate(merged.time);
+        clearClockJump(bookName);
+    }
 
     const ctx = stBridge.getContext();
     const layer = replyLayer || (Array.isArray(ctx.chat) ? ctx.chat.length : 0);
@@ -1532,8 +1768,11 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         await stBridge.persistLorebook(bookName, latest);
     }
 
-    refreshSnapshots(bookName, book);
-    await refreshBriefs(bookName);
+    // 索引顶部事实与普通回合保持一致；开关全关时 header 为空串（清除旧 header）
+    const freshBook = await stBridge.loadWorldInfoAsync(bookName, true);
+    refreshSnapshots(bookName, freshBook || book);
+    const headerBook = indexHeaderEnabled() ? freshBook : null;
+    await refreshBriefs(bookName, freshBook, headerBook ? buildIndexHeader(bookName, headerBook) : '');
     recordWorldChange(bookName, data, layer, questPrune);
     return summary;
 }
@@ -1545,6 +1784,7 @@ export function getDefaultPrompts() {
         'enableStatus', 'enablePreview', 'enableChars', 'enableItems', 'enablePlot',
         'enableWorld', 'enableForeshadow', 'enableMap', 'enableQuests', 'enableCognition',
         'enableSummary', 'enableBigSummary', 'enableTicks',
+        'enableStateCheck', 'enablePlayerPanel', 'enableReputation',
     ];
     const savedFlags = {};
     settings.customPrompts = {};
@@ -1578,6 +1818,8 @@ export function getDefaultPrompts() {
             map: buildMapPrompt(),
             quest: buildQuestPrompt(),
             cognition: buildCognitionPrompt(),
+            player: buildPlayerPrompt(),
+            reputation: buildReputationPrompt(),
         };
     } finally {
         settings.customPrompts = savedCustom;
@@ -1964,6 +2206,11 @@ registry.register({
                         const n = String(name).trim();
                         if (!n || blockedNow.has(n)) continue;
                         if (!settings.recordUserCharacter && userCharName && n === userCharName) continue;
+                        // 状态核查：磁盘上已写死死亡的角色不再更新（只警告，不拦正文）
+                        if (settings.enableStateCheck && characterIsDead(charsBook, n)) {
+                            console.warn('[worldsim] 角色已死亡，跳过本轮更新:', n);
+                            continue;
+                        }
                         await updateCharacterEntry(currentLorebook, n, info, charsBook, replyLayer);
                         touchedChars.push({ name: n, info });
                     }
@@ -1975,6 +2222,10 @@ registry.register({
                         const n = String(name).trim();
                         if (!n || blockedNow.has(n) || !info || typeof info !== 'object') continue;
                         if (!settings.recordUserCharacter && userCharName && n === userCharName) continue;
+                        if (settings.enableStateCheck && characterIsDead(charsBook, n)) {
+                            console.warn('[worldsim] 角色已死亡，跳过本轮更新:', n);
+                            continue;
+                        }
                         await updateCharacterEntry(currentLorebook, n, info, charsBook, replyLayer);
                         touchedChars.push({ name: n, info });
                     }
@@ -2051,8 +2302,45 @@ registry.register({
                     const foreMap = await applyAggregateOps(currentLorebook, '伏笔', data.foreshadow, 920, { keyword: true });
                     if (foreMap) await syncNames(currentLorebook, 'foreshadows', Object.keys(foreMap));
                 }
+
+                // 世界模拟 2.0：玩家档案增量（禁注入条目，走本轮 batch，不单独落盘）
+                if (settings.enablePlayerPanel && data.player && typeof data.player === 'object' && !Array.isArray(data.player)) {
+                    const profile = mergePlayerProfile(readPlayerProfileFromBook(charsBook), data.player);
+                    stBridge.upsertEntryInBook(charsBook, PLAYER_PROFILE_TITLE, JSON.stringify(profile, null, 2), {
+                        isConstant: true,
+                        extra: { disable: true, position: 0, order: 9998, key: [] },
+                    });
+                }
+
+                // 世界模拟 2.0：声望增量（绿灯条目，关键词 = 成就名 + 名声对象）
+                if (settings.enableReputation && data.rep && typeof data.rep === 'object' && !Array.isArray(data.rep)) {
+                    const repEntry = findBookEntry(charsBook, REPUTATION_TITLE);
+                    const mergedRep = mergeReputationDelta(
+                        parseReputationContent(repEntry ? repEntry.content : ''),
+                        data.rep,
+                    );
+                    const repNames = [
+                        ...mergedRep.achievements.map(a => a.name),
+                        ...mergedRep.reputations.map(r => r.target),
+                    ].filter(Boolean);
+                    // 关键词全被过滤时退回清理过的短名，避免 key=[] 绿灯永不激活
+                    let repKeys = deriveGreenKeys(repNames);
+                    if (!repKeys.length) {
+                        repKeys = [...new Set(repNames
+                            .map(n => String(n || '').replace(/[「」『』【】\[\]《》<>"'“”‘’\s]/g, '').trim())
+                            .filter(n => n.length >= 2 && n.length <= 6))].slice(0, 6);
+                    }
+                    stBridge.upsertEntryInBook(charsBook, REPUTATION_TITLE, formatReputationContent(mergedRep), {
+                        isConstant: false,
+                        keywords: repKeys,
+                        extra: { position: 0, depth: 0, order: 940 },
+                    });
+                }
+
                 recordWorldChange(currentLorebook, data, replyLayer, questPrune);
-                await refreshBriefs(currentLorebook);
+                // 索引最前面放本轮事实（只在对应开关开启时；空串表示清除旧 header）
+                const indexHeader = buildIndexHeader(currentLorebook, charsBook);
+                await refreshBriefs(currentLorebook, null, indexHeader);
             } catch (e) {
                 console.warn('[worldsim] JSON 解析失败', e, captured.ws_update);
             }

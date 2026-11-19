@@ -5286,3 +5286,211 @@ body {
     #nt-ws-panel .nt-switch-grid .nt-grid-item { padding: 5px 4px; min-height: 25px; }
     #nt-ws-panel .nt-switch-grid .nt-text { font-size: 9.5px; }
 }
+
+/* 世界规则开关：名称在一行，说明另起一行（01 概览） */
+#nt-ws-panel .nt-rule-grid .nt-grid-item {
+    flex-wrap: wrap;
+    align-content: center;
+    row-gap: 2px;
+}
+#nt-ws-panel .nt-rule-grid .nt-hint {
+    flex-basis: 100%;
+    padding-left: 17px;
+    font-size: 9px;
+    line-height: 1.35;
+    white-space: normal;
+}
+
+/* ============================================================
+   世界模拟 2.0 · TOOL 玩家信息 / 声望弹窗（仅 #nt-quick-modal）
+   ============================================================ */
+#nt-quick-modal .nt-player,
+#nt-quick-modal .nt-rep {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+#nt-quick-modal .nt-player-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 11px 12px;
+    border: 1px solid var(--ntq-line);
+    border-left: 2px solid rgba(47, 91, 215, 0.7);
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.025);
+}
+#nt-quick-modal .nt-player-section-title,
+#nt-quick-modal .nt-rep-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #dfe3ee;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+#nt-quick-modal .nt-player-section-title::before,
+#nt-quick-modal .nt-rep-section-title::before {
+    content: '';
+    width: 3px;
+    height: 10px;
+    background: var(--ntq-blue);
+}
+#nt-quick-modal .nt-player-brief {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+#nt-quick-modal .nt-player-brief-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 11px;
+    line-height: 1.6;
+}
+#nt-quick-modal .nt-player-brief-label {
+    flex: 0 0 64px;
+    color: var(--ntq-dim);
+}
+#nt-quick-modal .nt-player-brief-value {
+    flex: 1;
+    min-width: 0;
+    color: var(--ntq-text);
+    word-break: break-word;
+}
+#nt-quick-modal .nt-player-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+#nt-quick-modal .nt-player-tag {
+    padding: 1px 7px;
+    border: 1px solid rgba(110, 140, 225, 0.4);
+    border-radius: 999px;
+    background: rgba(47, 91, 215, 0.14);
+    color: #b9c6ee;
+    font-size: 10px;
+    line-height: 1.6;
+}
+#nt-quick-modal .nt-player-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+#nt-quick-modal .nt-player-label {
+    color: var(--ntq-dim);
+    font-size: 10px;
+    letter-spacing: 0.5px;
+}
+#nt-quick-modal .nt-player-input,
+#nt-quick-modal .nt-player-area {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--ntq-text);
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.6;
+    outline: none;
+    transition: border-color 0.16s, background 0.16s;
+}
+#nt-quick-modal .nt-player-area {
+    min-height: 64px;
+    resize: vertical;
+}
+#nt-quick-modal .nt-player-input:focus,
+#nt-quick-modal .nt-player-area:focus {
+    border-color: var(--ntq-blue) !important;
+    background: rgba(47, 91, 215, 0.07) !important;
+}
+#nt-quick-modal .nt-player-input::placeholder,
+#nt-quick-modal .nt-player-area::placeholder {
+    color: #5f6570;
+}
+#nt-quick-modal .nt-player-hint {
+    color: #737a86;
+    font-size: 9.5px;
+    line-height: 1.5;
+}
+#nt-quick-modal .nt-player-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+#nt-quick-modal .nt-rep-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+#nt-quick-modal .nt-rep-card {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 11px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 2px;
+    background: linear-gradient(160deg, rgba(47, 91, 215, 0.1), rgba(20, 24, 34, 0.35));
+}
+#nt-quick-modal .nt-rep-card-name {
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+#nt-quick-modal .nt-rep-card-reason {
+    color: #b8c2dc;
+    font-size: 10.5px;
+}
+#nt-quick-modal .nt-rep-card-note {
+    color: var(--ntq-dim);
+    font-size: 10px;
+}
+#nt-quick-modal .nt-rep-card-known {
+    color: #7f8798;
+    font-size: 9.5px;
+}
+#nt-quick-modal .nt-rep-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+#nt-quick-modal .nt-rep-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 9px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.02);
+    font-size: 11px;
+}
+#nt-quick-modal .nt-rep-who {
+    min-width: 0;
+    color: var(--ntq-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#nt-quick-modal .nt-rep-view {
+    flex: none;
+    padding: 0 7px;
+    border: 1px solid rgba(110, 140, 225, 0.35);
+    border-radius: 999px;
+    color: #b9c6ee;
+    font-size: 10px;
+    line-height: 1.7;
+}
+#nt-quick-modal .nt-rep-empty {
+    padding: 12px 8px;
+    border: 1px dashed var(--ntq-line);
+    border-radius: 2px;
+    color: var(--ntq-dim);
+    font-size: 10.5px;
+    text-align: center;
+}

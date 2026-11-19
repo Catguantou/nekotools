@@ -1,5 +1,6 @@
 import { settings } from './settings.js';
-import { slotBaseName, slotName, isSlotOf, slotNumber } from './worldfmt.js';
+import { slotBaseName, slotName, isSlotOf, slotNumber, PLAYER_PROFILE_TITLE, REPUTATION_TITLE, normalizePlayerProfile, parseReputationContent, formatReputationContent } from './worldfmt.js';
+import { deriveGreenKeys } from './worldkeys.js';
 import {
     readWorldNames,
     readActiveWorlds,
@@ -757,6 +758,69 @@ export const stBridge = {
         }
         if (removed) await this.persistLorebook(bookName, book);
         return removed;
+    },
+
+    /** 玩家档案（禁注入条目）：读盘 → 找「玩家档案」→ JSON 解析 → 归一化；没有/坏数据返回空档案 */
+    async loadPlayerProfile(bookName) {
+        const book = await this.loadWorldInfoAsync(bookName);
+        const entry = book && book.entries
+            ? Object.values(book.entries).find(e => e && e.comment === PLAYER_PROFILE_TITLE)
+            : null;
+        if (!entry) return normalizePlayerProfile({});
+        try {
+            return normalizePlayerProfile(JSON.parse(entry.content));
+        } catch (e) {
+            console.warn('[nekotools] 玩家档案 JSON 解析失败，按空档案处理', e);
+            return normalizePlayerProfile({});
+        }
+    },
+
+    /** 玩家档案：整份覆盖写入（禁注入，order 9998）；没书时返回 false，不复活已删的书 */
+    async savePlayerProfile(bookName, profile) {
+        if (!(await this.bookKnown(bookName))) {
+            console.warn('[nekotools] 世界书不存在，跳过玩家档案写入:', bookName);
+            return false;
+        }
+        const book = await this.loadWorldInfoAsync(bookName);
+        if (!book || !book.entries) return false;
+        this.upsertEntryInBook(book, PLAYER_PROFILE_TITLE, JSON.stringify(normalizePlayerProfile(profile), null, 2), {
+            isConstant: true,
+            extra: { disable: true, position: 0, order: 9998, key: [] },
+        });
+        await this.persistLorebook(bookName, book);
+        return true;
+    },
+
+    /** 声望：读「声望」条目 → 解析成就/名声 */
+    async readReputation(bookName) {
+        const book = await this.loadWorldInfoAsync(bookName);
+        const entry = book && book.entries
+            ? Object.values(book.entries).find(e => e && e.comment === REPUTATION_TITLE)
+            : null;
+        return parseReputationContent(entry ? entry.content : '');
+    },
+
+    /** 声望：绿灯条目（order 940），关键词 = 成就名 + 名声对象 */
+    async saveReputation(bookName, rep) {
+        if (!(await this.bookKnown(bookName))) {
+            console.warn('[nekotools] 世界书不存在，跳过声望写入:', bookName);
+            return false;
+        }
+        const book = await this.loadWorldInfoAsync(bookName);
+        if (!book || !book.entries) return false;
+        const content = formatReputationContent(rep);
+        const data = parseReputationContent(content);
+        const names = [
+            ...data.achievements.map(a => a.name),
+            ...data.reputations.map(r => r.target),
+        ].filter(Boolean);
+        this.upsertEntryInBook(book, REPUTATION_TITLE, content, {
+            isConstant: false,
+            keywords: deriveGreenKeys(names),
+            extra: { position: 0, depth: 0, order: 940 },
+        });
+        await this.persistLorebook(bookName, book);
+        return true;
     },
 
     /** 在已加载的 book 对象上就地插入/更新条目，返回条目对象（不再额外读盘） */

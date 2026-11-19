@@ -2,7 +2,7 @@ import { registry } from './registry.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 import { saveSecret, getSecret, deleteSecret } from './apivault.js';
-import { getDefaultPrompts, getSystemPromptPreview } from '../modules/worldsim.js';
+import { getDefaultPrompts, getSystemPromptPreview, refreshIndexHeader } from '../modules/worldsim.js';
 import { mountOnboarding } from './onboarding.js';
 import {
     cleanChatSlop,
@@ -133,7 +133,9 @@ export function mountPanel() {
             ['tick', 'P_12', '后台 tick'],
             ['map', 'P_13', '开局地图生成'],
             ['quest', 'P_14', '开局主线生成'],
-            ['cognition', 'P_15', '认知隔离'],
+            ['cognition', 'P_15', '信息隔离'],
+            ['player', 'P_16', '个人信息声明'],
+            ['reputation', 'P_17', '声望声明'],
         ];
         return map.map(([key, code, name]) => {
             const custom = (s.customPrompts && s.customPrompts[key]) || '';
@@ -195,6 +197,30 @@ export function mountPanel() {
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-quickmenu" class="nt-hidden-cb" ${s.enableQuickMenu !== false ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">TOOL 菜单</span><span class="nt-code">U_01</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-summary" class="nt-hidden-cb" ${s.enableSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">小总结</span><span class="nt-code">T_08</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-bigsummary" class="nt-hidden-cb" ${s.enableBigSummary ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">大总结</span><span class="nt-code">T_09</span></label>
+                        </div>
+                        <div class="nt-subhead">世界规则</div>
+                        <div class="nt-grid-layout nt-rule-grid">
+                            <label class="nt-grid-item" title="时间/在场/关系与严格校验">
+                                <input type="checkbox" id="nt-ws-statecheck" class="nt-hidden-cb" ${s.enableStateCheck ? 'checked' : ''}>
+                                <span class="nt-box"></span>
+                                <span class="nt-text">状态核查</span>
+                                <span class="nt-hint">时间/在场/关系与严格校验</span>
+                                <span class="nt-code">W_01</span>
+                            </label>
+                            <label class="nt-grid-item" title="成就与名声，TOOL 展示">
+                                <input type="checkbox" id="nt-ws-reputation" class="nt-hidden-cb" ${s.enableReputation ? 'checked' : ''}>
+                                <span class="nt-box"></span>
+                                <span class="nt-text">声望系统</span>
+                                <span class="nt-hint">成就与名声，TOOL 展示</span>
+                                <span class="nt-code">W_02</span>
+                            </label>
+                            <label class="nt-grid-item" title="TOOL 里的玩家信息管理">
+                                <input type="checkbox" id="nt-ws-playerpanel" class="nt-hidden-cb" ${s.enablePlayerPanel ? 'checked' : ''}>
+                                <span class="nt-box"></span>
+                                <span class="nt-text">个人信息</span>
+                                <span class="nt-hint">TOOL 里的玩家信息管理</span>
+                                <span class="nt-code">W_03</span>
+                            </label>
                         </div>
                     </div>
 
@@ -354,7 +380,7 @@ export function mountPanel() {
                         <div class="nt-grid-layout nt-switch-grid">
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-status" class="nt-hidden-cb" ${s.enableStatus ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">状态栏</span><span class="nt-code">T_01</span></label>
                             <label class="nt-grid-item"><input type="checkbox" id="nt-ws-preview" class="nt-hidden-cb" ${s.enablePreview ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">剧情预演</span><span class="nt-code">T_02</span></label>
-                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">认知隔离</span><span class="nt-code">T_11</span></label>
+                            <label class="nt-grid-item"><input type="checkbox" id="nt-ws-cognition" class="nt-hidden-cb" ${s.enableCognition ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">信息隔离</span><span class="nt-code">T_11</span></label>
                         </div>
                         <div class="nt-subhead">世界追踪</div>
                         <div class="nt-grid-layout nt-switch-grid">
@@ -1738,6 +1764,9 @@ export function mountPanel() {
             enableMap: '#nt-ws-map',
             enableQuests: '#nt-ws-quests',
             enableCognition: '#nt-ws-cognition',
+            enableStateCheck: '#nt-ws-statecheck',
+            enableReputation: '#nt-ws-reputation',
+            enablePlayerPanel: '#nt-ws-playerpanel',
             enableForeshadow: '#nt-ws-foreshadow',
             enableSummary: '#nt-ws-summary',
             enableBigSummary: '#nt-ws-bigsummary',
@@ -1826,6 +1855,9 @@ export function mountPanel() {
         '#nt-ws-map': 'enableMap',
         '#nt-ws-quests': 'enableQuests',
         '#nt-ws-cognition': 'enableCognition',
+        '#nt-ws-statecheck': 'enableStateCheck',
+        '#nt-ws-reputation': 'enableReputation',
+        '#nt-ws-playerpanel': 'enablePlayerPanel',
         '#nt-ws-foreshadow': 'enableForeshadow',
         '#nt-ws-summary': 'enableSummary',
         '#nt-ws-bigsummary': 'enableBigSummary',
@@ -1836,6 +1868,10 @@ export function mountPanel() {
         el.addEventListener('change', () => {
             s[key] = el.checked;
             mod.saveSettings();
+            // 索引顶部事实依赖这三个开关：改了立刻重建，避免关掉后旧事实还留着
+            if (key === 'enableStateCheck' || key === 'enableReputation' || key === 'enablePlayerPanel') {
+                refreshIndexHeader().catch(() => {});
+            }
             const out = wrap.querySelector('#nt-prompt-preview-out');
             if (out && out.style.display === 'block') wrap.querySelector('#nt-prompt-preview')?.click();
         });
@@ -1869,6 +1905,9 @@ export function mountPanel() {
         s.enableMap = wrap.querySelector('#nt-ws-map').checked;
         s.enableQuests = wrap.querySelector('#nt-ws-quests').checked;
         s.enableCognition = wrap.querySelector('#nt-ws-cognition').checked;
+        s.enableStateCheck = wrap.querySelector('#nt-ws-statecheck').checked;
+        s.enableReputation = wrap.querySelector('#nt-ws-reputation').checked;
+        s.enablePlayerPanel = wrap.querySelector('#nt-ws-playerpanel').checked;
         s.enableForeshadow = wrap.querySelector('#nt-ws-foreshadow').checked;
         s.enableSummary = wrap.querySelector('#nt-ws-summary').checked;
         s.enableBigSummary = wrap.querySelector('#nt-ws-bigsummary').checked;
@@ -1894,6 +1933,8 @@ export function mountPanel() {
         });
 
         mod.saveSettings();
+        // 三个世界规则开关可能改了：重建索引顶部事实（关掉后旧事实要清掉）
+        refreshIndexHeader().catch(() => {});
         try {
             window.dispatchEvent(new CustomEvent('nekotool:quickmenu-toggle', { detail: { enabled: s.enableQuickMenu } }));
         } catch (_) {}

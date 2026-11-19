@@ -11,7 +11,7 @@ const SEC_FORESHADOWS = '【伏笔】';
 const BRIEF_ORDER = ['支线', '计划', '伏笔', '道具', '国家', '势力', '新闻', '地图'];
 
 function emptySections() {
-    return { chars: [], items: [], foreshadows: [], briefs: {} };
+    return { header: '', chars: [], items: [], foreshadows: [], briefs: {} };
 }
 
 function briefLine(name, text, max = 70) {
@@ -93,10 +93,18 @@ export function buildBriefs(book) {
 /** 从条目内容解析索引 */
 export function parseIndex(content) {
     const out = emptySections();
+    const rawLines = String(content || '').split('\n');
+    // 头部事实块（【当前】/【提醒】/玩家：/【声望】）在「【角色】」之前，单独保留，
+    // 这样手动改索引（钉住/调级等）重写时不会把它抹掉。
+    // 没有「【角色】」的异常内容不当作 header，否则会被当成事实行重复输出。
+    const headerEnd = rawLines.findIndex(line => line.trim() === SEC_CHARS);
+    out.header = headerEnd > 0
+        ? rawLines.slice(0, headerEnd).map(line => line.trim()).filter(Boolean).join('\n')
+        : '';
     let section = null;
     let briefKey = '';
 
-    for (const raw of String(content || '').split('\n')) {
+    for (const raw of rawLines) {
         const line = raw.trim();
         if (!line) continue;
         if (line === SEC_CHARS) { section = 'chars'; briefKey = ''; continue; }
@@ -133,7 +141,10 @@ export function parseIndex(content) {
 export function renderIndex(sections) {
     const s = { ...emptySections(), ...(sections || {}) };
     const briefs = s.briefs && typeof s.briefs === 'object' ? s.briefs : {};
-    const lines = [SEC_CHARS];
+    const header = String(s.header || '').trim();
+    const lines = [];
+    if (header) lines.push(header);
+    lines.push(SEC_CHARS);
     if (s.chars.length) {
         for (const c of s.chars) lines.push(c.raw || `- ${c.name}`);
     } else {
@@ -182,7 +193,8 @@ export async function readIndex(bookName) {
     return emptySections();
 }
 
-export async function writeIndex(bookName, sections) {
+/** 整段重写索引内容（每次都用传进来的完整文本覆盖，不会叠加旧内容） */
+async function writeIndexContent(bookName, content) {
     if (!bookName) return false;
     // 快捷菜单的钉住/调级/花名册操作会直接写索引：书被删掉后不能靠 /get 的假书又写回来
     if (!(await stBridge.bookKnown(bookName))) {
@@ -192,7 +204,7 @@ export async function writeIndex(bookName, sections) {
     const book = await loadBook(bookName);
     if (!book || !book.entries) return false;
 
-    stBridge.upsertEntryInBook(book, INDEX_TITLE, renderIndex(sections), {
+    stBridge.upsertEntryInBook(book, INDEX_TITLE, content, {
         isConstant: true,
         extra: { position: 0, depth: 0, order: 850, key: [] },
     });
@@ -200,17 +212,27 @@ export async function writeIndex(bookName, sections) {
     return true;
 }
 
-/** 从当前世界书重建索引里的所有简略段（支线/计划/伏笔/道具/国家/势力/新闻/地图） */
-export async function refreshBriefs(bookName, book = null) {
+export async function writeIndex(bookName, sections) {
+    return writeIndexContent(bookName, renderIndex(sections));
+}
+
+/**
+ * 从当前世界书重建索引里的所有简略段（支线/计划/伏笔/道具/国家/势力/新闻/地图）。
+ * header：本轮事实块（时间/地点/在场/到期/玩家/声望），放在索引最前面；
+ *   - 传字符串：整段覆盖（空串=清除旧 header）；
+ *   - 不传（null）：保留索引里已有的 header，手动路径用。
+ */
+export async function refreshBriefs(bookName, book = null, header = null) {
     if (!bookName) return false;
     const target = book || await loadBook(bookName);
     if (!target || !target.entries) return false;
     const entry = findEntry(target, INDEX_TITLE);
     const sections = parseIndex(entry?.content || '');
     sections.briefs = buildBriefs(target);
+    if (header !== null) sections.header = String(header ?? '').trim();
     const next = renderIndex(sections);
     if (entry && String(entry.content || '') === next) return false;
-    return writeIndex(bookName, sections);
+    return writeIndexContent(bookName, next);
 }
 
 /** 同步角色段：add = { 名字: "T2｜位置｜行动｜第 N 层" }，del = [名字] */

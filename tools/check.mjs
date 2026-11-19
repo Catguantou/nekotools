@@ -310,6 +310,55 @@ try {
     assert(parsed3.日程 && parsed3.日程.早晨.includes('摆摊'), '日程 YAML 往返失败');
     assert(parsed3.已知 && parsed3.已知[0].includes('王选'), '已知 YAML 往返失败');
     assert(parsed3.秘密 === '认识扒手头目' && parsed3.更新于 === '第 37 层', '秘密/更新于 YAML 往返失败');
+
+    // 世界模拟 2.0：玩家档案 / 声望 / 定性关系样例（worldfmt 2.0 新增导出）
+    // 单独 try/catch：导出还没落地时只报这一块，不影响上面的旧样例。
+    try {
+        const fn = (name) => {
+            if (typeof wf[name] !== 'function') throw new Error(`worldfmt 缺少导出 ${name}`);
+            return wf[name];
+        };
+        // 档案字段可能用中文键（钱/道具/资产/关系/承诺/状态），也可能用英文键，取值时都认
+        const field = (obj, cn, en) => (obj && obj[cn] !== undefined ? obj[cn] : (obj ? obj[en] : undefined));
+
+        assert(wf.PLAYER_PROFILE_TITLE === '玩家档案', 'PLAYER_PROFILE_TITLE 应为「玩家档案」');
+        assert(wf.REPUTATION_TITLE === '声望', 'REPUTATION_TITLE 应为「声望」');
+
+        const profile = fn('normalizePlayerProfile')({ 钱: 5 });
+        assert(field(profile, '钱', 'money') === 5, 'normalizePlayerProfile 未保留「钱: 5」');
+        for (const [cn, en] of [['道具', 'items'], ['资产', 'assets'], ['关系', 'relations'], ['承诺', 'promises'], ['状态', 'status']]) {
+            assert(Array.isArray(field(profile, cn, en)), `normalizePlayerProfile 的「${cn}」应为数组`);
+        }
+        const emptyProfile = fn('normalizePlayerProfile')({});
+        assert(field(emptyProfile, '钱', 'money') === 0, '空玩家档案的钱默认值应为 0');
+        assert(Array.isArray(field(emptyProfile, '道具', 'items')), '空玩家档案的「道具」默认应为空数组');
+
+        const base = fn('normalizePlayerProfile')({ 钱: 5, 道具: [{ 名称: '药', 数量: 2 }] });
+        assert(field(fn('mergePlayerProfile')(base, { 钱: -3 }), '钱', 'money') >= 0, 'mergePlayerProfile 后钱应钳到 >=0');
+        const merged = fn('mergePlayerProfile')(base, { 道具: [{ 名称: '钥匙', 数量: 1 }], 删除道具: ['药'] });
+        const mergedItems = field(merged, '道具', 'items');
+        const itemNames = (Array.isArray(mergedItems) ? mergedItems : []).map(it => (it && (it.名称 ?? it.name)) || '');
+        assert(itemNames.includes('钥匙'), 'mergePlayerProfile 未合并新道具「钥匙」');
+        assert(!itemNames.includes('药'), 'mergePlayerProfile 未删除道具「药」');
+
+        assert(String(fn('formatPlayerSummary')(profile)).includes('玩家'), 'formatPlayerSummary 未包含「玩家」');
+
+        const repInput = {
+            achievements: [{ name: '镇民之友', reason: '救火', note: '镇上人更信任你', known: '铁砧镇' }],
+            reputations: [{ target: '铁砧镇', view: '敬重' }],
+        };
+        const repText = String(fn('formatReputationContent')(repInput));
+        assert(repText.includes('镇民之友') && repText.includes('敬重'), 'formatReputationContent 丢了成就/名声');
+        const repParsed = fn('parseReputationContent')(repText);
+        assert(String(fn('formatReputationContent')(repParsed)) === repText, '声望内容往返后不一致');
+        const repJson = JSON.stringify(repParsed);
+        assert(repJson.includes('镇民之友') && repJson.includes('铁砧镇') && repJson.includes('敬重'), 'parseReputationContent 丢失内容');
+
+        const rel = fn('normalizeRelationValue')('好感 80｜信任 75｜标签：朋友');
+        assert(typeof rel === 'string' && rel.length > 0 && rel.includes('朋友'), 'normalizeRelationValue 未兼容旧「好感/信任」格式');
+    } catch (e) {
+        failures.push(`[worldfmt] 世界模拟 2.0 样例无法执行：${e.message}`);
+    }
 } catch (e) {
     failures.push(`[worldfmt] 样例测试无法执行：${e.message}`);
 }
