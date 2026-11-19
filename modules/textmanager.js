@@ -444,13 +444,18 @@ function getSlopRegex() {
     return re;
 }
 
+/** ST 的 isGenerating 是 script.js 的导出，不在 getContext 上；用停止按钮判断正在流式生成 */
+function isStGenerating() {
+    const stop = document.getElementById('mes_stop');
+    return Boolean(stop && getComputedStyle(stop).display !== 'none');
+}
+
 /**
  * 同步隐藏一条消息里的八股。
  * 必须在 MutationObserver 回调里同步调用：回调发生在浏览器绘制之前，
  * 所以用户看到的永远是已经隐藏好的文本（这就是不闪的关键）。
  */
-export function hideSlopInMessage(mesEl) {
-    if (tmSettings.hideSlopVisual !== true) return 0;
+export function hideSlopInMessage(mesEl) {    if (tmSettings.hideSlopVisual !== true) return 0;
     const textEl = mesEl?.querySelector?.('.mes_text');
     if (!textEl) return 0;
     const re = getSlopRegex();
@@ -570,7 +575,7 @@ registry.register({
             //    在这里改 DOM 用户看不到中间态，所以不会闪。
             //    流式生成期间不重写 DOM：每个 token 都重新包 span 会让正文持续闪烁，
             //    等 MESSAGE_RECEIVED / GENERATION_ENDED 再统一处理一次。
-            if (tmSettings.hideSlopVisual === true && stBridge.getContext().isGenerating !== true) {
+            if (tmSettings.hideSlopVisual === true && !isStGenerating()) {
                 try {
                     for (const rec of records) {
                         if (rec.type === 'characterData') {
