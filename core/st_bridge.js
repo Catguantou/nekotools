@@ -946,6 +946,24 @@ export const stBridge = {
     },
 
     /**
+     * 视觉屏蔽用的 cutoff：统计所有 assistant（包括已被 /hide 成 system 的旧楼）。
+     * 数据层 cutoffIndexForKeep 会跳过 system，导致旧楼被总结隐藏后视觉屏蔽永远算不出范围。
+     */
+    cutoffIndexForVisualKeep(keepCount) {
+        const ctx = this.getContext();
+        if (!ctx || !ctx.chat) return -1;
+        let aiCount = 0;
+        for (let i = ctx.chat.length - 1; i >= 0; i--) {
+            const msg = ctx.chat[i];
+            if (!msg.is_user) {
+                aiCount++;
+                if (aiCount === Number(keepCount) + 1) return i;
+            }
+        }
+        return -1;
+    },
+
+    /**
      * 数据层隐藏：给 extra.hidden 打标并落盘，影响导出过滤，不可见地改变数据。
      * 视觉层隐藏由 visualKeep 单独控制，两者互不影响。
      */
@@ -1145,7 +1163,7 @@ export const stBridge = {
         const ctx = this.getContext();
         if (!chatEl || !ctx || !ctx.chat) return;
         const keep = Number(settings.get('worldsim').visualHideKeep) || 0;
-        const cutoff = keep > 0 ? this.cutoffIndexForKeep(keep) : -1;
+        const cutoff = keep > 0 ? this.cutoffIndexForVisualKeep(keep) : -1;
         chatEl.querySelectorAll('.mes.nt-visual-hidden').forEach(el => {
             el.classList.remove('nt-visual-hidden');
         });
