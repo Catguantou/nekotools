@@ -5450,19 +5450,69 @@ body {
     gap: 8px;
 }
 #nt-quick-modal .nt-rep-card {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    padding: 9px 11px;
-    border: 1px solid var(--ntq-line);
-    border-radius: 2px;
-    background: linear-gradient(160deg, rgba(47, 91, 215, 0.1), rgba(20, 24, 34, 0.35));
+    gap: 4px;
+    padding: 11px 12px 10px;
+    overflow: hidden;
+    border: 1px solid rgba(126, 151, 240, 0.5);
+    border-radius: 4px;
+    background:
+        radial-gradient(120% 130% at 0% 0%, rgba(83, 110, 220, 0.22), transparent 62%),
+        linear-gradient(160deg, rgba(36, 44, 66, 0.92), rgba(14, 17, 26, 0.94));
+    box-shadow: 0 0 14px rgba(67, 98, 225, 0.18), inset 0 0 18px rgba(80, 110, 230, 0.08);
+}
+#nt-quick-modal .nt-rep-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 25%, rgba(180, 200, 255, 0.16) 45%, transparent 65%);
+    transform: translateX(-100%);
+    transition: transform 0.6s ease;
+    pointer-events: none;
+}
+#nt-quick-modal .nt-rep-card:hover::before {
+    transform: translateX(100%);
+}
+#nt-quick-modal .nt-rep-card::after {
+    content: '';
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(160, 185, 255, 0.8), transparent);
+    pointer-events: none;
+}
+#nt-quick-modal .nt-rep-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+#nt-quick-modal .nt-rep-card-icon {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border: 1px solid rgba(170, 190, 255, 0.65);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, rgba(150, 175, 255, 0.45), rgba(40, 55, 110, 0.25));
+    color: #e7edff;
+    font-size: 11px;
+    box-shadow: 0 0 10px rgba(110, 140, 255, 0.5), inset 0 0 8px rgba(180, 200, 255, 0.25);
+}
+@media (prefers-reduced-motion: reduce) {
+    #nt-quick-modal .nt-rep-card::before { transition: none; }
 }
 #nt-quick-modal .nt-rep-card-name {
+    min-width: 0;
     color: #fff;
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 600;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
+    text-shadow: 0 0 10px rgba(130, 160, 255, 0.6);
 }
 #nt-quick-modal .nt-rep-card-reason {
     color: #b8c2dc;

@@ -3454,10 +3454,17 @@ function buildReputationSection(rep, titleText, emptyText = '还没有记录') {
         for (const ach of achievements) {
             const card = document.createElement('div');
             card.className = 'nt-rep-card';
+            const head = document.createElement('div');
+            head.className = 'nt-rep-card-head';
+            const icon = document.createElement('span');
+            icon.className = 'nt-rep-card-icon';
+            icon.textContent = '✦';
             const name = document.createElement('div');
             name.className = 'nt-rep-card-name';
             name.textContent = String(ach.name || '未命名成就');
-            card.appendChild(name);
+            head.appendChild(icon);
+            head.appendChild(name);
+            card.appendChild(head);
             for (const [cls, label, value] of [
                 ['nt-rep-card-reason', '原因：', ach.reason],
                 ['nt-rep-card-note', '备注：', ach.note],
