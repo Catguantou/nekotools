@@ -2552,6 +2552,9 @@ async function runAutoFullRefresh() {
     if (!book) return;
     autoRefreshRunning = true;
     showAutoUpdateBanner('正在自动全量更新（副 API）…');
+    const configuredRetry = Number(api.retryCount);
+    const retryCount = Number.isFinite(configuredRetry) ? Math.max(0, Math.min(10, Math.trunc(configuredRetry))) : 3;
+    const maxAttempts = retryCount + 1;
     try {
         do {
             autoRefreshPending = false;
@@ -2559,10 +2562,10 @@ async function runAutoFullRefresh() {
             let raw = '';
             let data = null;
             let lastError = null;
-            for (let attempt = 1; attempt <= 3; attempt++) {
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 try {
                     if (attempt > 1) {
-                        showAutoUpdateBanner(`正在自动全量更新（副 API，第 ${attempt}/3 次尝试）…`);
+                        showAutoUpdateBanner(`正在自动全量更新（副 API，第 ${attempt}/${maxAttempts} 次尝试）…`);
                     }
                     raw = await generateRefreshApi(prompt, api);
                     const text = String(raw || '');
@@ -2573,8 +2576,8 @@ async function runAutoFullRefresh() {
                     break;
                 } catch (e) {
                     lastError = e;
-                    console.warn(`[nekotools] 自动全量更新第 ${attempt}/3 次失败`, e);
-                    if (attempt < 3) await new Promise(r => setTimeout(r, 3000));
+                    console.warn(`[nekotools] 自动全量更新第 ${attempt}/${maxAttempts} 次失败`, e);
+                    if (attempt < maxAttempts) await new Promise(r => setTimeout(r, 3000));
                 }
             }
             if (!data) throw lastError || new Error('自动全量更新失败');
@@ -2968,6 +2971,39 @@ async function showRefreshModal(preselectName = '') {
     autoRow.appendChild(autoCb);
     autoRow.appendChild(autoText);
     body.appendChild(autoRow);
+
+    const retryRow = document.createElement('label');
+    retryRow.className = 'nt-refresh-item';
+    const retryLabel = document.createElement('span');
+    retryLabel.textContent = '失败重试次数';
+    const retryInput = document.createElement('input');
+    retryInput.type = 'number';
+    retryInput.min = '0';
+    retryInput.max = '10';
+    retryInput.step = '1';
+    retryInput.inputMode = 'numeric';
+    retryInput.className = 'nt-edit-select';
+    retryInput.disabled = !hasRefreshApi;
+    const savedRetry = Number(savedApi.retryCount);
+    retryInput.value = String(Number.isFinite(savedRetry) ? Math.max(0, Math.min(10, Math.trunc(savedRetry))) : 3);
+    retryRow.appendChild(retryLabel);
+    retryRow.appendChild(retryInput);
+    body.appendChild(retryRow);
+    const saveRetry = () => {
+        let n = Number(retryInput.value);
+        if (!Number.isFinite(n)) n = 3;
+        n = Math.max(0, Math.min(10, Math.trunc(n)));
+        retryInput.value = String(n);
+        settings.set('worldsim', {
+            refreshApi: {
+                ...(settings.get('worldsim').refreshApi || {}),
+                retryCount: n,
+            },
+        });
+    };
+    retryInput.addEventListener('change', saveRetry);
+    retryInput.addEventListener('blur', saveRetry);
+
     autoCb.addEventListener('change', () => {
         if (autoCb.checked && !hasRefreshApi) {
             autoCb.checked = false;
