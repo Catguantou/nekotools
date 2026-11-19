@@ -2,7 +2,7 @@
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 
-const GUIDE_VERSION = 2;
+const GUIDE_VERSION = 3;
 const MASK_ID = 'nt-guide-mask';
 let mounted = false;
 let currentStep = 0;
@@ -45,7 +45,13 @@ const STEPS = [
                         <li>总开关决定状态栏、预览、角色、世界、地图、支线、总结哪些运行</li>
                         <li>可以自定义提示词，默认提示词会直接显示在输入框里</li>
                         <li>请求更新时可选主 API 或副 API</li>
+                        <li>2.0 新增：信息隔离 / 状态核查 / 声望系统 / 用户信息，在 02 世界追踪同一栏，默认全关</li>
+                        <li>用户信息：TOOL 里只读，点「手动编辑」才改；声望也在这里</li>
                     </ul>
+                </section>
+                <section class="nt-guide-module">
+                    <div class="nt-guide-module-head"><span class="nt-guide-code">R_01</span><h4>请求改写</h4></div>
+                    <p>把用户的输入编码后再发给模型。</p>
                 </section>
                 <section class="nt-guide-module">
                     <div class="nt-guide-module-head"><span class="nt-guide-code">U_01</span><h4>TOOL 菜单</h4></div>
@@ -120,33 +126,6 @@ const STEPS = [
     },
     {
         code: '04',
-        title: '世界模拟 2.0 与请求改写',
-        subtitle: '新开关默认关闭；请求改写不是剧情功能',
-        body: () => `
-            <div class="nt-guide-modules">
-                <section class="nt-guide-module">
-                    <div class="nt-guide-module-head"><span class="nt-guide-code">S_02</span><h4>世界模拟 2.0</h4></div>
-                    <ul>
-                        <li><b>信息隔离</b>：角色只能基于自己的五感、记忆和已知情报行动，不能开上帝视角</li>
-                        <li><b>状态核查</b>：程序检查时间倒流、在场、到期、死亡角色和数值，不拦正文</li>
-                        <li><b>声望系统</b>：AI 声明成就/名声，存进世界书，TOOL 的用户信息里看</li>
-                        <li><b>用户信息</b>：TOOL 里查看钱/道具/资产/关系/承诺/声望，默认只读，点「手动编辑」才改</li>
-                        <li>四个开关在 <b>02 世界模拟 → 世界追踪</b> 同一栏，默认全关；关掉时零副作用</li>
-                    </ul>
-                </section>
-                <section class="nt-guide-module">
-                    <div class="nt-guide-module-head"><span class="nt-guide-code">R_01</span><h4>请求改写是干嘛的</h4></div>
-                    <p>把每轮最后一条用户输入做 Base64 编码，并在前面加一段无害的排版垫片；模型先解码再照常续写。</p>
-                    <ul>
-                        <li>用途：绕开部分接口对输入字符/内容传输的限制，<b>不是剧情功能</b>，不写世界书、不改角色</li>
-                        <li>默认开启；如果接口本身不需要，可在 <b>01 概览 → 系统模块</b> 里关掉，关掉后直接发原文</li>
-                    </ul>
-                </section>
-            </div>
-        `,
-    },
-    {
-        code: '05',
         title: '开始使用',
         subtitle: '不会自动扣 API，也不会自动初始化',
         body: () => {

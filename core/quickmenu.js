@@ -2850,6 +2850,7 @@ async function showRefreshModal(preselectName = '') {
     const renderApiButtons = () => {
         for (const [value, btn] of Object.entries(apiBtnMap)) {
             btn.classList.toggle('primary', value === apiChoiceValue);
+            btn.setAttribute('aria-pressed', value === apiChoiceValue ? 'true' : 'false');
         }
     };
     const chooseApi = (value) => {
@@ -2862,12 +2863,16 @@ async function showRefreshModal(preselectName = '') {
     for (const [value, text] of [['main', '主 API'], ['secondary', '副 API']]) {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'nt-btn-text';
+        btn.className = 'nt-quick-btn-text';
         btn.textContent = text;
         btn.title = value === 'secondary' && !(savedApi.url || savedApi.source)
             ? '副 API 还没在设置里配置'
             : '';
-        btn.addEventListener('click', () => chooseApi(value));
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            chooseApi(value);
+        });
         apiBtnMap[value] = btn;
         apiButtons.appendChild(btn);
     }
