@@ -76,6 +76,12 @@ export async function applyMain(bookName, raw) {
         if (value) merged[key] = value;
     }
     merged['进度'] = clampProgress(merged['进度']);
+    // 进度限速：阶段没变时一次最多 +5；换阶段也最多 +20，避免一条回复直接跳完主线
+    const oldProgress = clampProgress(old['进度']);
+    const nextProgress = clampProgress(merged['进度']);
+    const stageChanged = incoming['阶段'] && String(incoming['阶段']).trim() !== String(old['阶段'] || '').trim();
+    const cap = stageChanged ? 20 : 5;
+    if (nextProgress > oldProgress + cap) merged['进度'] = Math.min(100, oldProgress + cap);
     return saveMain(bookName, merged);
 }
 

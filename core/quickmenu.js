@@ -2141,6 +2141,56 @@ async function showQuestsModal() {
     const body = document.createElement('div');
     body.className = 'nt-quests nt-quests-readonly';
 
+    // 「可办事项」：只从当前地点/在场角色/支线/新闻里汇总，不新建任务系统
+    const clock = getSlotClock(book) || {};
+    const map = await readMap(book);
+    const roster = await readRoster(book);
+    const place = String(clock.place || '').trim();
+    const todos = [];
+    const addTodo = (title, detail, source = '') => {
+        if (!title || todos.some(t => t.title === title)) return;
+        todos.push({ title, detail: String(detail || '').trim(), source });
+    };
+
+    if (main['下一步']) addTodo(`推进主线：${main['标题'] || '当前主线'}`, main['下一步'], '主线');
+    for (const [name, value] of Object.entries(quests)) {
+        const parts = String(value || '').split(/[｜|]/).map(s => s.trim());
+        if (/^(已)?(完成|成功|失败|过期|放弃|取消)/.test(parts[2] || '')) continue;
+        addTodo(`支线：${name}`, parts[7] || parts[1] || parts[5] || '查看支线详情', '支线');
+    }
+    for (const c of roster) {
+        if (!c || !place || String(c.location || '').trim() !== place) continue;
+        addTodo(`找 ${c.name}`, c.action || '和对方聊聊', '附近角色');
+    }
+    const site = Object.values(map.sites || {}).map(list => (list || {})[place]).find(Boolean)
+        || Object.values(map.sites || {}).flatMap(list => Object.entries(list || {})).find(([name]) => place.includes(name))?.[1];
+    if (site?.interact) addTodo(`在${place}看看`, site.interact, '当前地点');
+    try {
+        const bookData = await stBridge.loadWorldInfoAsync(book, true);
+        const news = Object.values(bookData?.entries || {}).find(e => e && e.comment === '新闻日报');
+        const headline = String(news?.content || '').split('\n').find(l => /^-\s*/.test(l.trim()));
+        if (headline) addTodo('打听最近的新闻', headline.replace(/^-\s*/, '').slice(0, 80), '新闻日报');
+    } catch (_) {}
+    if (todos.length) {
+        const todoHead = document.createElement('div');
+        todoHead.className = 'nt-quest-section';
+        todoHead.textContent = '可办事项';
+        body.appendChild(todoHead);
+        for (const todo of todos.slice(0, 5)) {
+            const item = document.createElement('div');
+            item.className = 'nt-quest-read-item';
+            const n = document.createElement('div');
+            n.className = 'nt-quest-read-name';
+            n.textContent = todo.title;
+            const d = document.createElement('div');
+            d.className = 'nt-quest-read-detail';
+            d.textContent = [todo.detail, todo.source ? `来源：${todo.source}` : ''].filter(Boolean).join('　');
+            item.appendChild(n);
+            item.appendChild(d);
+            body.appendChild(item);
+        }
+    }
+
     const card = document.createElement('div');
     card.className = 'nt-quest-main';
     const title = document.createElement('div');
@@ -2192,7 +2242,7 @@ async function showQuestsModal() {
         body.appendChild(empty);
     }
 
-    const sideLabels = ['类型', '目标', '状态', '期限', '失败条件', '钩子'];
+    const sideLabels = ['类型', '目标', '状态', '期限', '失败条件', '钩子', '地点', '下一步'];
     for (const [name, value] of Object.entries(quests)) {
         const item = document.createElement('div');
         item.className = 'nt-quest-read-item';
@@ -2477,7 +2527,7 @@ async function buildAutoRefreshPrompt(book) {
     if (wsCfg.enableMap !== false) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}');
     if (wsCfg.enableQuests !== false) {
         schema.push('"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}');
-        schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}');
+        schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子｜地点｜下一步"}, "del":["支线名"]}');
     }
     if (wsCfg.enableItems !== false) schema.push('"items": {"add": {"道具名": {"描述":"[类别] 描述","关键词":["具体词1","具体词2"]}}, "del":["道具名"]}');
     if (wsCfg.enableForeshadow !== false) schema.push('"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}');
@@ -3121,7 +3171,7 @@ async function showRefreshModal(preselectName = '') {
         if (selected.includes('map')) schema.push('"map": {"regions":{"名称":"方位｜类型｜一句话"},"cities":{"区域名":{"城市名":"方位｜类型｜一句话"}},"sites":{"城市名":{"地点名":"方位｜类型｜出口：A、B｜路程：A=1天、B=10分钟｜可交互：...｜常驻：..."}}}');
         if (selected.includes('quests')) {
             schema.push('"main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}');
-            schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}');
+            schema.push('"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子｜地点｜下一步"}, "del":["支线名"]}');
         }
         if (selected.includes('items')) schema.push('"items": {"add": {"道具名": {"描述":"[类别] 描述","关键词":["具体词1","具体词2"]}}, "del":["道具名"]}');
         if (selected.includes('foreshadow')) schema.push('"foreshadow": {"add": {"伏笔名": {"描述":"[线索 | 指向] 描述","关键词":["具体词1","具体词2"]}}, "del":["伏笔名"]}');
