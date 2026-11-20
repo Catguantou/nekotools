@@ -159,9 +159,9 @@ function buildTickPrompt({ needWorldTick, targets = [] }) {
     if (targets.length) {
         lines.push('- 只写插件指定的这些角色，不要写名单外的人：');
         for (const t of targets) lines.push(`  · ${t.name}（${t.reason}）`);
-        lines.push('  "tick": {"角色名": {"位置":"地图小地点名","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的重要情报"],"后台运行":"A→B→C"}}');
+        lines.push('  "tick": {"角色名": {"位置":"地图小地点名","当前行动":"为什么做/怎么做","下一步":"...","心情":"...","已知":["本轮新获知的重要情报"],"删除已知":["要删的旧情报"],"后台运行":"A→B→C"}}');
         lines.push('- 玩家不在场也要推进他们自己的计划；tick 写在本轮 ws_update 里。');
-        lines.push('- 已知只保留最重要的 10 条以内；新增前先查重，重复/换说法的不写，旧的次要信息删掉。');
+        lines.push('- 已知只保留最重要的 10 条以内；先检查旧已知，可以删、改、合并；重复/换说法的不写，旧的次要信息用删除已知删掉。');
         lines.push('- 关键记忆严格用「【事件】→ 一句话记忆」，只记重大经验或关键印象；日常流水账不写。');
     }
     if (needWorldTick) {
@@ -386,7 +386,8 @@ export async function refreshIndexHeader(bookName = '') {
         if (!book || !book.entries) return false;
         // 在场行来自 rosterCache；保存玩家档案/声望前先按最新书刷新，避免写到旧在场或把在场行清掉
         refreshSnapshots(name, book);
-        if (auditBookStructure(name, book, Number((getSlotClock(name) || {}).layer) || 0)) {
+        const fixedEntries = auditBookStructure(name, book, Number((getSlotClock(name) || {}).layer) || 0);
+        if (fixedEntries) {
             await stBridge.persistLorebook(name, book);
         }
         const header = buildIndexHeader(name, book);
@@ -816,13 +817,15 @@ ${settings.enableItems || settings.enablePlot || settings.enableForeshadow ? '- 
         const userName = stBridge.getUserName() || '用户';
         const recordUserChar = settings.recordUserCharacter === true;
         let c = `<nekotools:track.chars>
-【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"角色":"态度：原因"},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["【事件】→ 一句话记忆"],"特殊变化":"...","关键词":["昵称","姓氏","尊称"]}}
+【角色追踪】JSON 字段 "chars": {"角色名": {"性别":"...","外貌":"...","位置":"地图小地点名","人际关系":{"角色":"态度：原因"},"状态":"...","后台运行":"...","长期目标":"...","近期打算":"...","关键记忆":["【事件】→ 一句话记忆"],"删除关键记忆":["旧条目"],"已知":["本轮新获知的重要情报"],"删除已知":["旧条目"],"特殊变化":"...","关键词":["昵称","姓氏","尊称"]}}
 要求：记录活跃角色${recordUserChar ? `（包括用户角色「${userName}」）` : `（不包括用户角色「${userName}」）`}档案。
 - 位置：优先使用「地图」里的小地点名；没有就写当前地点
 - 状态：动作/衣着/生理状态/本次更新的剧情时间
 - 后台运行：若刚出场或时间跳跃，用 A→B→C 的动作链记录
 - 长期目标 / 近期打算：各一句具体内容
 - 关键记忆：严格只用「【事件】→ 一句话记忆」格式；只有当本轮发生重大经验教训、关键印象或不可逆变化时才新增 1 条；普通日常、重复行动、换种说法复述旧事一律不写，没有就不写
+- 写入前先检查旧记忆和已知：可以删、可以改、可以合并；重复/换说法的旧条目用「删除关键记忆 / 删除已知」列出来，再把整理后的内容写进新字段，不要只增不减
+- 已知只保留最重要的内容，最多 10 条；超出的旧次要信息用「删除已知」删掉
 - 特殊变化：生理状态/人生目标/持有道具/人际关系/理念/身份地位的变化；确实没有就写“无”
 - 人际关系键写对方真实名字
 - 关系固定定性标签：仇恨 / 敌对 / 戒备 / 冷淡 / 无感 / 亲近 / 信任 / 依赖 / 喜爱 / 痴迷
@@ -1045,43 +1048,12 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
         return out;
     };
 
-    // 模型会反复把同一件事换个说法写进关键记忆/已知；按相似度去重，只保留最新的 N 条
-    const memoryNorm = (s) => String(s || '')
-        .replace(/^【[^】]*】\s*/, '')
-        .replace(/[\s，。！？、：；…\-—～~·"'“”‘’（）()【】\[\]]/g, '')
-        .replace(/^\d{4}年\d{1,2}月\d{1,2}日/, '')
-        .slice(0, 120);
-    const bigrams = (s) => {
-        const out = new Set();
-        for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
-        return out;
-    };
-    const tooSimilar = (a, b) => {
-        if (!a || !b) return false;
-        if (a === b) return true;
-        if (a.length >= 8 && b.includes(a)) return true;
-        if (b.length >= 8 && a.includes(b)) return true;
-        const ba = bigrams(a), bb = bigrams(b);
-        if (!ba.size || !bb.size) return false;
-        let inter = 0;
-        for (const x of ba) if (bb.has(x)) inter++;
-        return inter / Math.max(ba.size, bb.size) > 0.72;
-    };
-    const compactMemories = (list, max) => {
-        const kept = [];
-        for (let i = list.length - 1; i >= 0; i--) {
-            const text = String(list[i] || '').trim();
-            const key = memoryNorm(text);
-            if (!key) continue;
-            if (kept.some(k => tooSimilar(key, k.key))) continue;
-            kept.push({ text, key });
-            if (kept.length >= max) break;
-        }
-        return kept.reverse().map(k => k.text);
-    };
-
-    const merged = compactMemories(mergeList(normalizeMemories(old['关键记忆']), normalizeMemories(info && info['关键记忆'])), 10);
-    const mergedKnown = compactMemories(mergeList(normalizeMemories(old['已知']), normalizeMemories(info && info['已知'])), 10);
+    const delMemories = new Set(normalizeMemories(info && info['删除关键记忆']));
+    const delKnown = new Set(normalizeMemories(info && info['删除已知']));
+    const merged = mergeList(normalizeMemories(old['关键记忆']), normalizeMemories(info && info['关键记忆']))
+        .filter(x => !delMemories.has(x));
+    const mergedKnown = mergeList(normalizeMemories(old['已知']), normalizeMemories(info && info['已知']))
+        .filter(x => !delKnown.has(x));
 
     // 人际关系/日程按 key 合并：本轮没写到的人保留旧状态
     const mergedRel = {
@@ -1099,6 +1071,8 @@ async function updateCharacterEntry(bookName, name, info, book, replyLayer = 0) 
         if (!(k in finalInfo) || !String(finalInfo[k] ?? '').trim()) finalInfo[k] = v;
     }
     finalInfo['关键记忆'] = merged;
+    delete finalInfo['删除关键记忆'];
+    delete finalInfo['删除已知'];
     if (mergedKnown.length) finalInfo['已知'] = mergedKnown;
     else delete finalInfo['已知'];
     if (Object.keys(mergedRel).length) finalInfo['人际关系'] = mergedRel;
@@ -1790,8 +1764,9 @@ export function buildRefreshContract({
     const parts = [];
     if (chars) {
         parts.push(`【角色契约】
-"chars": {"角色名": {"性别":"...","外貌":"一句话","位置":"地图小地点名","人际关系":{"对方真名":"亲近：一句原因"},"状态":"动作/衣着/生理状态/本次剧情时间","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["1-2条具体事件"],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}
-要求：只写本轮有变化的角色；每个字段写完整，不要合并；位置必须用地图小地点名；人际关系是对象，键是对方真名，值只用定性标签 + 一句原因（敌对/戒备/冷淡/中性/亲近/信任/依赖），旧档数字不用改；用户角色名是「${userName}」，${recordUserChar ? '可以作为一条普通角色档案输出' : '不要输出它的档案'}；角色索引为空时，按角色卡和当前追踪书初始化主要角色（包括必要 NPC）。
+"chars": {"角色名": {"性别":"...","外貌":"一句话","位置":"地图小地点名","人际关系":{"对方真名":"亲近：一句原因"},"状态":"动作/衣着/生理状态/本次剧情时间","后台运行":"A→B→C","长期目标":"...","近期打算":"...","关键记忆":["【事件】→ 一句话记忆"],"删除关键记忆":["旧条目"],"已知":["本轮新获知的重要情报"],"删除已知":["旧条目"],"特殊变化":"...","关键词":["昵称","姓氏","名字","Mr. Smith","王先生"]}}
+要求：只写本轮有变化的角色；字段可以覆盖旧值；位置必须用地图小地点名；人际关系是对象，键是对方真名，值只用定性标签 + 一句原因（敌对/戒备/冷淡/中性/亲近/信任/依赖），旧档数字不用改；用户角色名是「${userName}」，${recordUserChar ? '可以作为一条普通角色档案输出' : '不要输出它的档案'}；角色索引为空时，按角色卡和当前追踪书初始化主要角色（包括必要 NPC）。
+关键记忆/已知必须先查旧数据：可以删除、改写、合并；同一件事换说法也算重复，重复时用「删除关键记忆 / 删除已知」列旧条，再把整理后的内容写进新字段，不要只增不减；关键记忆严格用「【事件】→ 一句话记忆」，只记重大经验/关键印象，最多 10 条；已知最多 10 条，只留最重要。
 关键词写正文里可能出现的叫法：昵称/小名/外号、西式姓和名分开、尊称（Mr. Smith、Ms. Smith、Dr. Smith、王先生、李小姐、队长、老板等）；2–20 字，不要只写全名，不要写抽象标题。`);
     }
     if (items) {
@@ -1965,7 +1940,9 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     }
 
     // 索引顶部事实与普通回合保持一致；开关全关时 header 为空串（清除旧 header）
-    if (auditBookStructure(bookName, book, layer)) await stBridge.persistLorebook(bookName, book);
+    if (auditBookStructure(bookName, book, layer)) {
+        await stBridge.persistLorebook(bookName, book);
+    }
     const freshBook = await stBridge.loadWorldInfoAsync(bookName, true);
     refreshSnapshots(bookName, freshBook || book);
     const headerBook = indexHeaderEnabled() ? freshBook : null;
