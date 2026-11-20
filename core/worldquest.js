@@ -185,7 +185,7 @@ function withQuestStatus(value, status) {
         .join('｜');
 }
 
-/** 清理支线：明确失败直接删；超时未完成先标记「已过期」保留一轮，并写入支线历史 */
+/** 清理支线：明确失败/完成直接删并归档；超时未完成先标记「已过期」保留一轮 */
 function pruneQuestData(data, todayText) {
     const removed = [];
     const marked = [];
@@ -201,7 +201,13 @@ function pruneQuestData(data, todayText) {
             if (status !== '已过期') archived.push({ name, reason: `状态：${status}` });
             continue;
         }
-        if (isDoneStatus(status)) continue;
+        if (isDoneStatus(status)) {
+            // 完成不是“继续留在支线里”：从活动支线删除，写入支线历史
+            delete data[name];
+            removed.push(name);
+            archived.push({ name, reason: `完成：${q.target || '目标达成'}` });
+            continue;
+        }
         const deadline = parseGameDate(q.deadline);
         if (today && deadline && daysBetween(today, deadline) < 0) {
             data[name] = withQuestStatus(value, '已过期');
