@@ -2141,56 +2141,6 @@ async function showQuestsModal() {
     const body = document.createElement('div');
     body.className = 'nt-quests nt-quests-readonly';
 
-    // 「可办事项」：只从当前地点/在场角色/支线/新闻里汇总，不新建任务系统
-    const clock = getSlotClock(book) || {};
-    const map = await readMap(book);
-    const roster = await readRoster(book);
-    const place = String(clock.place || '').trim();
-    const todos = [];
-    const addTodo = (title, detail, source = '') => {
-        if (!title || todos.some(t => t.title === title)) return;
-        todos.push({ title, detail: String(detail || '').trim(), source });
-    };
-
-    if (main['下一步']) addTodo(`推进主线：${main['标题'] || '当前主线'}`, main['下一步'], '主线');
-    for (const [name, value] of Object.entries(quests)) {
-        const parts = String(value || '').split(/[｜|]/).map(s => s.trim());
-        if (/^(已)?(完成|成功|失败|过期|放弃|取消)/.test(parts[2] || '')) continue;
-        addTodo(`支线：${name}`, parts[7] || parts[1] || parts[5] || '查看支线详情', '支线');
-    }
-    for (const c of roster) {
-        if (!c || !place || String(c.location || '').trim() !== place) continue;
-        addTodo(`找 ${c.name}`, c.action || '和对方聊聊', '附近角色');
-    }
-    const site = Object.values(map.sites || {}).map(list => (list || {})[place]).find(Boolean)
-        || Object.values(map.sites || {}).flatMap(list => Object.entries(list || {})).find(([name]) => place.includes(name))?.[1];
-    if (site?.interact) addTodo(`在${place}看看`, site.interact, '当前地点');
-    try {
-        const bookData = await stBridge.loadWorldInfoAsync(book, true);
-        const news = Object.values(bookData?.entries || {}).find(e => e && e.comment === '新闻日报');
-        const headline = String(news?.content || '').split('\n').find(l => /^-\s*/.test(l.trim()));
-        if (headline) addTodo('打听最近的新闻', headline.replace(/^-\s*/, '').slice(0, 80), '新闻日报');
-    } catch (_) {}
-    if (todos.length) {
-        const todoHead = document.createElement('div');
-        todoHead.className = 'nt-quest-section';
-        todoHead.textContent = '可办事项';
-        body.appendChild(todoHead);
-        for (const todo of todos.slice(0, 5)) {
-            const item = document.createElement('div');
-            item.className = 'nt-quest-read-item';
-            const n = document.createElement('div');
-            n.className = 'nt-quest-read-name';
-            n.textContent = todo.title;
-            const d = document.createElement('div');
-            d.className = 'nt-quest-read-detail';
-            d.textContent = [todo.detail, todo.source ? `来源：${todo.source}` : ''].filter(Boolean).join('　');
-            item.appendChild(n);
-            item.appendChild(d);
-            body.appendChild(item);
-        }
-    }
-
     const card = document.createElement('div');
     card.className = 'nt-quest-main';
     const title = document.createElement('div');
@@ -2267,6 +2217,42 @@ async function showQuestsModal() {
             item.appendChild(detail);
         }
         body.appendChild(item);
+    }
+
+    // AI 更新的「可办事项」：不是程序汇总，是模型每轮生成/替换的附近新鲜事
+    const todoHead = document.createElement('div');
+    todoHead.className = 'nt-quest-section';
+    todoHead.textContent = '可办事项';
+    body.appendChild(todoHead);
+    let todoLines = [];
+    try {
+        const bookData = await stBridge.loadWorldInfoAsync(book, true);
+        const todoEntry = Object.values(bookData?.entries || {}).find(e => e && e.comment === '可办事项');
+        todoLines = String(todoEntry?.content || '').split('\n')
+            .map(l => l.trim())
+            .filter(l => /^[-·]\s*/.test(l))
+            .map(l => l.replace(/^[-·]\s*/, ''));
+    } catch (_) {}
+    if (!todoLines.length) {
+        const empty = document.createElement('div');
+        empty.className = 'nt-quick-note';
+        empty.textContent = '暂无。等世界更新后，这里会出现附近可以做的有趣事。';
+        body.appendChild(empty);
+    } else {
+        for (const line of todoLines.slice(0, 6)) {
+            const parts = line.split(/[｜|]/).map(s => s.trim()).filter(Boolean);
+            const item = document.createElement('div');
+            item.className = 'nt-quest-read-item';
+            const n = document.createElement('div');
+            n.className = 'nt-quest-read-name';
+            n.textContent = parts[0] || '可做';
+            const d = document.createElement('div');
+            d.className = 'nt-quest-read-detail';
+            d.textContent = parts.slice(1).join('　');
+            item.appendChild(n);
+            if (d.textContent) item.appendChild(d);
+            body.appendChild(item);
+        }
     }
 
     if (questHistory.length) {
@@ -3310,7 +3296,7 @@ async function showEditModal() {
         return;
     }
 
-    const titles = ['主线', '支线', '世界·国家', '世界·势力', '新闻日报', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
+    const titles = ['主线', '支线', '可办事项', '世界·国家', '世界·势力', '新闻日报', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
     const body = document.createElement('div');
     body.className = 'nt-edit';
     const select = document.createElement('select');
@@ -3349,6 +3335,7 @@ async function showEditModal() {
         '小总结': { order: 999, pos: 4, constant: true },
         '大总结': { order: 9999, pos: 4, constant: true },
         '剧情推演': { order: 999, pos: 0, constant: true },
+        '可办事项': { order: 815, pos: 0, constant: true },
     };
 
     const save = async () => {

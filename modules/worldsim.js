@@ -545,6 +545,31 @@ function markMapReady(bookName, book) {
     if (ready) mapTries.delete(bookName);
 }
 
+const TODO_TITLE = '可办事项';
+
+function formatTodoContent(todos) {
+    const list = Array.isArray(todos) ? todos : [];
+    const lines = [];
+    for (const t of list) {
+        if (!t) continue;
+        const title = String(t['标题'] || t.title || '').trim();
+        if (!title) continue;
+        const place = String(t['地点'] || t.place || '').trim();
+        const body = String(t['内容'] || t.desc || '').trim();
+        const who = String(t['相关人'] || t.npc || '').trim();
+        lines.push(`- ${title}｜${place || '当前地点'}｜${body || '看看会发生什么'}${who ? '｜' + who : ''}`);
+        if (lines.length >= 6) break;
+    }
+    return lines.join('\n') || '（暂无）';
+}
+
+async function applyTodos(bookName, todos) {
+    if (!bookName || todos === undefined) return;
+    await stBridge.updateEntry(bookName, TODO_TITLE, formatTodoContent(todos), true, [], {
+        position: 0, depth: 0, order: 815
+    });
+}
+
 /** 开局主线/支线生成 */
 function buildQuestGenesisPrompt() {
     const tagOpen = '<nekotools:questgen>';
@@ -574,6 +599,10 @@ function buildQuestPrompt() {
 - 「期限」写绝对日期（如 2009年11月05日），没有期限写“无”。
 - 「失败条件」一句话写清怎样算失败。期限已过且状态未完成、或状态写失败的支线，插件会自动删除。
 - 支线期限要和地图路程一致：如果从当前地点赶过去需要的时间已经超过期限，就不能写成“来得及”。
+【可办事项】JSON 字段 "todos": [{"标题":"...","地点":"地图小地点","内容":"...","相关人":"..."}]
+- 写 2–4 条“现在附近可以做的有趣新鲜事”：街头小事、临时邀约、可打听的传闻、顺手能帮的忙、值得去看一眼的异动。
+- 这不是主线/支线，也不是任务系统或委托；不要写成“去某地接任务”，不要重复主线支线目标。
+- 每轮重写整张列表；已经做过、过期、离开当前地点或不再有趣的事直接删掉；没有就输出空数组。
 </nekotools:track.quest>`;
 }
 
@@ -1577,6 +1606,7 @@ const ENTRY_LAYOUT = {
     '新闻日报': { order: 804, constant: false, keyword: true },
     '主线': { order: 810, constant: true, keyword: false },
     '支线': { order: 812, constant: false, keyword: true },
+    '可办事项': { order: 815, constant: true, keyword: false },
     '地图': { order: 830, constant: false, keyword: true },
     '索引': { order: 850, constant: true, keyword: false },
     '道具': { order: 900, constant: false, keyword: true },
@@ -1798,8 +1828,9 @@ export function buildRefreshContract({
     if (quests) {
         parts.push(`【主线支线契约】
 "main": {"标题":"...","目标":"...","阶段":"...","进度":0-100,"失败代价":"...","下一步":"..."}
-"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子"}, "del":["支线名"]}
-要求：主线只维护长期目标/阶段/进度，不写本轮三种走向或概率；阶段没变时进度每轮最多 +5，换阶段当轮最多 +20，不要一跳到底；支线只写新增/完成/失败/删除；期限写绝对日期，没有写“无”；失败条件一句话写清；支线名具体 2-8 字，不要抽象标题；赶期限要和地图路程一致；每条支线必须写清「地点」（地图小地点名）和「下一步」（玩家现在能执行的具体动作）。`);
+"quests": {"add": {"支线名":"类型｜目标｜状态｜期限(YYYY年MM月DD日/无)｜失败条件｜钩子｜地点｜下一步"}, "del":["支线名"]}
+"todos": [{"标题":"...","地点":"地图小地点","内容":"...","相关人":"..."}]
+要求：主线只维护长期目标/阶段/进度，不写本轮三种走向或概率；阶段没变时进度每轮最多 +5，换阶段当轮最多 +20，不要一跳到底；支线只写新增/完成/失败/删除；期限写绝对日期，没有写“无”；失败条件一句话写清；支线名具体 2-8 字，不要抽象标题；赶期限要和地图路程一致；每条支线必须写清「地点」（地图小地点名）和「下一步」（玩家现在能执行的具体动作）；可办事项只写当前附近 2-4 条有趣新鲜事，不是主线支线，不要写成委托。`);
     }
     if (bigSummary) {
         parts.push(`【大总结契约】
@@ -1881,6 +1912,9 @@ export async function applyRefreshData(bookName, data, layer = 0) {
         const quests = await applyQuests(bookName, data.quests, { today: (getSlotClock(bookName) || {}).time || '' });
         summary.quests = quests ? Object.keys(quests).length : 0;
         questPrune = await pruneQuests(bookName, (getSlotClock(bookName) || {}).time || '');
+    }
+    if (data.todos !== undefined) {
+        await applyTodos(bookName, data.todos);
     }
     if (data.items) {
         const map = await applyAggregateOps(bookName, '道具', data.items, 900, { keyword: true });
@@ -2459,6 +2493,9 @@ registry.register({
                         rememberMainProgress(currentLorebook, mainData);
                         if (ready) questTries.delete(currentLorebook);
                     }
+                }
+                if (data.todos !== undefined) {
+                    await applyTodos(currentLorebook, data.todos);
                 }
                 let questPrune = null;
                 if (data.quests && settings.enableQuests) {
