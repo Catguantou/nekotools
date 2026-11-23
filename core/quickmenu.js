@@ -800,6 +800,9 @@ async function showRosterModal(preselectName = '') {
     let cfg = { pinned: [], blocked: [] };
     let selected = '';
     let editing = false;
+    let detailTab = 'archive';
+    let rosterQuery = '';
+    let rosterFilter = 'all';
     let renderSeq = 0;
     let clockNow = readClock();
     let mapData = await readMap(book);
@@ -900,10 +903,37 @@ async function showRosterModal(preselectName = '') {
 
     function renderList() {
         left.textContent = '';
+        const curSite = (findPath(mapData, (clockNow && clockNow.place) || '').site) || (clockNow && clockNow.place) || '';
+        const q = rosterQuery.trim().toLowerCase();
+        const visible = list.filter(item => {
+            if (q && !item.name.toLowerCase().includes(q)) return false;
+            if (rosterFilter === 'here' && charPlace(mapData, item) !== curSite) return false;
+            if (rosterFilter === 'pinned' && !cfg.pinned.includes(item.name)) return false;
+            return true;
+        });
         const head = document.createElement('div');
         head.className = 'nt-quick-chars-head';
-        head.textContent = `角色 ${list.length}`;
+        head.textContent = `角色 ${visible.length}/${list.length}`;
         left.appendChild(head);
+
+        const search = document.createElement('input');
+        search.className = 'nt-quick-input nt-quick-char-search';
+        search.placeholder = '搜索名字';
+        search.value = rosterQuery;
+        search.addEventListener('change', () => { rosterQuery = search.value; renderList(); });
+        left.appendChild(search);
+
+        const filters = document.createElement('div');
+        filters.className = 'nt-quick-char-filters';
+        for (const [key, label] of [['here', '在场'], ['pinned', '关注'], ['all', '全部']]) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'nt-quick-btn-text' + (rosterFilter === key ? ' primary' : '');
+            b.textContent = label;
+            b.addEventListener('click', () => { rosterFilter = key; renderList(); });
+            filters.appendChild(b);
+        }
+        left.appendChild(filters);
 
         // 手动钉住/拉黑一个还没进索引的名字
         const addRow = document.createElement('div');
@@ -936,7 +966,7 @@ async function showRosterModal(preselectName = '') {
         addRow.appendChild(blockBtn);
         left.appendChild(addRow);
 
-        for (const item of list) {
+        for (const item of visible) {
             const row = document.createElement('button');
             row.type = 'button';
             row.className = 'nt-quick-char-row' + (item.name === selected ? ' active' : '');
@@ -1106,31 +1136,73 @@ async function showRosterModal(preselectName = '') {
         }
 
         const fields = charFields(model);
+        const tabs = [
+            { key: 'archive', label: '档案', fields: ['姓名', '性别', '年龄', '外貌', '身份', '长期目标'] },
+            { key: 'now', label: '当下', fields: ['位置', '心情', '状态', '当前行动', '下一步', '特殊变化', '更新于'] },
+            { key: 'backstage', label: '幕后', fields: ['后台运行', '日程', '近期打算', '最近变化'] },
+            { key: 'memory', label: '认知', fields: ['关键记忆', '已知', '秘密'] },
+            { key: 'relations', label: '关系', fields: ['人际关系'] },
+        ];
+        if (!tabs.some(t => t.key === detailTab)) detailTab = 'archive';
+        const tabBar = document.createElement('div');
+        tabBar.className = 'nt-char-tabs';
+        for (const tab of tabs) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'nt-char-tab' + (detailTab === tab.key ? ' active' : '');
+            b.textContent = tab.label;
+            b.addEventListener('click', () => { detailTab = tab.key; renderDetail(); });
+            tabBar.appendChild(b);
+        }
+        right.appendChild(tabBar);
+
         if (!fields.length) {
             const note = document.createElement('div');
             note.className = 'nt-quick-note';
             note.textContent = '这个角色还没有档案。等模型在 ws_update 里写 chars，或者点下面的「编辑档案」自己填。';
             right.appendChild(note);
         } else {
-            const ordered = [...fields].sort((a, b) => {
+            const active = tabs.find(t => t.key === detailTab) || tabs[0];
+            const known = new Set(tabs.flatMap(t => t.fields));
+            const wanted = new Set(active.fields);
+            const visible = fields.filter(f => detailTab === 'archive' && !known.has(f.key) ? true : wanted.has(f.key));
+            const ordered = [...visible].sort((a, b) => {
                 const ia = CHAR_FIELD_ORDER.indexOf(a.key);
                 const ib = CHAR_FIELD_ORDER.indexOf(b.key);
                 return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
             });
-            for (const f of ordered) {
-                const row = document.createElement('div');
-                row.className = 'nt-quick-char-field';
-                if (f.key) {
-                    const k = document.createElement('div');
-                    k.className = 'nt-quick-char-field-key';
-                    k.textContent = f.key;
-                    row.appendChild(k);
+            if (!ordered.length) {
+                const note = document.createElement('div');
+                note.className = 'nt-quick-note';
+                note.textContent = active.key === 'relations' ? '暂无记录的人际关系。' : '这一页暂无内容。';
+                right.appendChild(note);
+            } else {
+                for (const f of ordered) {
+                    const row = document.createElement('div');
+                    row.className = 'nt-quick-char-field';
+                    if (f.key) {
+                        const k = document.createElement('div');
+                        k.className = 'nt-quick-char-field-key';
+                        k.textContent = f.key;
+                        row.appendChild(k);
+                    }
+                    const v = document.createElement('div');
+                    v.className = 'nt-quick-char-field-value';
+                    v.textContent = f.value;
+                    row.appendChild(v);
+                    right.appendChild(row);
                 }
-                const v = document.createElement('div');
-                v.className = 'nt-quick-char-field-value';
-                v.textContent = f.value;
-                row.appendChild(v);
-                right.appendChild(row);
+            }
+            if (active.key === 'relations') {
+                const graph = document.createElement('button');
+                graph.type = 'button';
+                graph.className = 'nt-quick-btn-text';
+                graph.textContent = '打开关系网';
+                graph.addEventListener('click', () => showRelationshipModal(book));
+                const bar = document.createElement('div');
+                bar.className = 'nt-quick-char-actions';
+                bar.appendChild(graph);
+                right.appendChild(bar);
             }
         }
 
@@ -3719,6 +3791,167 @@ function buildReputationSection(rep, titleText, emptyText = '还没有记录') {
     return sec;
 }
 
+function buildSubTabs(items, activeKey, onSelect) {
+    const bar = document.createElement('div');
+    bar.className = 'nt-subtabs';
+    for (const item of items) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'nt-subtab' + (item.key === activeKey ? ' active' : '');
+        b.textContent = item.label;
+        b.addEventListener('click', () => onSelect(item.key));
+        bar.appendChild(b);
+    }
+    return bar;
+}
+
+async function showUserInfoModal(activeTab = 'basic') {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+    const body = document.createElement('div');
+    body.className = 'nt-user-info';
+    body.appendChild(buildSubTabs([
+        { key: 'basic', label: '基础信息' },
+        { key: 'economy', label: '经营资产' },
+        { key: 'faction', label: '组织势力' },
+        { key: 'culture', label: '文娱创作' },
+    ], activeTab, (key) => { closeModal(); setTimeout(() => showUserInfoModal(key).catch(e => toast(String(e?.message || e), 'error')), 0); }));
+
+    if (activeTab === 'basic') {
+        const loaded = await stBridge.loadPlayerProfile(book);
+        const profile = normalizePlayerProfile(loaded || {});
+        body.appendChild(buildPlayerBrief(book, profile));
+        const hint = document.createElement('div');
+        hint.className = 'nt-player-hint';
+        hint.textContent = '这里只展示玩家基础信息；完整的道具、资产、关系、承诺和声望在「完整基础信息」里。';
+        body.appendChild(hint);
+        const bar = document.createElement('div');
+        bar.className = 'nt-quick-char-actions';
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'nt-quick-btn-text primary';
+        open.textContent = '完整基础信息';
+        open.addEventListener('click', () => { closeModal(); setTimeout(() => showPlayerInfoModal().catch(e => toast(String(e?.message || e), 'error')), 0); });
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'nt-quick-btn-text';
+        edit.textContent = '手动编辑';
+        edit.addEventListener('click', () => { closeModal(); setTimeout(() => showPlayerInfoModal(true).catch(e => toast(String(e?.message || e), 'error')), 0); });
+        bar.appendChild(open);
+        bar.appendChild(edit);
+        body.appendChild(bar);
+    } else if (activeTab === 'economy') {
+        const note = document.createElement('div');
+        note.className = 'nt-quick-note';
+        note.textContent = '经营资产面板骨架已接入。账户、股票、店铺、产业功能在后续版本实现。';
+        body.appendChild(note);
+    } else if (activeTab === 'faction') {
+        const note = document.createElement('div');
+        note.className = 'nt-quick-note';
+        note.textContent = '组织势力面板骨架已接入。玩家势力、人员名单、据点信息在后续版本实现。';
+        body.appendChild(note);
+    } else {
+        const note = document.createElement('div');
+        note.className = 'nt-quick-note';
+        note.textContent = '文娱创作未激活。还没有作品；想写小说、画画、演戏、作曲，直接在剧情里开始。';
+        body.appendChild(note);
+    }
+
+    openModal({
+        title: '用户信息',
+        body,
+        wide: true,
+        footer: [{ label: '关闭', primary: true }],
+    });
+}
+
+async function showPlotInfoModal(activeTab = 'preview') {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+    const body = document.createElement('div');
+    body.className = 'nt-plot-info';
+    body.appendChild(buildSubTabs([
+        { key: 'preview', label: '剧情推演' },
+        { key: 'quests', label: '可办事项' },
+        { key: 'settings', label: '剧情设置' },
+    ], activeTab, (key) => { closeModal(); setTimeout(() => showPlotInfoModal(key).catch(e => toast(String(e?.message || e), 'error')), 0); }));
+
+    if (activeTab === 'preview') {
+        let text = '';
+        try {
+            const bookData = await stBridge.loadWorldInfoAsync(book, true);
+            const entry = Object.values(bookData?.entries || {}).find(e => e && e.comment === '剧情推演');
+            text = String(entry?.content || '').trim();
+        } catch (_) {}
+        const box = document.createElement('pre');
+        box.className = 'nt-plot-preview';
+        box.textContent = text || '暂无剧情推演。等世界更新或手动修改后，这里会显示行动推演。';
+        body.appendChild(box);
+    } else if (activeTab === 'quests') {
+        const note = document.createElement('div');
+        note.className = 'nt-quick-note';
+        note.textContent = '可办事项包含主线、支线和 AI 更新的附近新鲜事。';
+        body.appendChild(note);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'nt-quick-btn-text primary';
+        btn.textContent = '打开可办事项';
+        btn.addEventListener('click', () => { closeModal(); setTimeout(() => showQuestsModal().catch(e => toast(String(e?.message || e), 'error')), 0); });
+        body.appendChild(btn);
+    } else {
+        const note = document.createElement('div');
+        note.className = 'nt-quick-note';
+        note.textContent = '剧情设置后续扩展：难度分级、剧情风格、规则开关。当前先保留入口。';
+        body.appendChild(note);
+    }
+
+    openModal({
+        title: '剧情信息',
+        body,
+        wide: true,
+        footer: [{ label: '关闭', primary: true }],
+    });
+}
+
+async function showDisasterModal() {
+    const book = stBridge.currentTrackerName();
+    if (!book) {
+        toast('请先选择一个角色卡', 'warning');
+        return;
+    }
+    const body = document.createElement('div');
+    body.className = 'nt-disaster-info';
+    let text = '';
+    try {
+        const bookData = await stBridge.loadWorldInfoAsync(book, true);
+        const entry = Object.values(bookData?.entries || {}).find(e => e && (e.comment === '世界灾变' || e.comment === '天灾'));
+        text = String(entry?.content || '').trim();
+    } catch (_) {}
+    const note = document.createElement('div');
+    note.className = 'nt-quick-note';
+    note.textContent = text ? '' : '当前没有世界灾变。灾变只能通过剧情触发，插件不在面板里快速创建。';
+    if (text) {
+        const box = document.createElement('pre');
+        box.className = 'nt-plot-preview';
+        box.textContent = text;
+        body.appendChild(box);
+    } else {
+        body.appendChild(note);
+    }
+    openModal({
+        title: '世界灾变',
+        body,
+        wide: true,
+        footer: [{ label: '关闭', primary: true }],
+    });
+}
+
 async function showPlayerInfoModal(edit = false) {
     const book = stBridge.currentTrackerName();
     if (!book) {
@@ -3927,65 +4160,117 @@ function buildPop() {
     const list = document.createElement('div');
     list.className = 'nt-quick-pop-list';
 
-    const items = [
-        { group: '世界', icon: '🕰', key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气', enabled: true },
-        { group: '世界', icon: '🗺', key: 'map', label: '地图', hint: '区域 / 城市 / 小地点', enabled: true },
-        { group: '世界', icon: '📰', key: 'news', label: '新闻日报', hint: '每游戏日更新 / 最多6条', enabled: true },
-        { group: '世界', icon: '📜', key: 'log', label: '世界日志', hint: '最近的角色 / 世界 / 支线变化', enabled: true },
-        { group: '角色', icon: '👥', key: 'roster', label: '角色管理', hint: '详情 / 钉住 / 拉黑', enabled: true },
-        { group: '角色', icon: '🪪', key: 'player', label: '用户信息', hint: '钱 / 道具 / 关系 / 声望', enabled: true },
-        { group: '角色', icon: '📋', key: 'quests', label: '可办事项', hint: '主线 / 支线，可编辑', enabled: true },
-        { group: '行动', icon: '🎯', key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪', enabled: true },
-        { group: '行动', icon: '🔄', key: 'refresh', label: '请求更新', hint: '按角色/类别静默更新', enabled: true },
-        { group: '系统', icon: '💾', key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档', enabled: true },
-        { group: '系统', icon: '✏️', key: 'edit', label: '手动修改', hint: '直接编辑追踪书条目', enabled: true },
+    const menuGroups = [
+        {
+            key: 'user', icon: '🪪', label: '用户信息', hint: '基础 / 经营 / 组织 / 文娱',
+            children: [
+                { key: 'player', label: '基础信息', hint: '档案 / 声望 / 状态' },
+                { key: 'economy', label: '经营资产', hint: '账户 / 股票 / 店铺 / 产业' },
+                { key: 'faction', label: '组织势力', hint: '玩家势力 / 人员 / 据点' },
+                { key: 'culture', label: '文娱创作', hint: '作品 / 评论 / 榜单 / 奖项' },
+            ],
+        },
+        {
+            key: 'world', icon: '🕰', label: '世界信息', hint: '时钟 / 地图 / 新闻 / 日志 / 灾变',
+            children: [
+                { key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气' },
+                { key: 'map', label: '地图', hint: '区域 / 城市 / 小地点' },
+                { key: 'news', label: '新闻日报', hint: '每游戏日更新 / 最多6条' },
+                { key: 'log', label: '世界日志', hint: '最近的角色 / 世界 / 支线变化' },
+                { key: 'disaster', label: '世界灾变', hint: '当前天灾 / 阶段 / 日志' },
+            ],
+        },
+        {
+            key: 'plot', icon: '📖', label: '剧情信息', hint: '剧情推演 / 可办事项 / 剧情设置',
+            children: [
+                { key: 'preview', label: '剧情推演', hint: '行动推演 / 难度风险' },
+                { key: 'quests', label: '可办事项', hint: '主线 / 支线 / 附近新鲜事' },
+                { key: 'plotSettings', label: '剧情设置', hint: '难度 / 剧情规则（后续扩展）' },
+            ],
+        },
+        { key: 'roster', icon: '👥', label: '角色管理', hint: '档案 / 当下 / 幕后 / 认知 / 关系', action: 'roster' },
+        {
+            key: 'settings', icon: '⚙️', label: '设置', hint: '快捷行动 / 更新 / 存档 / 手修',
+            children: [
+                { key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪' },
+                { key: 'refresh', label: '请求更新', hint: '按角色/类别静默更新' },
+                { key: 'slots', label: '存档', hint: '新建 / 切换 / 存读档' },
+                { key: 'edit', label: '手动修改', hint: '直接编辑追踪书条目' },
+            ],
+        },
     ];
 
-    let lastGroup = '';
-    let groupNo = 0;
-    for (const item of items) {
-        if (item.group !== lastGroup) {
-            lastGroup = item.group;
-            groupNo++;
-            const groupEl = document.createElement('div');
-            groupEl.className = 'nt-quick-group';
-            groupEl.textContent = `${String(groupNo).padStart(2, '0')} / ${item.group}`;
-            list.appendChild(groupEl);
-        }
+    const runMenuKey = (key, label) => {
+        closePop();
+        if (key === 'player') showUserInfoModal('basic').catch(err => toast(`打开用户信息失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'economy') showUserInfoModal('economy').catch(err => toast(`打开经营资产失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'faction') showUserInfoModal('faction').catch(err => toast(`打开组织势力失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'culture') showUserInfoModal('culture').catch(err => toast(`打开文娱创作失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'clock') showClockModal();
+        else if (key === 'news') showNewsModal();
+        else if (key === 'log') showWorldLogModal();
+        else if (key === 'disaster') showDisasterModal().catch(err => toast(`打开世界灾变失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'preview') showPlotInfoModal('preview').catch(err => toast(`打开剧情推演失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'quests') showQuestsModal().catch(err => toast(`打开可办事项失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'plotSettings') showPlotInfoModal('settings').catch(err => toast(`打开剧情设置失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'roster') showRosterModal().catch(err => toast(`打开角色管理失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'action') showActionModal().catch(err => toast(`打开快捷行动失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'map') showMapModal().catch(err => toast(`打开地图失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'refresh') showRefreshModal().catch(err => toast(`打开请求更新失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'edit') showEditModal().catch(err => toast(`打开手动修改失败：${err && err.message ? err.message : err}`, 'error'));
+        else if (key === 'slots') showSlotsModal();
+        else showSoon(label || '该功能');
+    };
+
+    const makeMenuRow = (item, onClick) => {
         const row = document.createElement('button');
         row.type = 'button';
-        row.className = 'nt-quick-item' + (item.enabled ? '' : ' disabled');
-        row.dataset.key = item.key;
-
+        row.className = 'nt-quick-item';
+        row.dataset.key = item.key || '';
         const label = document.createElement('span');
         label.className = 'nt-quick-item-label';
         label.textContent = item.label;
-
         const hint = document.createElement('span');
         hint.className = 'nt-quick-item-hint';
-        hint.textContent = item.enabled ? item.hint : '后续版本';
-
+        hint.textContent = item.hint || '';
         row.appendChild(label);
         row.appendChild(hint);
+        row.addEventListener('click', onClick);
+        return row;
+    };
 
-        row.addEventListener('click', () => {
-            closePop();
-            if (item.key === 'clock') showClockModal();
-            else if (item.key === 'news') showNewsModal();
-            else if (item.key === 'log') showWorldLogModal();
-            else if (item.key === 'roster') showRosterModal().catch(err => toast(`打开角色管理失败：${err && err.message ? err.message : err}`, 'error'));
-            else if (item.key === 'player') showPlayerInfoModal().catch(err => toast(`打开用户信息失败：${err && err.message ? err.message : err}`, 'error'));
-            else if (item.key === 'action') showActionModal().catch(err => toast(`打开快捷行动失败：${err && err.message ? err.message : err}`, 'error'));
-            else if (item.key === 'map') showMapModal().catch(err => toast(`打开地图失败：${err && err.message ? err.message : err}`, 'error'));
-            else if (item.key === 'quests') showQuestsModal().catch(err => toast(`打开可办事项失败：${err && err.message ? err.message : err}`, 'error'));
-            else if (item.key === 'refresh') showRefreshModal().catch(err => toast(`打开请求更新失败：${err && err.message ? err.message : err}`, 'error'));
-            else if (item.key === 'edit') showEditModal().catch(err => toast(`打开手动修改失败：${err && err.message ? err.message : err}`, 'error'));
-            else if (item.key === 'slots') showSlotsModal();
-            else showSoon(item.label);
+    const renderMenuRoot = () => {
+        list.textContent = '';
+        menuGroups.forEach((group, index) => {
+            const head = document.createElement('div');
+            head.className = 'nt-quick-group';
+            head.textContent = `${String(index + 1).padStart(2, '0')} / ${group.label}`;
+            list.appendChild(head);
+            const row = makeMenuRow(group, () => {
+                if (group.action) runMenuKey(group.action, group.label);
+                else renderMenuGroup(group);
+            });
+            list.appendChild(row);
         });
-        list.appendChild(row);
-    }
-    applyPlayerMenuFlags(list);
+        applyPlayerMenuFlags(list);
+    };
+
+    const renderMenuGroup = (group) => {
+        list.textContent = '';
+        const back = document.createElement('button');
+        back.type = 'button';
+        back.className = 'nt-quick-item nt-quick-back';
+        back.textContent = `← 返回 / ${group.label}`;
+        back.addEventListener('click', renderMenuRoot);
+        list.appendChild(back);
+        for (const child of group.children || []) {
+            const row = makeMenuRow(child, () => runMenuKey(child.key, child.label));
+            list.appendChild(row);
+        }
+        applyPlayerMenuFlags(list);
+    };
+
+    renderMenuRoot();
 
     pop.appendChild(head);
     pop.appendChild(status);

@@ -5590,3 +5590,69 @@ body {
     font-size: 10.5px;
     text-align: center;
 }
+
+/* 二级菜单返回行 */
+#nt-quick-pop .nt-quick-back {
+    justify-content: flex-start;
+    color: var(--ntq-dim);
+    font-size: 10.5px;
+}
+
+/* 用户信息 / 剧情信息子页签 */
+#nt-quick-modal .nt-subtabs,
+#nt-quick-modal .nt-char-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 2px 0 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--ntq-line);
+}
+
+#nt-quick-modal .nt-subtab,
+#nt-quick-modal .nt-char-tab {
+    flex: 0 0 auto;
+    border: 1px solid var(--ntq-line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--ntq-dim);
+    padding: 4px 10px;
+    font-size: 10.5px;
+    cursor: pointer;
+}
+
+#nt-quick-modal .nt-subtab.active,
+#nt-quick-modal .nt-char-tab.active {
+    border-color: var(--ntq-blue);
+    color: var(--ntq-text);
+    background: rgba(120, 150, 240, 0.14);
+}
+
+#nt-quick-modal .nt-plot-preview {
+    max-height: 52vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 10px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.18);
+    color: var(--ntq-text);
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+#nt-quick-modal .nt-quick-char-search {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 6px;
+}
+
+#nt-quick-modal .nt-quick-char-filters {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+
