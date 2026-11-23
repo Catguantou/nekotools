@@ -7,6 +7,7 @@ import { mountQuickMenu } from './core/quickmenu.js';
 import './modules/rewriter.js';
 import './modules/worldsim.js';
 import './modules/worldstate.js';
+import './modules/playerstate.js';
 import './modules/textmanager.js';
 
 let booted = false;
@@ -17,7 +18,7 @@ function boot() {
     if (booted) return;
     booted = true;
 
-    console.log('[nekotools] 正在启动... build 2026-11-24G / v2.0.35');
+    console.log('[nekotools] 正在启动... build 2026-11-24H / v2.0.36');
     settings.load();
 
     for (const mod of registry.list()) {

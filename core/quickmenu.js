@@ -3413,7 +3413,7 @@ async function showEditModal() {
         return;
     }
 
-    const titles = ['主线', '支线', '可办事项', '世界灾变', '世界·国家', '世界·势力', '新闻日报', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
+    const titles = ['主线', '支线', '可办事项', '世界灾变', '玩家势力', '据点', '经营资产', '文娱作品', '世界·国家', '世界·势力', '新闻日报', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
     const body = document.createElement('div');
     body.className = 'nt-edit';
     const select = document.createElement('select');
@@ -3454,6 +3454,10 @@ async function showEditModal() {
         '剧情推演': { order: 999, pos: 0, constant: true },
         '可办事项': { order: 815, pos: 0, constant: true },
         '世界灾变': { order: 816, pos: 0, constant: true },
+        '玩家势力': { order: 870, pos: 0, constant: true },
+        '据点': { order: 871, pos: 0, constant: true },
+        '经营资产': { order: 872, pos: 0, constant: true },
+        '文娱作品': { order: 873, pos: 0, constant: false },
     };
 
     const save = async () => {
@@ -3807,6 +3811,16 @@ function buildSubTabs(items, activeKey, onSelect) {
     return bar;
 }
 
+async function readPlayerEntry(book, title) {
+    try {
+        const data = await stBridge.loadWorldInfoAsync(book, true);
+        const entry = Object.values(data?.entries || {}).find(e => e && e.comment === title);
+        return String(entry?.content || '').trim();
+    } catch (_) {
+        return '';
+    }
+}
+
 async function showUserInfoModal(activeTab = 'basic') {
     const book = stBridge.currentTrackerName();
     if (!book) {
@@ -3846,20 +3860,31 @@ async function showUserInfoModal(activeTab = 'basic') {
         bar.appendChild(edit);
         body.appendChild(bar);
     } else if (activeTab === 'economy') {
-        const note = document.createElement('div');
-        note.className = 'nt-quick-note';
-        note.textContent = '经营资产面板骨架已接入。账户、股票、店铺、产业功能在后续版本实现。';
-        body.appendChild(note);
+        const text = await readPlayerEntry(book, '经营资产');
+        const box = document.createElement('pre');
+        box.className = 'nt-plot-preview';
+        box.textContent = text || '尚未开始经营。';
+        body.appendChild(box);
     } else if (activeTab === 'faction') {
-        const note = document.createElement('div');
-        note.className = 'nt-quick-note';
-        note.textContent = '组织势力面板骨架已接入。玩家势力、人员名单、据点信息在后续版本实现。';
-        body.appendChild(note);
+        const org = await readPlayerEntry(book, '玩家势力');
+        const base = await readPlayerEntry(book, '据点');
+        const box = document.createElement('pre');
+        box.className = 'nt-plot-preview';
+        box.textContent = [org ? `【玩家势力】\n${org}` : '', base ? `【据点】\n${base}` : ''].filter(Boolean).join('\n\n') || '尚未建立或加入玩家势力。';
+        body.appendChild(box);
     } else {
-        const note = document.createElement('div');
-        note.className = 'nt-quick-note';
-        note.textContent = '文娱创作未激活。还没有作品；想写小说、画画、演戏、作曲，直接在剧情里开始。';
-        body.appendChild(note);
+        const text = await readPlayerEntry(book, '文娱作品');
+        if (!text) {
+            const note = document.createElement('div');
+            note.className = 'nt-quick-note';
+            note.textContent = '文娱创作未激活。还没有作品；想写小说、画画、演戏、作曲，直接在剧情里开始。';
+            body.appendChild(note);
+        } else {
+            const box = document.createElement('pre');
+            box.className = 'nt-plot-preview';
+            box.textContent = text;
+            body.appendChild(box);
+        }
     }
 
     openModal({
