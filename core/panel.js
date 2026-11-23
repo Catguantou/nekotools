@@ -1014,7 +1014,7 @@ export function mountPanel() {
         favListEl.innerHTML = favs.map(f => `
             <div class="nt-book-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:5px;">
                 <div class="nt-fav-jump" data-idx="${f.index}" style="flex:1; min-width:0; cursor:pointer;" title="点击跳转到该楼层">
-                    <span style="color:#ffcc00; font-weight:bold; margin-right:6px;">#${f.index}</span>
+                    <span style="color:#ffcc00; font-weight:bold; margin-right:6px;">★ #${f.index}</span>
                     <span style="color:var(--nt-blue); margin-right:6px;">[${escapeHtml(f.name)}]</span>
                     <span style="color:#ccc; font-size:11px;">${escapeHtml(f.preview)}</span>
                 </div>

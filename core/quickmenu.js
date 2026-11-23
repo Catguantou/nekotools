@@ -974,7 +974,7 @@ async function showRosterModal(preselectName = '') {
             const star = document.createElement('span');
             const pinned = cfg.pinned.includes(item.name);
             star.className = 'nt-quick-char-star' + (pinned ? ' pinned' : '');
-            star.textContent = pinned ? '●' : '○';
+            star.textContent = pinned ? '★' : '☆';
             star.title = pinned ? '取消钉住' : '钉住（长期关注）';
             star.addEventListener('click', async (e) => {
                 e.stopPropagation();
