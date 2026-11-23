@@ -2565,6 +2565,8 @@ ${contract}
 
 let autoRefreshRunning = false;
 let autoRefreshPending = false;
+let autoRefreshStopRequested = false;
+let autoRefreshAbort = null;
 let autoRefreshEventAt = 0;
 let autoRefreshSig = '';
 let autoRefreshSigAt = 0;
@@ -2583,15 +2585,36 @@ function triggerAutoRefresh(sig = '') {
     }, 600);
 }
 
-function showAutoUpdateBanner(text = '正在全量更新，建议更新结束后再继续下一轮') {
+function showAutoUpdateBanner(text = '正在全量更新，建议更新结束后再继续下一轮', withStop = true) {
     let el = document.getElementById('nt-auto-updating');
     if (!el) {
         el = document.createElement('div');
         el.id = 'nt-auto-updating';
         document.body.appendChild(el);
     }
-    el.textContent = text;
+    el.replaceChildren();
+    const label = document.createElement('span');
+    label.className = 'nt-auto-updating-text';
+    label.textContent = text;
+    const stop = document.createElement('button');
+    stop.type = 'button';
+    stop.className = 'nt-auto-updating-stop';
+    stop.textContent = '停止';
+    stop.title = '停止自动全量更新和自动重试';
+    stop.addEventListener('click', stopAutoFullRefresh);
+    el.appendChild(label);
+    if (withStop) el.appendChild(stop);
     el.style.display = 'flex';
+}
+
+function stopAutoFullRefresh() {
+    if (!autoRefreshRunning && !autoRefreshPending) return;
+    autoRefreshStopRequested = true;
+    autoRefreshPending = false;
+    try { autoRefreshAbort?.abort(); } catch (_) {}
+    const label = document.querySelector('#nt-auto-updating .nt-auto-updating-text');
+    if (label) label.textContent = '正在停止自动全量更新…';
+    toast('已请求停止自动全量更新', 'info');
 }
 
 function hideAutoUpdateBanner() {
@@ -2618,6 +2641,8 @@ async function runAutoFullRefresh() {
     const book = stBridge.currentTrackerName();
     if (!book) return;
     autoRefreshRunning = true;
+    autoRefreshStopRequested = false;
+    autoRefreshAbort = new AbortController();
     showAutoUpdateBanner('正在自动全量更新（副 API）…');
     const configuredRetry = Number(api.retryCount);
     const retryCount = Number.isFinite(configuredRetry) ? Math.max(0, Math.min(10, Math.trunc(configuredRetry))) : 3;
@@ -2625,6 +2650,7 @@ async function runAutoFullRefresh() {
     try {
         do {
             autoRefreshPending = false;
+            if (autoRefreshStopRequested) break;
             const prompt = await buildAutoRefreshPrompt(book);
             let raw = '';
             let data = null;
@@ -2634,7 +2660,7 @@ async function runAutoFullRefresh() {
                     if (attempt > 1) {
                         showAutoUpdateBanner(`正在自动全量更新（副 API，第 ${attempt}/${maxAttempts} 次尝试）…`);
                     }
-                    raw = await generateRefreshApi(prompt, api);
+                    raw = await generateRefreshApi(prompt, api, autoRefreshAbort.signal);
                     const text = String(raw || '');
                     const a = text.indexOf('{');
                     const b = text.lastIndexOf('}');
@@ -2642,11 +2668,17 @@ async function runAutoFullRefresh() {
                     data = JSON.parse(text.slice(a, b + 1));
                     break;
                 } catch (e) {
+                    if (autoRefreshStopRequested || e?.name === 'AbortError') break;
                     lastError = e;
                     console.warn(`[nekotools] 自动全量更新第 ${attempt}/${maxAttempts} 次失败`, e);
-                    if (attempt < maxAttempts) await new Promise(r => setTimeout(r, 3000));
+                    if (attempt < maxAttempts && !autoRefreshStopRequested) {
+                        for (let i = 0; i < 30 && !autoRefreshStopRequested; i++) {
+                            await new Promise(r => setTimeout(r, 100));
+                        }
+                    }
                 }
             }
+            if (autoRefreshStopRequested) break;
             if (!data) throw lastError || new Error('自动全量更新失败');
             const summary = await applyRefreshData(book, data, currentLayerNo());
             if (summary.summary || summary.bigSummary) {
@@ -2679,12 +2711,17 @@ async function runAutoFullRefresh() {
         console.warn('[nekotools] 自动全量更新失败', e);
         toast(`自动全量更新失败：${e && e.message ? e.message : e}`, 'error');
     } finally {
+        const stopped = autoRefreshStopRequested;
         autoRefreshRunning = false;
+        autoRefreshPending = false;
+        autoRefreshAbort = null;
+        autoRefreshStopRequested = false;
         hideAutoUpdateBanner();
+        if (stopped) toast('已停止自动全量更新', 'info');
     }
 }
 
-async function generateViaStRelay(prompt, cfg) {
+async function generateViaStRelay(prompt, cfg, signal) {
     const type = cfg.type || 'openai';
     const source = cfg.source || (type === 'anthropic' ? 'claude' : (type === 'gemini' ? 'makersuite' : 'openai'));
     const modelMap = {
@@ -2727,6 +2764,11 @@ async function generateViaStRelay(prompt, cfg) {
         payload.vertexai_region = cfg.vertexRegion || 'us-central1';
     }
     const ctrl = new AbortController();
+    const onAbort = () => { try { ctrl.abort(); } catch (_) {} };
+    if (signal) {
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+    }
     const timer = setTimeout(() => ctrl.abort(), 180000);
     try {
         const res = await fetch('/api/backends/chat-completions/generate', {
@@ -2762,10 +2804,11 @@ async function generateViaStRelay(prompt, cfg) {
         return content;
     } finally {
         clearTimeout(timer);
+        signal?.removeEventListener?.('abort', onAbort);
     }
 }
 
-async function generateRefreshApi(prompt, cfg) {
+async function generateRefreshApi(prompt, cfg, signal) {
     if (!cfg.key && cfg.profileId) {
         try {
             const storedKey = await getSecret(cfg.profileId);
@@ -2773,7 +2816,7 @@ async function generateRefreshApi(prompt, cfg) {
         } catch (_) {}
     }
     if ((cfg.transport || 'relay') === 'relay') {
-        return await generateViaStRelay(prompt, cfg);
+        return await generateViaStRelay(prompt, cfg, signal);
     }
     const rawUrl = String(cfg.url || '').trim();
     if (!rawUrl) return null;
@@ -2800,6 +2843,7 @@ async function generateRefreshApi(prompt, cfg) {
             const res = await fetch(base.toString(), {
                 method: 'POST',
                 headers,
+                signal,
                 body: JSON.stringify({
                     systemInstruction: { parts: [{ text: prompt }] },
                     contents: [{ role: 'user', parts: [{ text: '开始更新。' }] }],
@@ -2825,7 +2869,7 @@ async function generateRefreshApi(prompt, cfg) {
     }
     let res;
     try {
-        res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+        res = await fetch(url, { method: 'POST', headers, signal, body: JSON.stringify(body) });
     } catch (e) {
         throw new Error(`外接 API 请求失败（可能是 CORS 或网络）：${e && e.message ? e.message : e}`);
     }
@@ -3219,7 +3263,7 @@ ${contract}
             } else {
                 // 主 API 的静默生成走 ST 内部全局静默（无法按请求打标记），
                 // 期间用户发消息会被跳过：用横幅明确提示。
-                showAutoUpdateBanner('正在后台更新（主 API），建议更新结束再继续下一轮');
+                showAutoUpdateBanner('正在后台更新（主 API），建议更新结束再继续下一轮', false);
                 try {
                     raw = await generateQuiet(prompt);
                 } finally {

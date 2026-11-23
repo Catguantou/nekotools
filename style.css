@@ -4703,7 +4703,27 @@ body {
     font-size: 11px;
     line-height: 1.35;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
-    pointer-events: none;
+    pointer-events: auto;
+    gap: 8px;
+}
+
+#nt-auto-updating .nt-auto-updating-text {
+    min-width: 0;
+}
+
+#nt-auto-updating .nt-auto-updating-stop {
+    flex: 0 0 auto;
+    padding: 3px 10px;
+    border: 1px solid rgba(240, 120, 130, 0.75);
+    border-radius: 999px;
+    background: rgba(90, 20, 28, 0.9);
+    color: #ffdce0;
+    font: inherit;
+    cursor: pointer;
+}
+
+#nt-auto-updating .nt-auto-updating-stop:hover {
+    background: rgba(130, 28, 38, 0.95);
 }
 
 /* 手机地图：减少 HUD 占位、让地图可滚动且不被悬浮条遮挡 */
