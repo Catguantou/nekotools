@@ -33,6 +33,7 @@ import { generateQuiet, getEventSource, getEventTypes } from './st_api.js';
 import { applyRefreshData, buildRefreshContract, refreshIndexHeader, setDifficulty } from '../modules/worldsim.js';
 import { disasterTemplates, startDisaster, endDisaster, readDisaster } from '../modules/worldstate.js';
 import { buildEconomyPanel } from '../modules/economy.js';
+import { buildCulturePanel } from '../modules/culture.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 import { getSecret } from './apivault.js';
@@ -3871,18 +3872,8 @@ async function showUserInfoModal(activeTab = 'basic') {
         box.textContent = [org ? `【玩家势力】\n${org}` : '', base ? `【据点】\n${base}` : ''].filter(Boolean).join('\n\n') || '尚未建立或加入玩家势力。';
         body.appendChild(box);
     } else {
-        const text = await readPlayerEntry(book, '文娱作品');
-        if (!text) {
-            const note = document.createElement('div');
-            note.className = 'nt-quick-note';
-            note.textContent = '文娱创作未激活。还没有作品；想写小说、画画、演戏、作曲，直接在剧情里开始。';
-            body.appendChild(note);
-        } else {
-            const box = document.createElement('pre');
-            box.className = 'nt-plot-preview';
-            box.textContent = text;
-            body.appendChild(box);
-        }
+        const panel = await buildCulturePanel(book);
+        body.appendChild(panel);
     }
 
     openModal({

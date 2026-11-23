@@ -22,7 +22,8 @@ function prompt() {
 【据点】
 ...
 【文娱作品】
-...
+只写玩家真的有文娱活动时；内容用 JSON：
+{"works":[{"title":"作品名","type":"小说/画/戏/电影/歌","status":"创作中/已发布/连载中/完结","quality":"粗糙/一般/优秀/杰作","heat":"冷清/小有名气/热门/爆火/现象级","spread":"本地/地区/全国/世界","reputation":"差评/一般/好评/神作","heatScore":0,"comments":["代表性评论"],"awards":["奖项"]}]}
 
 只写变化的段，不重写没有变化的段；不要额外发请求。
 </nekotools:playerstate>`;
