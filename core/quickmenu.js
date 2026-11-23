@@ -3891,8 +3891,7 @@ async function showPlotInfoModal(activeTab = 'preview') {
         } catch (_) {}
         const box = document.createElement('pre');
         box.className = 'nt-plot-preview';
-        const diff = settings.get('worldsim')?.difficulty || '标准';
-        box.textContent = `当前难度：${diff}\n\n${text || '暂无剧情推演。等世界更新或手动修改后，这里会显示行动推演。'}`;
+        box.textContent = text || '暂无剧情推演。等世界更新或手动修改后，这里会显示行动推演。';
         body.appendChild(box);
     } else if (activeTab === 'quests') {
         const note = document.createElement('div');
@@ -3912,7 +3911,7 @@ async function showPlotInfoModal(activeTab = 'preview') {
         label.textContent = '难度分级';
         const select = document.createElement('select');
         select.className = 'nt-edit-select';
-        for (const level of ['宽松', '标准', '严酷', '绝境']) {
+        for (const level of ['开挂', '宽松', '标准', '严酷', '绝境']) {
             const opt = document.createElement('option');
             opt.value = level;
             opt.textContent = level;

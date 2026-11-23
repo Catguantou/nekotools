@@ -732,7 +732,7 @@ function getLorebookName() {
 }
 
 export function setDifficulty(level) {
-    const allowed = ['宽松', '标准', '严酷', '绝境'];
+    const allowed = ['开挂', '宽松', '标准', '严酷', '绝境'];
     settings.difficulty = allowed.includes(level) ? level : '标准';
     coreSettings.set('worldsim', { ...(coreSettings.get('worldsim') || {}), difficulty: settings.difficulty });
     return settings.difficulty;
@@ -798,12 +798,54 @@ function buildStatusPrompt() {
     return applyPromptMode('status', p);
 }
 
+const DIFFICULTY_PROMPTS = {
+    开挂: `【难度：开挂】
+失败概率：0%。
+死亡/重伤：不会发生。
+永久损失：不会发生。
+阻力：没有；机缘、宝物、贵人主动出现。
+NPC 行为：天然偏爱用户角色，愿意帮忙；敌人最终退让、内讧或臣服。
+成功条件：自动成功或轻松成功；判断错误也会变成好事。`,
+    宽松: `【难度：宽松】
+失败概率：0–10%。
+死亡/重伤：不会死亡，最多轻伤。
+永久损失：不会发生。
+阻力：很小；有退路和补救，麻烦多半变成笑料。
+NPC 行为：多数友善、讲理，愿意帮忙；冲突可以调解。
+成功条件：正常行动即可成功；失败只造成小麻烦。`,
+    标准: `【难度：标准】
+失败概率：40–60%。
+死亡/重伤：可能发生。
+永久损失：可能发生。
+阻力：正常；资源、信息、时间都有限。
+NPC 行为：按自身利益和关系行动，不偏爱也不针对用户角色。
+成功条件：需要准备、能力或资源；不保证努力就有回报。`,
+    严酷: `【难度：严酷】
+失败概率：75–90%。
+死亡/重伤：常见。
+永久损失：常见，通常不可逆。
+阻力：资源紧张、竞争激烈、信息不足。
+NPC 行为：优先自保；帮助通常要交换；竞争者可落井下石。
+成功条件：需要充分准备、抓住少数窗口，并付出明显代价。`,
+    绝境: `【难度：绝境】
+失败概率：95% 以上。
+死亡/重伤：随时可能。
+永久损失：几乎不可避免，且不可逆。
+阻力：资源、时间、信任都接近耗尽。
+NPC 行为：优先自保或趁火打劫；合作代价极高。
+成功条件：极少数窗口；需要巨大牺牲或极好运气；判断正确也可能失败。`,
+};
+
+function difficultyPrompt() {
+    return DIFFICULTY_PROMPTS[settings.difficulty] || DIFFICULTY_PROMPTS['标准'];
+}
+
 function buildPreviewPrompt() {
     const tagOpen = '<ws_' + 'preview>';
     const tagClose = '</ws_' + 'preview>';
     let p = `<nekotools:preview>
 【剧情推演】
-【难度硬约束】当前难度：${settings.difficulty || '标准'}。难度是硬约束，不得因玩家意愿降低；先判断行动风险为低/中/高/极高，再写可能后果。高风险失败要写清代价：受伤、损失资源、关系恶化、路线中断。不要写“系统判定失败”，用世界内因果表现。
+${difficultyPrompt()}
 你必须把全部推演内容夹在下面两个标签之间，**开始标签和结束标签都必须原样输出**；缺少结束标签会被判为正文泄露：
 ${tagOpen}
 行为推演：
