@@ -845,19 +845,20 @@ function buildPreviewPrompt() {
     const tagClose = '</ws_' + 'preview>';
     let p = `<nekotools:preview>
 【剧情推演】
-${difficultyPrompt()}
+
+行为推演：
+- 行动判定：用户输入只是用户角色的尝试，不保证成立；按能力、资源、信息、距离和规则，判断哪些能成、哪些受阻、要付什么代价。
+- 各方反应：在场 NPC 和势力按自己的目标行动，不因为用户一句话就配合或改变立场。
+
+结果分级：
+- 大成功：超出预期的好结果。
+- 成功：达成目的，但有代价或痕迹。
+- 失败：没达成目的，暴露问题或付出损失。
+- 大失败：局面明显恶化，留下长期后果。
+
 你必须把全部推演内容夹在下面两个标签之间，**开始标签和结束标签都必须原样输出**；缺少结束标签会被判为正文泄露：
 ${tagOpen}
-行为推演：
-  - 四种走向（按概率排序）：
-    - 走向1：[描述可能导致的后果，不一定是用户想要的]
-    - 走向2：[描述突发事件或部分成功]
-    - 走向3：[描述完全的成功]
-    - 走向4：[描述完全的失败]
-短期走向（只写接下来 1–3 步）
-  - 下一步：[行动后最可能立即发生的反应，绝不是用户下一步会做什么]
-  - 隐患：[本轮或下一步可能冒出的即时事件/线索，不写长期伏笔清单]
-  - 倾向量表：【喜剧%+悲剧%+正剧%+幽默%+严肃%+欢快%+宏大%】
+（按上面的行为推演和结果分级填写）
 ${tagClose}
 （标签之外绝对不要重复上述推演内容）`;
 
@@ -1027,6 +1028,8 @@ function buildSystemMessages(needBig, includeTracking = true, bookName = '', nee
 
     if (settings.enableStatus) contract.push(buildStatusPrompt());
     if (settings.enablePreview) contract.push(buildPreviewPrompt());
+    // 难度是独立硬约束，不塞进剧情推演模板
+    contract.push(difficultyPrompt());
 
     // 追踪书不存在时不要再要求模型输出追踪 JSON：写了也没地方存，白烧 token
     if (includeTracking && !externalAuto) {
