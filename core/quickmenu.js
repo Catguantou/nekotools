@@ -4307,7 +4307,11 @@ function buildPop() {
         hint.textContent = item.hint || '';
         row.appendChild(label);
         row.appendChild(hint);
-        row.addEventListener('click', onClick);
+        row.addEventListener('click', (e) => {
+            // 重建二级列表会移除当前按钮；不阻止冒泡的话，document 会把这次点击当成“点外面”
+            e.stopPropagation();
+            onClick();
+        });
         return row;
     };
 
@@ -4334,7 +4338,7 @@ function buildPop() {
         back.type = 'button';
         back.className = 'nt-quick-item nt-quick-back';
         back.textContent = `← 返回 / ${group.label}`;
-        back.addEventListener('click', renderMenuRoot);
+        back.addEventListener('click', (e) => { e.stopPropagation(); renderMenuRoot(); });
         list.appendChild(back);
         for (const child of group.children || []) {
             const row = makeMenuRow(child, () => runMenuKey(child.key, child.label));
