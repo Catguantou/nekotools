@@ -501,28 +501,19 @@ function placePop() {
     const pop = $(POP_ID);
     if (!btn || !pop) return;
     const mobile = window.matchMedia('(max-width: 640px)').matches;
-    if (mobile) {
-        // 默认左下打开：宽度收为原来的 2/3，高度允许到原来的 1.25 倍
-        const baseWidth = Math.min(260, window.innerWidth - 16);
-        const width = Math.max(150, Math.round(baseWidth * 2 / 3));
-        const maxHeight = Math.min(775, window.innerHeight - 16);
-        pop.style.left = '8px';
-        pop.style.right = 'auto';
-        pop.style.width = `${width}px`;
-        pop.style.maxWidth = 'none';
-        pop.style.top = 'auto';
-        pop.style.bottom = '8px';
-        pop.style.maxHeight = `${maxHeight}px`;
-        pop.style.overflowY = 'auto';
-        return;
-    }
-    pop.style.top = 'auto';
-    pop.style.right = 'auto';
+    const maxHeight = Math.min(775, window.innerHeight - 16);
+    const width = mobile
+        ? Math.max(150, Math.round(Math.min(260, window.innerWidth - 16) * 2 / 3))
+        : 190;
+    const height = Math.min(maxHeight, Math.max(320, pop.scrollHeight || maxHeight));
     pop.style.left = '8px';
-    pop.style.bottom = '8px';
-    pop.style.width = '190px';
+    pop.style.right = 'auto';
+    pop.style.width = `${width}px`;
     pop.style.maxWidth = 'none';
-    pop.style.maxHeight = '775px';
+    pop.style.height = `${height}px`;
+    pop.style.maxHeight = `${maxHeight}px`;
+    pop.style.top = `${Math.max(8, window.innerHeight - height - 8)}px`;
+    pop.style.bottom = 'auto';
     pop.style.overflowY = 'auto';
 }
 
@@ -4334,6 +4325,7 @@ function buildPop() {
             list.appendChild(row);
         });
         applyPlayerMenuFlags(list);
+        try { placePop(); } catch (_) {}
     };
 
     const renderMenuGroup = (group) => {
@@ -4349,6 +4341,7 @@ function buildPop() {
             list.appendChild(row);
         }
         applyPlayerMenuFlags(list);
+        try { placePop(); } catch (_) {}
     };
 
     renderMenuRoot();
