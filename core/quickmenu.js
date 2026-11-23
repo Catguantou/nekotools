@@ -502,32 +502,28 @@ function placePop() {
     if (!btn || !pop) return;
     const mobile = window.matchMedia('(max-width: 640px)').matches;
     if (mobile) {
-        // 手机：接近红圈大小，但左右不铺满
-        const state = floatState();
-        const width = Math.min(260, window.innerWidth - 16);
-        const maxHeight = Math.min(620, window.innerHeight - 24);
-        const left = state.side === 'left' ? 8 : window.innerWidth - width - 8;
-        pop.style.left = `${left}px`;
+        // 默认左下打开：宽度收为原来的 2/3，高度允许到原来的 1.25 倍
+        const baseWidth = Math.min(260, window.innerWidth - 16);
+        const width = Math.max(150, Math.round(baseWidth * 2 / 3));
+        const maxHeight = Math.min(775, window.innerHeight - 16);
+        pop.style.left = '8px';
         pop.style.right = 'auto';
         pop.style.width = `${width}px`;
         pop.style.maxWidth = 'none';
-        pop.style.top = '12px';
-        pop.style.bottom = 'auto';
+        pop.style.top = 'auto';
+        pop.style.bottom = '8px';
         pop.style.maxHeight = `${maxHeight}px`;
         pop.style.overflowY = 'auto';
         return;
     }
-    pop.style.top = '';
-    pop.style.right = '';
-    pop.style.width = '';
-    pop.style.maxWidth = '';
-    pop.style.maxHeight = '';
-    pop.style.overflowY = '';
-    const rect = btn.getBoundingClientRect();
-    const width = pop.offsetWidth || 230;
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-    pop.style.left = left + 'px';
-    pop.style.bottom = Math.max(8, window.innerHeight - rect.top + 8) + 'px';
+    pop.style.top = 'auto';
+    pop.style.right = 'auto';
+    pop.style.left = '8px';
+    pop.style.bottom = '8px';
+    pop.style.width = '190px';
+    pop.style.maxWidth = 'none';
+    pop.style.maxHeight = '775px';
+    pop.style.overflowY = 'auto';
 }
 
 function openPop() {
