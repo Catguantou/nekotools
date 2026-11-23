@@ -1661,6 +1661,7 @@ const ENTRY_LAYOUT = {
     '主线': { order: 810, constant: true, keyword: false },
     '支线': { order: 812, constant: false, keyword: true },
     '可办事项': { order: 815, constant: true, keyword: false },
+    '世界灾变': { order: 816, constant: true, keyword: false },
     '地图': { order: 830, constant: false, keyword: true },
     '索引': { order: 850, constant: true, keyword: false },
     '道具': { order: 900, constant: false, keyword: true },

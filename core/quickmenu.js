@@ -31,6 +31,7 @@ import { refreshChar } from './worldindex.js';
 import { readMain, readQuests, readQuestHistory, clampProgress, saveMain, saveQuests } from './worldquest.js';
 import { generateQuiet, getEventSource, getEventTypes } from './st_api.js';
 import { applyRefreshData, buildRefreshContract, refreshIndexHeader, setDifficulty } from '../modules/worldsim.js';
+import { disasterTemplates, startDisaster, endDisaster, readDisaster } from '../modules/worldstate.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 import { getSecret } from './apivault.js';
@@ -3412,7 +3413,7 @@ async function showEditModal() {
         return;
     }
 
-    const titles = ['主线', '支线', '可办事项', '世界·国家', '世界·势力', '新闻日报', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
+    const titles = ['主线', '支线', '可办事项', '世界灾变', '世界·国家', '世界·势力', '新闻日报', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
     const body = document.createElement('div');
     body.className = 'nt-edit';
     const select = document.createElement('select');
@@ -3452,6 +3453,7 @@ async function showEditModal() {
         '大总结': { order: 9999, pos: 4, constant: true },
         '剧情推演': { order: 999, pos: 0, constant: true },
         '可办事项': { order: 815, pos: 0, constant: true },
+        '世界灾变': { order: 816, pos: 0, constant: true },
     };
 
     const save = async () => {
@@ -3945,25 +3947,74 @@ async function showDisasterModal() {
         toast('请先选择一个角色卡', 'warning');
         return;
     }
+    const record = await readDisaster();
     const body = document.createElement('div');
     body.className = 'nt-disaster-info';
-    let text = '';
-    try {
-        const bookData = await stBridge.loadWorldInfoAsync(book, true);
-        const entry = Object.values(bookData?.entries || {}).find(e => e && (e.comment === '世界灾变' || e.comment === '天灾'));
-        text = String(entry?.content || '').trim();
-    } catch (_) {}
-    const note = document.createElement('div');
-    note.className = 'nt-quick-note';
-    note.textContent = text ? '' : '当前没有世界灾变。灾变只能通过剧情触发，插件不在面板里快速创建。';
-    if (text) {
+
+    if (record?.content) {
         const box = document.createElement('pre');
         box.className = 'nt-plot-preview';
-        box.textContent = text;
+        box.textContent = record.content;
         body.appendChild(box);
+        if (!/状态：已结束/.test(record.content)) {
+            const end = document.createElement('button');
+            end.type = 'button';
+            end.className = 'nt-quick-btn-text danger';
+            end.textContent = '结束天灾';
+            end.addEventListener('click', async () => {
+                await endDisaster();
+                closeModal();
+                setTimeout(() => showDisasterModal().catch(e => toast(String(e?.message || e), 'error')), 0);
+            });
+            body.appendChild(end);
+        }
     } else {
+        const note = document.createElement('div');
+        note.className = 'nt-quick-note';
+        note.textContent = '当前没有世界灾变。选择一种天灾，直接把世界切进去。';
         body.appendChild(note);
     }
+
+    const head = document.createElement('div');
+    head.className = 'nt-quest-section';
+    head.textContent = record?.content ? '切换天灾' : '启动天灾';
+    body.appendChild(head);
+
+    const grid = document.createElement('div');
+    grid.className = 'nt-quick-char-filters';
+    for (const t of disasterTemplates()) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'nt-quick-btn-text';
+        b.textContent = t.name;
+        b.addEventListener('click', async () => {
+            await startDisaster(t.id);
+            closeModal();
+            setTimeout(() => showDisasterModal().catch(e => toast(String(e?.message || e), 'error')), 0);
+        });
+        grid.appendChild(b);
+    }
+    body.appendChild(grid);
+
+    const custom = document.createElement('button');
+    custom.type = 'button';
+    custom.className = 'nt-quick-btn-text';
+    custom.textContent = '自定义天灾';
+    custom.addEventListener('click', async () => {
+        const name = window.prompt('天灾名称');
+        if (!name) return;
+        const rules = window.prompt('世界规则（一句话）') || '世界进入灾变状态。';
+        const environment = window.prompt('当前环境（一句话）') || '灾变刚刚开始。';
+        const survival = window.prompt('生存重点（一句话）') || '活下去。';
+        await startDisaster(null, {
+            name, rules, environment, survival,
+            stages: '爆发：灾变出现；扩散：影响扩大；恶化：资源紧缺；长期化：新秩序；灾后：重建。',
+        });
+        closeModal();
+        setTimeout(() => showDisasterModal().catch(e => toast(String(e?.message || e), 'error')), 0);
+    });
+    body.appendChild(custom);
+
     openModal({
         title: '世界灾变',
         body,
