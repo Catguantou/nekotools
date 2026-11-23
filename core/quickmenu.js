@@ -974,7 +974,7 @@ async function showRosterModal(preselectName = '') {
             const star = document.createElement('span');
             const pinned = cfg.pinned.includes(item.name);
             star.className = 'nt-quick-char-star' + (pinned ? ' pinned' : '');
-            star.textContent = pinned ? '★' : '☆';
+            star.textContent = pinned ? '●' : '○';
             star.title = pinned ? '取消钉住' : '钉住（长期关注）';
             star.addEventListener('click', async (e) => {
                 e.stopPropagation();
@@ -1735,12 +1735,12 @@ async function showMapModal(opts = {}) {
         if (state.site) addCrumb(state.site, 'site');
 
         actions.textContent = '';
-        actions.appendChild(makeBtn('📍 我在哪', () => {
+        actions.appendChild(makeBtn('我在哪', () => {
             setStateFromPath(cur);
             mode = 'map';
             render();
         }, mode === 'map' && state.site && state.site === cur.site));
-        actions.appendChild(makeBtn('🔍 找角色', () => {
+        actions.appendChild(makeBtn('找角色', () => {
             mode = 'people';
             render();
         }, mode === 'people'));
@@ -1750,7 +1750,7 @@ async function showMapModal(opts = {}) {
 
         const place = (clockNow && clockNow.place) || cur.site || cur.city || '未知地点';
         const time = (clockNow && clockNow.time) || '';
-        info.textContent = `🧭 第 ${currentLayerNo()} 层 · ${place}${time ? ' · ' + time : ''}`;
+        info.textContent = `第 ${currentLayerNo()} 层 · ${place}${time ? ' · ' + time : ''}`;
     };
 
     const makeNode = (name, place, x, y, level, onClick) => {
@@ -4162,7 +4162,7 @@ function buildPop() {
 
     const menuGroups = [
         {
-            key: 'user', icon: '🪪', label: '用户信息', hint: '基础 / 经营 / 组织 / 文娱',
+            key: 'user', label: '用户信息', hint: '基础 / 经营 / 组织 / 文娱',
             children: [
                 { key: 'player', label: '基础信息', hint: '档案 / 声望 / 状态' },
                 { key: 'economy', label: '经营资产', hint: '账户 / 股票 / 店铺 / 产业' },
@@ -4171,7 +4171,7 @@ function buildPop() {
             ],
         },
         {
-            key: 'world', icon: '🕰', label: '世界信息', hint: '时钟 / 地图 / 新闻 / 日志 / 灾变',
+            key: 'world', label: '世界信息', hint: '时钟 / 地图 / 新闻 / 日志 / 灾变',
             children: [
                 { key: 'clock', label: '世界时钟', hint: '时间 / 地点 / 天气' },
                 { key: 'map', label: '地图', hint: '区域 / 城市 / 小地点' },
@@ -4181,16 +4181,16 @@ function buildPop() {
             ],
         },
         {
-            key: 'plot', icon: '📖', label: '剧情信息', hint: '剧情推演 / 可办事项 / 剧情设置',
+            key: 'plot', label: '剧情信息', hint: '剧情推演 / 可办事项 / 剧情设置',
             children: [
                 { key: 'preview', label: '剧情推演', hint: '行动推演 / 难度风险' },
                 { key: 'quests', label: '可办事项', hint: '主线 / 支线 / 附近新鲜事' },
                 { key: 'plotSettings', label: '剧情设置', hint: '难度 / 剧情规则（后续扩展）' },
             ],
         },
-        { key: 'roster', icon: '👥', label: '角色管理', hint: '档案 / 当下 / 幕后 / 认知 / 关系', action: 'roster' },
+        { key: 'roster', label: '角色管理', hint: '档案 / 当下 / 幕后 / 认知 / 关系', action: 'roster' },
         {
-            key: 'settings', icon: '⚙️', label: '设置', hint: '快捷行动 / 更新 / 存档 / 手修',
+            key: 'settings', label: '设置', hint: '快捷行动 / 更新 / 存档 / 手修',
             children: [
                 { key: 'action', label: '快捷行动', hint: '找谁 / 做什么 / 去哪' },
                 { key: 'refresh', label: '请求更新', hint: '按角色/类别静默更新' },

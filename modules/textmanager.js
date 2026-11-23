@@ -151,7 +151,7 @@ export async function toggleFavoriteFloor(index) {
         mesEl.classList.toggle('nt-fav-mes', msg.extra.nekotool_favorite);
         const starBtn = mesEl.querySelector('.nt-fav-star-btn');
         if (starBtn) {
-            starBtn.textContent = msg.extra.nekotool_favorite ? '★' : '☆';
+            starBtn.textContent = msg.extra.nekotool_favorite ? '已收藏' : '收藏';
             starBtn.classList.toggle('active', msg.extra.nekotool_favorite);
         }
     }
@@ -625,14 +625,14 @@ registry.register({
 
                 const starBtn = document.createElement('span');
                 starBtn.className = 'nt-fav-star-btn';
-                starBtn.textContent = '☆';
+                starBtn.textContent = '收藏';
                 starBtn.title = '收藏此楼层';
 
                 const ctx = stBridge.getContext();
                 const msg = ctx.chat?.[mesId];
                 if (msg?.extra?.nekotool_favorite) {
                     starBtn.classList.add('active');
-                    starBtn.textContent = '★';
+                    starBtn.textContent = '已收藏';
                     mesEl.classList.add('nt-fav-mes');
                 }
 

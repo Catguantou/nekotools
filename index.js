@@ -16,7 +16,7 @@ function boot() {
     if (booted) return;
     booted = true;
 
-    console.log('[nekotools] 正在启动... build 2026-11-24A / v2.0.29');
+    console.log('[nekotools] 正在启动... build 2026-11-24B / v2.0.30');
     settings.load();
 
     for (const mod of registry.list()) {
@@ -29,19 +29,19 @@ function boot() {
 
     installFetchHook(true);
 
-    // ⭐ 延迟挂载面板，确保酒馆 DOM 完全加载
+    // 延迟挂载面板，确保酒馆 DOM 完全加载
     setTimeout(() => {
         console.log('[nekotools] 挂载面板...');
         mountPanel();
     }, 1500);
 
-    // ⭐ 输入栏快捷入口（和面板独立，失败了不影响面板）
+    // 输入栏快捷入口（和面板独立，失败了不影响面板）
     setTimeout(() => {
         try { mountQuickMenu(); } catch (e) { console.error('[nekotools:quickmenu]', e); }
     }, 1200);
 }
 
-// ⭐ 多重触发机制，确保面板一定能加载
+// 多重触发机制，确保面板一定能加载
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
 } else {

@@ -551,7 +551,7 @@
     .ws-status-bar::after { display: none; }
 }
 
-/* 閻熸瑥妫滈～搴ｄ沪韫囨碍鏉搁柨娑欒壘瑜把囧及椤栨粍绠欏☉鎾崇Х椤棝鏁嶇仦鐐闁硅鍠楅惀鍛村礉椤帞绀夐柛娆樺灟缁旀挳鏌ㄩ鎴掑垝濠?*/
+/* 视觉屏蔽：隐藏被 /hide 的旧楼层 */
 #chat .mes.nt-visual-hidden {
     display: none !important;
 }
@@ -627,11 +627,13 @@
    ========================================= */
 .nt-fav-star-btn {
     cursor: pointer;
-    font-size: 15px;
-    color: rgba(255, 255, 255, 0.35);
+    font-size: 10px;
+    font-family: inherit;
+    color: rgba(255, 255, 255, 0.45);
     transition: all 0.2s ease;
     user-select: none;
-    padding: 0 4px;
+    padding: 0 5px;
+    white-space: nowrap;
 }
 
 .nt-fav-star-btn:hover {
