@@ -16,6 +16,7 @@ import {
 
 const defaultSettings = {
     enabled: true,
+    difficulty: '标准',
     enableStatus: true,
     enablePreview: true,
     enableChars: true,
@@ -730,6 +731,13 @@ function getLorebookName() {
     return stBridge.trackerBookName();
 }
 
+export function setDifficulty(level) {
+    const allowed = ['宽松', '标准', '严酷', '绝境'];
+    settings.difficulty = allowed.includes(level) ? level : '标准';
+    coreSettings.set('worldsim', { ...(coreSettings.get('worldsim') || {}), difficulty: settings.difficulty });
+    return settings.difficulty;
+}
+
 const DIRECTOR_PROMPT = `<nekotools:director>
 【NEKOTOOL 世界模拟器核心指令】
 你是普赛克使用的世界模拟器工具NEKOTOOL，严格执行以下任务：
@@ -795,6 +803,7 @@ function buildPreviewPrompt() {
     const tagClose = '</ws_' + 'preview>';
     let p = `<nekotools:preview>
 【剧情推演】
+【难度硬约束】当前难度：${settings.difficulty || '标准'}。难度是硬约束，不得因玩家意愿降低；先判断行动风险为低/中/高/极高，再写可能后果。高风险失败要写清代价：受伤、损失资源、关系恶化、路线中断。不要写“系统判定失败”，用世界内因果表现。
 你必须把全部推演内容夹在下面两个标签之间，**开始标签和结束标签都必须原样输出**；缺少结束标签会被判为正文泄露：
 ${tagOpen}
 行为推演：

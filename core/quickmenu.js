@@ -30,7 +30,7 @@ import { readMap, findPath, travelEntries } from './worldmap.js';
 import { refreshChar } from './worldindex.js';
 import { readMain, readQuests, readQuestHistory, clampProgress, saveMain, saveQuests } from './worldquest.js';
 import { generateQuiet, getEventSource, getEventTypes } from './st_api.js';
-import { applyRefreshData, buildRefreshContract, refreshIndexHeader } from '../modules/worldsim.js';
+import { applyRefreshData, buildRefreshContract, refreshIndexHeader, setDifficulty } from '../modules/worldsim.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 import { getSecret } from './apivault.js';
@@ -3891,7 +3891,8 @@ async function showPlotInfoModal(activeTab = 'preview') {
         } catch (_) {}
         const box = document.createElement('pre');
         box.className = 'nt-plot-preview';
-        box.textContent = text || '暂无剧情推演。等世界更新或手动修改后，这里会显示行动推演。';
+        const diff = settings.get('worldsim')?.difficulty || '标准';
+        box.textContent = `当前难度：${diff}\n\n${text || '暂无剧情推演。等世界更新或手动修改后，这里会显示行动推演。'}`;
         body.appendChild(box);
     } else if (activeTab === 'quests') {
         const note = document.createElement('div');
@@ -3905,9 +3906,29 @@ async function showPlotInfoModal(activeTab = 'preview') {
         btn.addEventListener('click', () => { closeModal(); setTimeout(() => showQuestsModal().catch(e => toast(String(e?.message || e), 'error')), 0); });
         body.appendChild(btn);
     } else {
+        const row = document.createElement('label');
+        row.className = 'nt-refresh-item';
+        const label = document.createElement('span');
+        label.textContent = '难度分级';
+        const select = document.createElement('select');
+        select.className = 'nt-edit-select';
+        for (const level of ['宽松', '标准', '严酷', '绝境']) {
+            const opt = document.createElement('option');
+            opt.value = level;
+            opt.textContent = level;
+            select.appendChild(opt);
+        }
+        select.value = settings.get('worldsim')?.difficulty || '标准';
+        select.addEventListener('change', () => {
+            setDifficulty(select.value);
+            toast(`难度已设为：${select.value}`, 'success');
+        });
+        row.appendChild(label);
+        row.appendChild(select);
+        body.appendChild(row);
         const note = document.createElement('div');
         note.className = 'nt-quick-note';
-        note.textContent = '剧情设置后续扩展：难度分级、剧情风格、规则开关。当前先保留入口。';
+        note.textContent = '难度是硬约束，AI 只按等级判断风险，不能因为玩家想轻松就降低。';
         body.appendChild(note);
     }
 
