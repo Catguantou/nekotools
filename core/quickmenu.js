@@ -32,6 +32,7 @@ import { readMain, readQuests, readQuestHistory, clampProgress, saveMain, saveQu
 import { generateQuiet, getEventSource, getEventTypes } from './st_api.js';
 import { applyRefreshData, buildRefreshContract, refreshIndexHeader, setDifficulty } from '../modules/worldsim.js';
 import { disasterTemplates, startDisaster, endDisaster, readDisaster } from '../modules/worldstate.js';
+import { buildEconomyPanel } from '../modules/economy.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 import { getSecret } from './apivault.js';
@@ -3860,11 +3861,8 @@ async function showUserInfoModal(activeTab = 'basic') {
         bar.appendChild(edit);
         body.appendChild(bar);
     } else if (activeTab === 'economy') {
-        const text = await readPlayerEntry(book, '经营资产');
-        const box = document.createElement('pre');
-        box.className = 'nt-plot-preview';
-        box.textContent = text || '尚未开始经营。';
-        body.appendChild(box);
+        const panel = await buildEconomyPanel(book, getSlotClock(book)?.time || '');
+        body.appendChild(panel);
     } else if (activeTab === 'faction') {
         const org = await readPlayerEntry(book, '玩家势力');
         const base = await readPlayerEntry(book, '据点');
