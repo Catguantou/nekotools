@@ -188,6 +188,27 @@ export function jumpToFloor(index) {
 }
 
 // ========== 纯文字导出 ==========
+function stripHiddenFromExport(raw) {
+    let text = String(raw || '')
+        // 思考链常见容器：details / reasoning / thought / cot
+        .replace(/<details[^>]*>[\s\S]*?<\/details>/gi, '')
+        .replace(/<div[^>]*(?:reasoning|thought|chain-of-thought|\bcot\b)[^>]*>[\s\S]*?<\/div>/gi, '')
+        .replace(/<p[^>]*(?:reasoning|thought|chain-of-thought|\bcot\b)[^>]*>[\s\S]*?<\/p>/gi, '')
+        .replace(/```(?:think|thinking|reasoning|cot)[\s\S]*?```/gi, '')
+        .replace(/<ws_[^>]*>[\s\S]*?<\/ws_[^>]*>/gi, '')
+        .replace(/<nekotools:[^>]*>[\s\S]*?<\/nekotools:[^>]*>/gi, '')
+        .replace(/\[\[NT_STATUS\]\][^\n]*/g, '')
+        .replace(/<[^>]+>/g, '');
+    // 和界面使用同一套正则：界面里被隐藏的八股/思维链，导出时直接删掉
+    if (tmSettings.hideSlopVisual !== false) {
+        try {
+            const re = getSlopRegex();
+            if (re) text = text.replace(re, '');
+        } catch (_) {}
+    }
+    return text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function exportPureStoryTxt({ favoritesOnly = false, from = 0, to = null } = {}) {
     const ctx = stBridge.getContext();
     const includeNames = tmSettings.exportIncludeNames !== false;
@@ -211,15 +232,8 @@ export function exportPureStoryTxt({ favoritesOnly = false, from = 0, to = null 
         if (skipHidden && msg.extra?.hidden) return;
         if (!msg.mes) return;
 
-        // 剥离所有NEKOTOOL标签和HTML标签
-        let text = msg.mes
-            .replace(/<ws_[^>]*>[\s\S]*?<\/ws_[^>]*>/gi, '')
-            .replace(/<nekotools:[^>]*>[\s\S]*?<\/nekotools:[^>]*>/gi, '')
-            .replace(/\[\[NT_STATUS\]\][^\n]*/g, '')
-            .replace(/<[^>]+>/g, '')
-            .replace(/[ \t]+\n/g, '\n')
-            .replace(/\n{3,}/g, '\n\n')
-            .trim();
+        // 剥离标签、隐藏思维链和界面已隐藏的八股
+        let text = stripHiddenFromExport(msg.mes);
 
         if (!text) return;
 
