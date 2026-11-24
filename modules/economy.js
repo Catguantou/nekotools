@@ -138,9 +138,20 @@ function drawKline(canvas, candles) {
     });
 }
 
+function marketOpen(bookData) {
+    const entries = Object.values(bookData?.entries || {});
+    const org = entries.find(e => e && (e.comment === '经济机构' || e.comment === '交易所'));
+    if (!org) return false;
+    const text = String(org.content || '');
+    if (/状态：关闭|状态：不存在/.test(text)) return false;
+    return /交易所|状态：开放/.test(text);
+}
+
 export async function buildEconomyPanel(book, dateText = '') {
     const body = document.createElement('div');
     body.className = 'nt-economy-panel';
+    const bookData = await stBridge.loadWorldInfoAsync(book, true);
+    const open = marketOpen(bookData);
     const state = await settle(book, await load(book), dateText);
     await save(book, state);
 
@@ -159,9 +170,16 @@ export async function buildEconomyPanel(book, dateText = '') {
     const head = document.createElement('div');
     head.className = 'nt-quest-section';
     head.textContent = '市场 / 持仓';
-    body.appendChild(head);
+    if (!open) {
+        const note = document.createElement('div');
+        note.className = 'nt-quick-note';
+        note.textContent = '本世界还没有证券交易所。想炒股，需要先在剧情里让交易所、商号股份和交易规则出现。';
+        body.appendChild(note);
+    } else {
+        body.appendChild(head);
+    }
 
-    for (const asset of state.assets) {
+    for (const asset of open ? state.assets : []) {
         const item = document.createElement('div');
         item.className = 'nt-quest-read-item';
         const name = document.createElement('div');
