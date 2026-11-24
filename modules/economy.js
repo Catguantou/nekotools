@@ -206,58 +206,96 @@ export async function buildEconomyPanel(book, dateText = '') {
 
         const actions = document.createElement('div');
         actions.className = 'nt-quick-char-actions';
-        const mk = (label, fn, cls = '') => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'nt-quick-btn-text ' + cls;
-            b.textContent = label;
-            b.addEventListener('click', async () => {
-                try { await fn(); } catch (e) { window.alert(String(e?.message || e)); }
+
+        const openForm = (mode) => {
+            item.querySelectorAll('.nt-trade-form').forEach(el => el.remove());
+            const labels = { buy: '买入', sell: '卖出', margin: '融资买入', short: '融券卖出', cover: '买券还券' };
+            const max = mode === 'buy' ? Math.floor(state.cash / asset.price)
+                : mode === 'sell' ? (asset.qty || 0)
+                : mode === 'margin' ? Math.floor((state.cash * 2) / asset.price)
+                : mode === 'short' ? 1000
+                : (asset.short || 0);
+            const form = document.createElement('div');
+            form.className = 'nt-trade-form';
+            const title = document.createElement('div');
+            title.className = 'nt-trade-title';
+            title.textContent = `${labels[mode]} ${asset.name}｜现价 ${asset.price}`;
+            form.appendChild(title);
+            const meta = document.createElement('div');
+            meta.className = 'nt-trade-meta';
+            meta.textContent = `可操作上限：${Math.max(0, max)}`;
+            form.appendChild(meta);
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = '1';
+            input.step = '1';
+            input.value = String(Math.min(1, Math.max(0, max)));
+            input.className = 'nt-trade-input';
+            form.appendChild(input);
+            const calc = document.createElement('div');
+            calc.className = 'nt-trade-meta';
+            form.appendChild(calc);
+            const err = document.createElement('div');
+            err.className = 'nt-trade-error';
+            form.appendChild(err);
+            const update = () => {
+                const n = Math.max(0, parseInt(input.value || '0', 10) || 0);
+                const amount = n * asset.price;
+                calc.textContent = `${mode === 'sell' || mode === 'short' ? '预计回款' : '预计花费'}：${amount.toFixed(2)}`;
+                err.textContent = n > max ? '超过可操作上限' : '';
+            };
+            input.addEventListener('input', update);
+            update();
+            const bar = document.createElement('div');
+            bar.className = 'nt-quick-char-actions';
+            const confirm = document.createElement('button');
+            confirm.type = 'button';
+            confirm.className = 'nt-quick-btn-text primary';
+            confirm.textContent = '确认';
+            confirm.addEventListener('click', async () => {
+                const n = Math.max(0, parseInt(input.value || '0', 10) || 0);
+                if (!n || n > max) { err.textContent = '数量无效或超过上限'; return; }
+                const cost = n * asset.price;
+                if (mode === 'buy') {
+                    state.cash -= cost;
+                    asset.qty += n;
+                    asset.cost = Math.round(((asset.cost * (asset.qty - n) + cost) / asset.qty) * 100) / 100;
+                } else if (mode === 'sell') {
+                    state.cash += cost;
+                    asset.qty -= n;
+                } else if (mode === 'margin') {
+                    if (cost > state.cash) { state.debt += cost - state.cash; state.cash = 0; }
+                    else state.cash -= cost;
+                    asset.qty += n;
+                } else if (mode === 'short') {
+                    state.cash += cost;
+                    asset.short = (asset.short || 0) + n;
+                } else {
+                    state.cash -= cost;
+                    asset.short -= n;
+                }
+                await save(book, state);
                 body.replaceWith(await buildEconomyPanel(book, dateText));
             });
-            return b;
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'nt-quick-btn-text';
+            cancel.textContent = '取消';
+            cancel.addEventListener('click', () => form.remove());
+            bar.appendChild(confirm);
+            bar.appendChild(cancel);
+            form.appendChild(bar);
+            item.appendChild(form);
         };
-        actions.appendChild(mk('买入', async () => {
-            const n = Math.max(1, parseInt(window.prompt('买入数量') || '0', 10) || 0);
-            const cost = n * asset.price;
-            if (!n || cost > state.cash) throw new Error('现金不足');
-            state.cash -= cost;
-            asset.qty += n;
-            asset.cost = Math.round(((asset.cost * (asset.qty - n) + cost) / asset.qty) * 100) / 100;
-            await save(book, state);
-        }));
-        actions.appendChild(mk('卖出', async () => {
-            const n = Math.max(1, parseInt(window.prompt('卖出数量') || '0', 10) || 0);
-            if (!n || n > (asset.qty || 0)) throw new Error('持仓不足');
-            state.cash += n * asset.price;
-            asset.qty -= n;
-            await save(book, state);
-        }));
-        actions.appendChild(mk('融资买入', async () => {
-            const n = Math.max(1, parseInt(window.prompt('融资买入数量') || '0', 10) || 0);
-            const cost = n * asset.price;
-            if (!n || cost > state.cash * 2) throw new Error('超过两倍杠杆上限');
-            if (cost > state.cash) { state.debt += cost - state.cash; state.cash = 0; }
-            else state.cash -= cost;
-            asset.qty += n;
-            await save(book, state);
-        }));
-        actions.appendChild(mk('融券卖出', async () => {
-            const n = Math.max(1, parseInt(window.prompt('融券卖出数量') || '0', 10) || 0);
-            if (!n) throw new Error('数量无效');
-            state.cash += n * asset.price;
-            asset.short = (asset.short || 0) + n;
-            await save(book, state);
-        }));
-        actions.appendChild(mk('买券还券', async () => {
-            const n = Math.max(1, parseInt(window.prompt('买券还券数量') || '0', 10) || 0);
-            if (!n || n > (asset.short || 0)) throw new Error('融券不足');
-            const cost = n * asset.price;
-            if (cost > state.cash) throw new Error('现金不足');
-            state.cash -= cost;
-            asset.short -= n;
-            await save(book, state);
-        }));
+
+        for (const [key, label] of [['buy', '买入'], ['sell', '卖出'], ['margin', '融资买入'], ['short', '融券卖出'], ['cover', '买券还券']]) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'nt-quick-btn-text';
+            b.textContent = label;
+            b.addEventListener('click', () => openForm(key));
+            actions.appendChild(b);
+        }
         item.appendChild(actions);
         body.appendChild(item);
     }

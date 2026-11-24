@@ -5665,5 +5665,45 @@ body {
     background: rgba(0, 0, 0, 0.18);
 }
 
+#nt-quick-modal .nt-trade-form {
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid rgba(111, 140, 255, .45);
+    border-radius: 6px;
+    background: rgba(111, 140, 255, .07);
+}
+
+#nt-quick-modal .nt-trade-title {
+    font-size: 11px;
+    color: var(--ntq-text);
+    margin-bottom: 4px;
+}
+
+#nt-quick-modal .nt-trade-meta {
+    font-size: 10px;
+    color: var(--ntq-dim);
+    line-height: 1.6;
+}
+
+#nt-quick-modal .nt-trade-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 5px 0;
+    padding: 6px 8px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, .25);
+    color: var(--ntq-text);
+    font: inherit;
+    font-size: 11px;
+}
+
+#nt-quick-modal .nt-trade-error {
+    min-height: 14px;
+    color: #e47a86;
+    font-size: 10px;
+}
+
+
 
 
