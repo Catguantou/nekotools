@@ -1,4 +1,5 @@
 import { stBridge } from '../core/st_bridge.js';
+import { getSlotClock } from '../core/slots.js';
 
 const TITLE = '文娱作品';
 
@@ -8,6 +9,23 @@ function parse(text) {
         if (data && Array.isArray(data.works)) return data;
     } catch (_) {}
     return null;
+}
+
+const HEAT_LEVELS = ['冷清', '小有名气', '热门', '爆火', '现象级'];
+
+function settle(state, month) {
+    if (!month || state.lastMonth === month) return state;
+    for (const work of state.works) {
+        const score = Number(work.heatScore) || 0;
+        const next = Math.max(0, Math.round(score * 0.85));
+        work.heatScore = next;
+        work.heat = HEAT_LEVELS[Math.min(HEAT_LEVELS.length - 1, Math.floor(next / 20))];
+        if (next >= 80 && !(work.awards || []).length) {
+            work.awards = ['月度热门作品'];
+        }
+    }
+    state.lastMonth = month;
+    return state;
 }
 
 function line(label, value) {
@@ -31,6 +49,11 @@ export async function buildCulturePanel(book) {
     const entry = Object.values(data?.entries || {}).find(e => e && e.comment === TITLE);
     const text = String(entry?.content || '').trim();
     const state = parse(text);
+    if (state) {
+        const month = String(getSlotClock(book)?.time || '').match(/\d{4}年\d{1,2}月/)?.[0] || '';
+        settle(state, month);
+        await stBridge.updateEntry(book, TITLE, JSON.stringify(state), true, [], { position: 0, depth: 0, order: 873 });
+    }
 
     if (!state) {
         const note = document.createElement('div');
