@@ -18,7 +18,7 @@ function boot() {
     if (booted) return;
     booted = true;
 
-    console.log('[nekotools] 正在启动... build 2026-11-25G / v2.0.49');
+    console.log('[nekotools] 正在启动... build 2026-11-25H / v2.0.50');
     settings.load();
 
     for (const mod of registry.list()) {

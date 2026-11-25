@@ -34,6 +34,7 @@ import { applyRefreshData, buildRefreshContract, refreshIndexHeader, setDifficul
 import { disasterTemplates, startDisaster, endDisaster, readDisaster } from '../modules/worldstate.js';
 import { buildEconomyPanel } from '../modules/economy.js';
 import { buildCulturePanel } from '../modules/culture.js';
+import { buildFactionPanel } from '../modules/faction.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
 import { getSecret } from './apivault.js';
@@ -3397,7 +3398,7 @@ async function showEditModal() {
         return;
     }
 
-    const titles = ['主线', '支线', '可办事项', '世界灾变', '玩家势力', '据点', '经营资产', '文娱作品', '世界·国家', '世界·势力', '新闻日报', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
+    const titles = ['主线', '支线', '可办事项', '世界灾变', '玩家势力', '据点', '经济机构', '经营资产', '文娱作品', '世界·国家', '世界·势力', '新闻日报', '地图', '索引', '道具', '伏笔', '计划', '小总结', '大总结', '剧情推演'];
     const body = document.createElement('div');
     body.className = 'nt-edit';
     const select = document.createElement('select');
@@ -3440,8 +3441,9 @@ async function showEditModal() {
         '世界灾变': { order: 816, pos: 0, constant: true },
         '玩家势力': { order: 870, pos: 0, constant: true },
         '据点': { order: 871, pos: 0, constant: true },
-        '经营资产': { order: 872, pos: 0, constant: true },
-        '文娱作品': { order: 873, pos: 0, constant: false },
+        '经济机构': { order: 872, pos: 0, constant: true },
+        '经营资产': { order: 873, pos: 0, constant: true },
+        '文娱作品': { order: 874, pos: 0, constant: false },
     };
 
     const save = async () => {
@@ -3847,12 +3849,8 @@ async function showUserInfoModal(activeTab = 'basic') {
         const panel = await buildEconomyPanel(book, getSlotClock(book)?.time || '');
         body.appendChild(panel);
     } else if (activeTab === 'faction') {
-        const org = await readPlayerEntry(book, '玩家势力');
-        const base = await readPlayerEntry(book, '据点');
-        const box = document.createElement('pre');
-        box.className = 'nt-plot-preview';
-        box.textContent = [org ? `【玩家势力】\n${org}` : '', base ? `【据点】\n${base}` : ''].filter(Boolean).join('\n\n') || '尚未建立或加入玩家势力。';
-        body.appendChild(box);
+        const panel = await buildFactionPanel(book);
+        body.appendChild(panel);
     } else {
         const panel = await buildCulturePanel(book);
         body.appendChild(panel);
