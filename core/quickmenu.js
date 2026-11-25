@@ -30,7 +30,7 @@ import { readMap, findPath, travelEntries } from './worldmap.js';
 import { refreshChar } from './worldindex.js';
 import { readMain, readQuests, readQuestHistory, clampProgress, saveMain, saveQuests } from './worldquest.js';
 import { generateQuiet, getEventSource, getEventTypes } from './st_api.js';
-import { applyRefreshData, buildRefreshContract, refreshIndexHeader, setDifficulty } from '../modules/worldsim.js';
+import { applyRefreshData, buildRefreshContract, refreshIndexHeader, setDifficulty, bigSummaryDue } from '../modules/worldsim.js';
 import { disasterTemplates, startDisaster, endDisaster, readDisaster } from '../modules/worldstate.js';
 import { buildEconomyPanel } from '../modules/economy.js';
 import { buildCulturePanel } from '../modules/culture.js';
@@ -2522,9 +2522,7 @@ async function buildAutoRefreshPrompt(book) {
         !m.is_system || m.extra?.nekotool_hidden_by_plugin || m.extra?.nekotool_user_hidden
     )).length;
     const wsCfg = settings.get('worldsim') || {};
-    const bigLimit = Number(wsCfg.bigSummaryLimit) || 0;
-    const wantBigSummary = wsCfg.enableBigSummary === true
-        && bigLimit > 0 && aiCount > 0 && aiCount % bigLimit === 0;
+    const wantBigSummary = bigSummaryDue(book, aiCount);
     const wantSmallSummary = wsCfg.enableSummary === true && !wantBigSummary;
     const blocks = [];
     const recentChat = (stBridge.getContext().chat || [])
