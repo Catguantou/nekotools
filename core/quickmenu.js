@@ -2518,11 +2518,8 @@ async function buildAutoRefreshPrompt(book) {
     const userCharName = stBridge.getUserName() || '用户';
     const recordUserChar = settings.get('worldsim').recordUserCharacter === true;
     const chatNow = stBridge.getContext().chat || [];
-    const aiCount = chatNow.filter(m => m && !m.is_user && (
-        !m.is_system || m.extra?.nekotool_hidden_by_plugin || m.extra?.nekotool_user_hidden
-    )).length;
     const wsCfg = settings.get('worldsim') || {};
-    const wantBigSummary = bigSummaryDue(book, aiCount);
+    const wantBigSummary = bigSummaryDue(book, chatNow.length);
     const wantSmallSummary = wsCfg.enableSummary === true && !wantBigSummary;
     const blocks = [];
     const recentChat = (stBridge.getContext().chat || [])

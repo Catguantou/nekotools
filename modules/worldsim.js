@@ -649,19 +649,19 @@ function countAiMessages(chat) {
     )).length;
 }
 
-/** 大总结改成“上次总结后累计 N 条”，不再要求刚好整除 */
-export function bigSummaryDue(bookName, aiCount) {
+/** 大总结按酒馆总楼层累计，不再只数 assistant；上次总结后满 N 层触发 */
+export function bigSummaryDue(bookName, layerCount) {
     if (!settings.enableBigSummary) return false;
     const limit = Number(settings.bigSummaryLimit) || 0;
-    if (!bookName || limit <= 0 || aiCount <= 0) return false;
-    const last = Number(getSlotMeta(bookName)?.bigSummaryAiCount) || 0;
-    return aiCount >= limit && aiCount - last >= limit;
+    if (!bookName || limit <= 0 || layerCount <= 0) return false;
+    const last = Number(getSlotMeta(bookName)?.bigSummaryTotal) || 0;
+    return layerCount >= limit && layerCount - last >= limit;
 }
 
-function rememberBigSummaryAt(bookName, aiCount) {
+function rememberBigSummaryAt(bookName, layerCount) {
     if (!bookName) return;
     try {
-        setSlotMeta(bookName, { bigSummaryAiCount: Math.max(0, Number(aiCount) || 0) });
+        setSlotMeta(bookName, { bigSummaryTotal: Math.max(0, Number(layerCount) || 0) });
     } catch (_) {}
 }
 
@@ -2289,7 +2289,7 @@ registry.register({
 
         // 追踪书确实存在才注入追踪契约；被删掉时不复活、也不让模型空写
         const bookName = getLorebookName();
-        const needBig = bigSummaryDue(bookName, aiCount);
+        const needBig = bigSummaryDue(bookName, chat.length);
         // 记下本轮用的是哪一档：生成期间用户切档时，结算仍写回发起时那一档
         ctx.__nt_bookName = bookName;
         // 本轮回复将落在第几层（1 基）。onResponse 时 chat 可能还没算上这条回复。
@@ -2431,7 +2431,7 @@ registry.register({
             }
             await stBridge.persistLorebook(currentLorebook, book);
             rememberBigSummaryLayer(currentLorebook, replyLayer);
-            rememberBigSummaryAt(currentLorebook, countAiMessages(stBridge.getContext().chat));
+            rememberBigSummaryAt(currentLorebook, stBridge.getContext().chat?.length || 0);
         }
 
         if (captured.ws_summary && settings.enableSummary && !captured.ws_big_summary) {
