@@ -649,13 +649,12 @@ function countAiMessages(chat) {
     )).length;
 }
 
-/** 大总结按酒馆总楼层累计，不再只数 assistant；上次总结后满 N 层触发 */
+/** 大总结按酒馆总楼层触发：设 50 就只在 50、100、150… 触发 */
 export function bigSummaryDue(bookName, layerCount) {
     if (!settings.enableBigSummary) return false;
     const limit = Number(settings.bigSummaryLimit) || 0;
     if (!bookName || limit <= 0 || layerCount <= 0) return false;
-    const last = Number(getSlotMeta(bookName)?.bigSummaryTotal) || 0;
-    return layerCount >= limit && layerCount - last >= limit;
+    return layerCount >= limit && layerCount % limit === 0;
 }
 
 function rememberBigSummaryAt(bookName, layerCount) {
