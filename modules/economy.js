@@ -143,8 +143,9 @@ function marketOpen(bookData) {
     const org = entries.find(e => e && (e.comment === '经济机构' || e.comment === '交易所'));
     if (!org) return false;
     const text = String(org.content || '');
-    if (/状态：关闭|状态：不存在/.test(text)) return false;
-    return /交易所|状态：开放/.test(text);
+    if (/状态：开放/.test(text)) return true;
+    if (/状态：筹备|状态：关闭|状态：不存在/.test(text)) return false;
+    return /交易所/.test(text);
 }
 
 export async function buildEconomyPanel(book, dateText = '') {
