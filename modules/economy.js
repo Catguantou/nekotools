@@ -8,16 +8,10 @@ function candle(price, volume = 1000) {
 
 function defaultState() {
     return {
-        cash: 1000,
+        cash: 0,
         debt: 0,
-        assets: [
-            { id: 'bh01', name: '白灰面包店', type: '股票', qty: 0, cost: 0, price: 10, prevClose: 10, trend: 0.8, short: 0, candles: [candle(10)] },
-            { id: 'gc01', name: '灰潮能源', type: '股票', qty: 0, cost: 0, price: 18, prevClose: 18, trend: -0.3, short: 0, candles: [candle(18)] },
-            { id: 'food', name: '北境粮券', type: '商品', qty: 0, cost: 0, price: 6, prevClose: 6, trend: 0.2, short: 0, candles: [candle(6)] },
-        ],
-        businesses: [
-            { name: '白灰阁杂货铺', status: '营业', profit: 20 },
-        ],
+        assets: [],
+        businesses: [],
         lastDay: '',
         lastMonth: '',
         log: [],
@@ -167,6 +161,14 @@ export async function buildEconomyPanel(book, dateText = '') {
     summary.appendChild(row('总资产', String(Math.round(total(state) * 100) / 100)));
     summary.appendChild(row('最后行情', state.lastDay || '未结算'));
     body.appendChild(summary);
+
+    if (!state.assets.length && !state.businesses.length) {
+        const note = document.createElement('div');
+        note.className = 'nt-quick-note';
+        note.textContent = '经济数据尚未生成。等 AI 根据当前世界观建立账户、资金、股票、店铺或产业后，这里才会出现内容。';
+        body.appendChild(note);
+        return body;
+    }
 
     const head = document.createElement('div');
     head.className = 'nt-quest-section';
