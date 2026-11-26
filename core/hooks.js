@@ -1,6 +1,7 @@
 import { registry } from './registry.js';
 import { StreamGate } from './streamgate.js';
 import { getCtx } from './st_api.js';
+import { settings as coreSettings } from './settings.js';
 
 const URL_RX = /(\/api\/backends\/(chat-completions|text-completions)\/generate|\/v1\/chat\/completions|:(streamG|g)enerateContent)/;
 
@@ -98,15 +99,38 @@ function processBody(bodyStr, url) {
     return { body: JSON.stringify(ctx.body), ctx };
 }
 
+// 结算排队：onResponse 全是 async 的写书动作，一个一个来才不会互相踩。
+// 挂在一个全局 promise 链上，同一时刻只有一轮在写，多轮之间也不会交叉。
+let responseChain = Promise.resolve();
+
+function runResponses(ctx, gate, mods) {
+    const captured = gate ? gate.captured : {};
+    return (async () => {
+        for (const mod of mods) {
+            try { await mod.onResponse({ captured, ctx }); }
+            catch (e) { console.error(`[nekotools:${mod.id}:resp]`, e); }
+        }
+    })();
+}
+
 function finish(ctx, gate) {
     if (!ctx || ctx.__nt_finished) return;
     ctx.__nt_finished = true;
-    const captured = gate ? gate.captured : {};
-    for (const mod of registry.enabled()) {
-        if (typeof mod.onResponse === 'function') {
-            try { mod.onResponse({ captured, ctx }); } catch (e) { console.error(`[nekotools:${mod.id}:resp]`, e); }
+    const mods = registry.enabled().filter(m => typeof m.onResponse === 'function');
+    if (!mods.length) return;
+    // 默认串行（写书排队，一轮一次读一次写）；设置里 hooks.serializeResponses = false 可退回旧行为
+    let serial = true;
+    try { serial = coreSettings.get('hooks').serializeResponses !== false; } catch (_) { serial = true; }
+    if (!serial) {
+        for (const mod of mods) {
+            try { mod.onResponse({ captured: gate ? gate.captured : {}, ctx }); }
+            catch (e) { console.error(`[nekotools:${mod.id}:resp]`, e); }
         }
+        return;
     }
+    responseChain = responseChain
+        .then(() => runResponses(ctx, gate, mods))
+        .catch(e => console.error('[nekotools:resp-chain]', e));
 }
 
 function handleSseLine(line, gate, state) {

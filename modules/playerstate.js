@@ -76,12 +76,26 @@ registry.register({
         const book = stBridge.currentTrackerName();
         if (!book) return;
         const sections = splitSections(raw);
+        // 一次读盘、一次写盘：先把变化段全挑出来，再看有没有真的变
+        const pending = [];
         for (const section of SECTIONS) {
             const content = sections[section.key];
             if (!content) continue;
-            await stBridge.updateEntry(book, section.title, content, true, [], {
-                position: 0, depth: 0, order: 870,
-            });
+            pending.push([section, content]);
         }
+        if (!pending.length) return;
+        const data = await stBridge.loadWorldInfoAsync(book, true);
+        if (!data) return;
+        let changed = false;
+        for (const [section, content] of pending) {
+            const entry = Object.values(data.entries || {}).find(e => e && e.comment === section.title);
+            if (entry && entry.content === content) continue;
+            stBridge.upsertEntryInBook(data, section.title, content, {
+                isConstant: true, keywords: [], extra: { position: 0, depth: 0, order: 870 },
+            });
+            changed = true;
+        }
+        if (!changed) return;
+        await stBridge.persistLorebook(book, data);
     },
 });
