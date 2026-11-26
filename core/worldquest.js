@@ -159,6 +159,60 @@ export function parseQuestValue(value) {
     return p;
 }
 
+/** 中文/阿拉伯数字 → 整数（只认 0-99，够用） */
+function cnToInt(text) {
+    const t = String(text ?? '').trim();
+    if (!t) return NaN;
+    if (/^\d+$/.test(t)) return Number(t);
+    const digits = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    if (t === '十') return 10;
+    let m = t.match(/^([一二两三四五六七八九])?十([一二三四五六七八九])?$/);
+    if (m) return (m[1] ? digits[m[1]] : 1) * 10 + (m[2] ? digits[m[2]] : 0);
+    m = t.match(/^([零一二两三四五六七八九])$/);
+    if (m) return digits[m[1]];
+    return NaN;
+}
+
+/** 剧情日期 {y,m,d} + n 天 → 新的剧情日期文本 */
+function addGameDays(date, n) {
+    const t = new Date(Date.UTC(date.y, date.m - 1, date.d) + Math.round(n) * 86400000);
+    return `${t.getUTCFullYear()}年${t.getUTCMonth() + 1}月${t.getUTCDate()}日`;
+}
+
+/**
+ * 把「3 天后 / 三天后 / 一周后 / 明日 / 后天」这类相对期限，按今天的剧情日期折成绝对日期。
+ * AI 特别爱写相对期限，但插件只认绝对日期，不折就永远不会过期。
+ */
+export function normalizeDeadlineText(deadline, todayText) {
+    const raw = String(deadline ?? '').trim();
+    if (!raw) return '';
+    if (parseGameDate(raw)) return raw;
+    const today = parseGameDate(todayText);
+    if (!today) return raw;
+    const body = raw.replace(/[\s（）()]/g, '');
+    if (/^(明[日天]|下一?日)$/.test(body)) return addGameDays(today, 1);
+    if (/^后[日天]$/.test(body)) return addGameDays(today, 2);
+    if (/^大后天$/.test(body)) return addGameDays(today, 3);
+    const m = body.match(/^([0-9零一二两三四五六七八九十]+)(天|日|周|星期|礼拜)(之?后|内|以内|之内)?(内)?$/);
+    if (!m) return raw;
+    const n = cnToInt(m[1]);
+    if (!Number.isFinite(n) || n < 0 || n > 999) return raw;
+    const unit = m[2];
+    const days = (unit === '周' || unit === '星期' || unit === '礼拜') ? n * 7 : n;
+    if (!days) return raw;
+    return addGameDays(today, days);
+}
+
+/** 把一条支线的期限折成绝对日期；其它字段原样保留 */
+export function normalizeQuestValue(value, todayText) {
+    const q = parseQuestValue(value);
+    if (!q.deadline) return String(value ?? '');
+    const fixed = normalizeDeadlineText(q.deadline, todayText);
+    if (!fixed || fixed === q.deadline) return String(value ?? '');
+    q.deadline = fixed;
+    return [q.type || '支线', q.target || '', q.status || '', q.deadline, q.fail || '', q.hook || ''].join('｜');
+}
+
 /** 支线是否该由插件删除：明确失败/过期，或限期已过且未完成 */
 export function questFailed(value, todayText = '') {
     const q = parseQuestValue(value);
@@ -257,8 +311,14 @@ export async function pruneQuests(bookName, todayText = '') {
     const entry = findEntry(book, QUEST_TITLE);
     if (!entry) return { removed: [], marked: [], archived: [] };
     const data = parseQuests(entry.content);
+    // 老档里已经存进去的相对期限（「3 天后」）也顺手折成绝对日期，否则永远不过期
+    let fixedDeadline = false;
+    for (const [name, value] of Object.entries(data)) {
+        const fixed = normalizeQuestValue(value, todayText);
+        if (fixed !== value) { data[name] = fixed; fixedDeadline = true; }
+    }
     const result = pruneQuestData(data, todayText);
-    if (!result.removed.length && !result.marked.length) return result;
+    if (!result.removed.length && !result.marked.length && !fixedDeadline) return result;
     stBridge.upsertEntryInBook(book, QUEST_TITLE, renderQuests(data), {
         isConstant: false,
         keywords: questEntryKeys(data),
@@ -310,7 +370,7 @@ export async function applyQuests(bookName, raw, { today = '' } = {}) {
         const n = String(name || '').trim();
         if (!n || QUEST_BAD_NAMES.has(n)) continue;
         const text = String(value ?? '').trim();
-        if (text) data[n] = text;
+        if (text) data[n] = normalizeQuestValue(text, today);
         else delete data[n];
     }
 
