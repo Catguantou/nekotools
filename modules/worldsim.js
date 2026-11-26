@@ -1949,124 +1949,132 @@ export async function applyRefreshData(bookName, data, layer = 0) {
     if (!bookName || !data || typeof data !== 'object') return summary;
     const book = await stBridge.loadWorldInfoAsync(bookName);
     if (!book || !book.entries) return summary;
-    const touched = [];
-    const userCharName = stBridge.getUserName();
+    // 手动「请求更新 / 世界快照」也走批量：整段只在 finally 里落一次盘，
+    // 期间所有 loadWorldInfoAsync 都拿到同一份内存书，不再反复读盘。
+    const ownBatch = !stBridge.batchBook(bookName);
+    if (ownBatch) stBridge.beginBatch(bookName, book);
+    try {
+        const touched = [];
+        const userCharName = stBridge.getUserName();
 
-    const chars = data.chars && typeof data.chars === 'object' && !Array.isArray(data.chars) ? data.chars : null;
-    const ticks = data.tick && typeof data.tick === 'object' && !Array.isArray(data.tick) ? data.tick : null;
-    for (const source of [chars, ticks]) {
-        if (!source) continue;
-        for (const [name, info] of Object.entries(source)) {
-            const n = String(name || '').trim();
-            if (!n || !info || typeof info !== 'object') continue;
-            if (!settings.recordUserCharacter && userCharName && n === userCharName) continue;
-            await updateCharacterEntry(bookName, n, info, book, layer);
-            touched.push({ name: n, info });
+        const chars = data.chars && typeof data.chars === 'object' && !Array.isArray(data.chars) ? data.chars : null;
+        const ticks = data.tick && typeof data.tick === 'object' && !Array.isArray(data.tick) ? data.tick : null;
+        for (const source of [chars, ticks]) {
+            if (!source) continue;
+            for (const [name, info] of Object.entries(source)) {
+                const n = String(name || '').trim();
+                if (!n || !info || typeof info !== 'object') continue;
+                if (!settings.recordUserCharacter && userCharName && n === userCharName) continue;
+                await updateCharacterEntry(bookName, n, info, book, layer);
+                touched.push({ name: n, info });
+            }
         }
-    }
-    for (const { name, info } of touched) {
-        const patch = { layer };
-        if (info['位置']) patch.location = String(info['位置']).trim();
-        if (info['当前行动']) patch.action = String(info['当前行动']).trim();
-        await refreshChar(bookName, name, patch);
-    }
-    summary.chars = touched.length;
+        for (const { name, info } of touched) {
+            const patch = { layer };
+            if (info['位置']) patch.location = String(info['位置']).trim();
+            if (info['当前行动']) patch.action = String(info['当前行动']).trim();
+            await refreshChar(bookName, name, patch);
+        }
+        summary.chars = touched.length;
 
-    if (data.world) {
-        const world = await applyWorldUpdate(bookName, data.world);
-        summary.world = world
-            ? Object.keys(world.国家 || {}).length + Object.keys(world.势力 || {}).length + Object.keys(world.新闻日报 || {}).length
-            : 0;
-    }
-    if (data.map) {
-        const map = await applyMapOps(bookName, data.map);
-        summary.map = map ? Object.keys(map.sites || {}).length : 0;
-    }
-    if (data.main) {
-        const main = await applyMain(bookName, data.main);
-        summary.main = main ? 1 : 0;
-        if (main) {
-            rememberMainProgress(bookName, main);
-            questReady.set(bookName, mainHasContent(main));
+        if (data.world) {
+            const world = await applyWorldUpdate(bookName, data.world);
+            summary.world = world
+                ? Object.keys(world.国家 || {}).length + Object.keys(world.势力 || {}).length + Object.keys(world.新闻日报 || {}).length
+                : 0;
         }
-    }
-    let questPrune = null;
-    if (data.quests && settings.enableQuests) {
-        const quests = await applyQuests(bookName, data.quests, { today: (getSlotClock(bookName) || {}).time || '' });
-        summary.quests = quests ? Object.keys(quests).length : 0;
-        questPrune = await pruneQuests(bookName, (getSlotClock(bookName) || {}).time || '');
-    }
-    if (data.todos !== undefined) {
-        await applyTodos(bookName, data.todos);
-    }
-    if (data.items) {
-        const map = await applyAggregateOps(bookName, '道具', data.items, 900, { keyword: true });
-        if (map) {
-            await syncNames(bookName, 'items', Object.keys(map));
-            summary.items = Object.keys(map).length;
+        if (data.map) {
+            const map = await applyMapOps(bookName, data.map);
+            summary.map = map ? Object.keys(map.sites || {}).length : 0;
         }
-    }
-    if (data.foreshadow) {
-        const map = await applyAggregateOps(bookName, '伏笔', data.foreshadow, 920, { keyword: true });
-        if (map) {
-            await syncNames(bookName, 'foreshadows', Object.keys(map));
-            summary.foreshadow = Object.keys(map).length;
+        if (data.main) {
+            const main = await applyMain(bookName, data.main);
+            summary.main = main ? 1 : 0;
+            if (main) {
+                rememberMainProgress(bookName, main);
+                questReady.set(bookName, mainHasContent(main));
+            }
         }
-    }
-    if (data.plot) {
-        const map = await applyAggregateOps(bookName, '计划', data.plot, 910, { keyword: true });
-        summary.plot = map ? Object.keys(map).length : 0;
-    }
-    const wantPlayer = settings.enablePlayerPanel === true;
-    const wantRep = settings.enableReputation === true;
-    if (wantPlayer || wantRep) {
-        // 其他类别已经各自写盘；玩家档案/声望必须基于最新书写入，避免用开头加载的旧 book 覆盖前面的更新
-        const latest = await stBridge.loadWorldInfoAsync(bookName);
-        if (latest && latest.entries) {
-            if (wantPlayer && writePlayerDeltaToBook(latest, data.player)) summary.player = 1;
-            if (wantRep && writeReputationDeltaToBook(latest, data.rep)) summary.rep = 1;
-            if (summary.player || summary.rep) await stBridge.persistLorebook(bookName, latest);
+        let questPrune = null;
+        if (data.quests && settings.enableQuests) {
+            const quests = await applyQuests(bookName, data.quests, { today: (getSlotClock(bookName) || {}).time || '' });
+            summary.quests = quests ? Object.keys(quests).length : 0;
+            questPrune = await pruneQuests(bookName, (getSlotClock(bookName) || {}).time || '');
         }
-    }
-    const bigSummaryText = typeof data.bigSummary === 'string' ? data.bigSummary.trim() : '';
-    const smallSummaryText = typeof data.summary === 'string' ? data.summary.trim() : '';
-    if (bigSummaryText) {
-        const text = bigSummaryText.slice(0, 50000);
-        await stBridge.updateEntry(bookName, '大总结', text, true, [], {
-            position: 4, depth: 9999, order: 9999, role: 2, insertion_order: 9999,
-        });
-        summary.bigSummary = 1;
-        rememberBigSummaryLayer(bookName, layer);
-    }
-    if (smallSummaryText) {
-        const latest = await stBridge.loadWorldInfoAsync(bookName);
-        let current = '';
-        if (!bigSummaryText) {
-            const entry = Object.values(latest?.entries || {}).find(e => e && e.comment === '小总结');
-            if (entry && entry.content !== '（已浓缩入大总结）') current = `${entry.content}\n`;
+        if (data.todos !== undefined) {
+            await applyTodos(bookName, data.todos);
         }
-        await stBridge.updateEntry(bookName, '小总结', `${current}${smallSummaryText}`.slice(-30000), true, [], {
-            position: 4, depth: 999, order: 999, role: 2, insertion_order: 999,
-        });
-        summary.summary = 1;
-    } else if (bigSummaryText) {
-        const latest = await stBridge.loadWorldInfoAsync(bookName);
-        for (const entry of Object.values(latest?.entries || {})) {
-            if (entry.comment === '小总结') entry.content = '（已浓缩入大总结）';
+        if (data.items) {
+            const map = await applyAggregateOps(bookName, '道具', data.items, 900, { keyword: true });
+            if (map) {
+                await syncNames(bookName, 'items', Object.keys(map));
+                summary.items = Object.keys(map).length;
+            }
         }
-        await stBridge.persistLorebook(bookName, latest);
-    }
+        if (data.foreshadow) {
+            const map = await applyAggregateOps(bookName, '伏笔', data.foreshadow, 920, { keyword: true });
+            if (map) {
+                await syncNames(bookName, 'foreshadows', Object.keys(map));
+                summary.foreshadow = Object.keys(map).length;
+            }
+        }
+        if (data.plot) {
+            const map = await applyAggregateOps(bookName, '计划', data.plot, 910, { keyword: true });
+            summary.plot = map ? Object.keys(map).length : 0;
+        }
+        const wantPlayer = settings.enablePlayerPanel === true;
+        const wantRep = settings.enableReputation === true;
+        if (wantPlayer || wantRep) {
+            // 其他类别已经各自写盘；玩家档案/声望必须基于最新书写入，避免用开头加载的旧 book 覆盖前面的更新
+            const latest = await stBridge.loadWorldInfoAsync(bookName);
+            if (latest && latest.entries) {
+                if (wantPlayer && writePlayerDeltaToBook(latest, data.player)) summary.player = 1;
+                if (wantRep && writeReputationDeltaToBook(latest, data.rep)) summary.rep = 1;
+                if (summary.player || summary.rep) await stBridge.persistLorebook(bookName, latest);
+            }
+        }
+        const bigSummaryText = typeof data.bigSummary === 'string' ? data.bigSummary.trim() : '';
+        const smallSummaryText = typeof data.summary === 'string' ? data.summary.trim() : '';
+        if (bigSummaryText) {
+            const text = bigSummaryText.slice(0, 50000);
+            await stBridge.updateEntry(bookName, '大总结', text, true, [], {
+                position: 4, depth: 9999, order: 9999, role: 2, insertion_order: 9999,
+            });
+            summary.bigSummary = 1;
+            rememberBigSummaryLayer(bookName, layer);
+        }
+        if (smallSummaryText) {
+            const latest = await stBridge.loadWorldInfoAsync(bookName);
+            let current = '';
+            if (!bigSummaryText) {
+                const entry = Object.values(latest?.entries || {}).find(e => e && e.comment === '小总结');
+                if (entry && entry.content !== '（已浓缩入大总结）') current = `${entry.content}\n`;
+            }
+            await stBridge.updateEntry(bookName, '小总结', `${current}${smallSummaryText}`.slice(-30000), true, [], {
+                position: 4, depth: 999, order: 999, role: 2, insertion_order: 999,
+            });
+            summary.summary = 1;
+        } else if (bigSummaryText) {
+            const latest = await stBridge.loadWorldInfoAsync(bookName);
+            for (const entry of Object.values(latest?.entries || {})) {
+                if (entry.comment === '小总结') entry.content = '（已浓缩入大总结）';
+            }
+            await stBridge.persistLorebook(bookName, latest);
+        }
 
-    // 索引顶部事实与普通回合保持一致；开关全关时 header 为空串（清除旧 header）
-    if (auditBookStructure(bookName, book, layer)) {
-        await stBridge.persistLorebook(bookName, book);
+        // 索引顶部事实与普通回合保持一致；开关全关时 header 为空串（清除旧 header）
+        if (auditBookStructure(bookName, book, layer)) {
+            await stBridge.persistLorebook(bookName, book);
+        }
+        const freshBook = await stBridge.loadWorldInfoAsync(bookName, true);
+        refreshSnapshots(bookName, freshBook || book);
+        const headerBook = indexHeaderEnabled() ? freshBook : null;
+        await refreshBriefs(bookName, freshBook, headerBook ? buildIndexHeader(bookName, headerBook) : '');
+        recordWorldChange(bookName, data, layer, questPrune);
+        return summary;
+    } finally {
+        if (ownBatch) await stBridge.commitBatch();
     }
-    const freshBook = await stBridge.loadWorldInfoAsync(bookName, true);
-    refreshSnapshots(bookName, freshBook || book);
-    const headerBook = indexHeaderEnabled() ? freshBook : null;
-    await refreshBriefs(bookName, freshBook, headerBook ? buildIndexHeader(bookName, headerBook) : '');
-    recordWorldChange(bookName, data, layer, questPrune);
-    return summary;
 }
 
 export function getDefaultPrompts() {
