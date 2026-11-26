@@ -8,6 +8,9 @@ export class StreamGate {
         this.maxTagLen = tags.reduce((m, t) => Math.max(m, t.length), 0) + 2;
         this.customStatus = options.customStatus !== false;
         this.maxHoldLimit = options.maxHoldLimit || 35000;
+        // 超长未闭合时默认丢弃标签内容（只在日志里留痕）。
+        // 以前是把 <tag> 连同正文原样吐回正文，表现就是标签漏出来。
+        this.releaseOnOverflow = options.releaseOnOverflow === true;
     }
 
     feed(chunk) {
@@ -25,8 +28,12 @@ export class StreamGate {
                     this.buf = this.buf.slice(this.buf.length - keep);
 
                     if (this.holdLen > this.maxHoldLimit) {
-                        console.warn('[nekotools] 标签未闭合且超长，触发安全释放:', this.hold);
-                        out += `<${this.hold}>` + this.captured[this.hold] + this.buf;
+                        if (this.releaseOnOverflow) {
+                            console.warn('[nekotools] 标签未闭合且超长，按设置安全释放:', this.hold);
+                            out += `<${this.hold}>` + this.captured[this.hold] + this.buf;
+                        } else {
+                            console.warn('[nekotools] 标签未闭合且超长，丢弃以防止标签漏出:', this.hold);
+                        }
                         delete this.captured[this.hold];
                         this.buf = '';
                         this.hold = null;

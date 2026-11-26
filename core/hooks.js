@@ -133,11 +133,60 @@ function finish(ctx, gate) {
         .catch(e => console.error('[nekotools:resp-chain]', e));
 }
 
+function getAuxGate(state, gate) {
+    if (!state.auxGate) {
+        state.auxGate = new StreamGate(gate.tags, {
+            customStatus: gate.customStatus,
+            maxHoldLimit: gate.maxHoldLimit,
+        });
+    }
+    return state.auxGate;
+}
+
+/**
+ * 抗截断预设常用工具调用或推理字段把正文带出去：
+ *   delta.tool_calls[].function.arguments / reasoning_content / reasoning
+ * 这些字段以前完全没过闸，ws_* 标签就会原样漏进聊天里。
+ * 用独立的副闸门处理，避免和多路正文缓冲互相污染。
+ */
+function gateAuxFields(holder, gate, state) {
+    if (!holder || typeof holder !== 'object') return false;
+    const aux = getAuxGate(state, gate);
+    let changed = false;
+    if (Array.isArray(holder.tool_calls)) {
+        for (const call of holder.tool_calls) {
+            const fn = call && call.function;
+            if (fn && typeof fn.arguments === 'string' && fn.arguments) {
+                const c = aux.feed(fn.arguments);
+                if (c !== fn.arguments) { fn.arguments = c; changed = true; }
+            }
+        }
+    }
+    for (const key of ['reasoning_content', 'reasoning']) {
+        if (typeof holder[key] === 'string' && holder[key]) {
+            const c = aux.feed(holder[key]);
+            if (c !== holder[key]) { holder[key] = c; changed = true; }
+        }
+    }
+    return changed;
+}
+
+/** 结算时把副闸门里抓到的标签内容并回主闸门，onResponse 才拿得到 */
+function mergeAuxGate(gate, state) {
+    if (!gate || !state || !state.auxGate) return;
+    const aux = state.auxGate;
+    aux.flush();
+    for (const k of Object.keys(aux.captured)) {
+        gate.captured[k] = (gate.captured[k] || '') + aux.captured[k];
+    }
+}
+
 function handleSseLine(line, gate, state) {
     if (!line.startsWith('data:')) return line;
     const payload = line.slice(5).trim();
     if (!payload) return line;
     if (payload === '[DONE]') {
+        mergeAuxGate(gate, state);
         const tail = gate.flush();
         if (tail) {
             const chunk = state.isGemini
@@ -159,6 +208,10 @@ function handleSseLine(line, gate, state) {
             const c = gate.feed(ch.message.content);
             if (c !== ch.message.content) { ch.message.content = c; changed = true; }
         }
+        // 工具调用 / 推理流：抗截断预设常把正文塞进 arguments 或 reasoning_content，
+        // 这两个字段以前完全没过闸，ws_* 标签会原地漏出来。
+        if (ch?.delta) changed = gateAuxFields(ch.delta, gate, state) || changed;
+        if (ch?.message) changed = gateAuxFields(ch.message, gate, state) || changed;
         const parts = obj.candidates?.[0]?.content?.parts;
         if (Array.isArray(parts)) {
             state.isGemini = true;
@@ -188,10 +241,12 @@ async function wrapResponse(res, ctx) {
         try {
             const obj = JSON.parse(text);
             const ch = obj.choices?.[0];
+            const jsonState = { auxGate: null };
             if (ch?.message && typeof ch.message.content === 'string') {
                 ch.message.content = gate.feed(ch.message.content) + gate.flush();
                 outText = JSON.stringify(obj);
             }
+            if (ch?.message && gateAuxFields(ch.message, gate, jsonState)) outText = JSON.stringify(obj);
             const parts = obj.candidates?.[0]?.content?.parts;
             if (Array.isArray(parts)) {
                 for (const p of parts) {
@@ -205,6 +260,7 @@ async function wrapResponse(res, ctx) {
                 outText = JSON.stringify(obj);
             }
         } catch (e) { console.warn('[nekotools:resp] json parse fail', e); }
+        mergeAuxGate(gate, { auxGate: jsonState.auxGate });
         finish(ctx, gate);
         return new Response(outText, { status: res.status, statusText: res.statusText, headers: res.headers });
     }
@@ -237,6 +293,7 @@ async function wrapResponse(res, ctx) {
                     controller.enqueue(enc.encode(handleSseLine(lineBuf.replace(/\r$/, ''), gate, sseState) + '\n'));
                 }
                 // 兜底：如果上游未发 [DONE] 就断开流，封装合法的 SSE 帧吐出剩余缓存
+                mergeAuxGate(gate, sseState);
                 const tail = gate.flush();
                 if (tail) {
                     const chunk = sseState.isGemini
