@@ -3835,9 +3835,20 @@ async function showUserInfoModal(activeTab = 'basic') {
         const loaded = await stBridge.loadPlayerProfile(book);
         const profile = normalizePlayerProfile(loaded || {});
         body.appendChild(buildPlayerBrief(book, profile));
+        // 声望与成就直接放在基础信息页里：这里是她看得最顺手的地方，
+        // 以前藏在「完整基础信息」后面，等于关掉了一个开关。
+        if (reputationOn()) {
+            let rep = null;
+            try {
+                rep = await stBridge.readReputation(book);
+            } catch (e) {
+                console.warn('[nekotools] 声望读取失败', e);
+            }
+            body.appendChild(buildReputationSection(rep, '声望与成就'));
+        }
         const hint = document.createElement('div');
         hint.className = 'nt-player-hint';
-        hint.textContent = '这里只展示玩家基础信息；完整的道具、资产、关系、承诺和声望在「完整基础信息」里。';
+        hint.textContent = '这里只展示玩家基础信息、声望与成就；完整的道具、资产、关系和承诺在「完整基础信息」里。';
         body.appendChild(hint);
         const bar = document.createElement('div');
         bar.className = 'nt-quick-char-actions';

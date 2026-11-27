@@ -8,6 +8,22 @@ const MODES = [
     { key: 'exchange', label: '交易所' },
 ];
 
+/**
+ * 三种模式必须真的不一样，不然切换按钮就是个装饰。
+ *   impact：自己下单时价格冲击的倍率（做市商提供流动性→吃单更轻；交易所自己也是通道→更重）
+ *   fee：自己成交要不要交平台手续费（交易所才收，按 state.feeRate）
+ *   daily：每天自然上涨的注意度（交易所最招眼）
+ */
+const MODE_RULES = {
+    trader: { impact: 1, fee: false, daily: 0, hint: '只当投资人：没有场子，自己买卖不收手续费，价格冲击 ×1' },
+    maker: { impact: 0.5, fee: false, daily: 0.5, hint: '做市商：你给市场供流动性，价格冲击减半，注意度每天 +0.5' },
+    exchange: { impact: 1.2, fee: true, daily: 1.5, hint: '交易所：自己成交也要交手续费，价格冲击 ×1.2，注意度每天 +1.5' },
+};
+
+function modeRule(state) {
+    return MODE_RULES[state && state.mode] || MODE_RULES.trader;
+}
+
 function candle(price, volume = 1000) {
     return { o: price, h: price, l: price, c: price, v: volume };
 }
@@ -182,7 +198,7 @@ function fillOrders(state, dayText) {
         const band = limitBand(state, target.prevClose || price);
         const fillPrice = Math.min(band.up, Math.max(band.down, clampPrice(price * (1 + move))));
         const amount = qty * fillPrice;
-        const feeRate = state.mode === 'exchange' ? (Number(state.feeRate) || 0) : 0;
+        const feeRate = modeRule(state).fee ? (Number(state.feeRate) || 0) : 0;
         const fee = amount * feeRate;
         if (side === 'buy') {
             target.qty += qty;
@@ -203,7 +219,7 @@ function fillOrders(state, dayText) {
             }
         }
         if (feeRate > 0) {
-            if (state.mode === 'exchange') state.cash += fee;
+            if (modeRule(state).fee) state.cash += fee;
             logFlow(state, dayText, isMe ? '我(交易所)' : '市场', '手续费', fee, `${name} ×${qty}`);
         }
         target.price = fillPrice;
@@ -224,6 +240,23 @@ async function settle(book, state, dateText) {
     const disaster = disasterActive(data);
 
     fillOrders(state, today);
+
+    // 模式差异：交易所最招眼，做市商次之，纯投资不惹人
+    {
+        const rule = modeRule(state);
+        if (rule.daily > 0) {
+            if (!state.platform) state.platform = {};
+            const pf = state.platform;
+            const before = Number(pf.exposure) || 0;
+            pf.exposure = Math.max(0, Math.min(100, before + rule.daily));
+            if (before < 60 && pf.exposure >= 60) {
+                state.log = [...(state.log || []), `- 注意度 ${Math.round(pf.exposure)}%：上头开始盯这场子了`].slice(-30);
+            }
+            if (before < 90 && pf.exposure >= 90) {
+                state.log = [...(state.log || []), `- 注意度 ${Math.round(pf.exposure)}%：随时可能被查，账目该理一理了`].slice(-30);
+            }
+        }
+    }
 
     const groups = new Map();
     for (const a of state.assets) {
@@ -364,7 +397,7 @@ function impactOn(state, asset, shares, side) {
     const supply = supplyOf(state, String(asset.name || '')) || 0;
     const base = supply > 0 ? supply : Math.max(1, Number(asset.qty) || 1) * 10;
     const ratio = Math.max(0, Number(shares) || 0) / base;
-    const k = Number(state.impact) || 0.02;
+    const k = (Number(state.impact) || 0.02) * modeRule(state).impact;
     const move = Math.min(0.2, ratio * k * (side === 'buy' ? 1 : -1));
     return move;
 }
@@ -494,7 +527,8 @@ export async function buildEconomyPanel(book, dateText = '') {
     summary.appendChild(row('融券负债', shortDebt.toFixed(2)));
     summary.appendChild(row('总资产', String(Math.round(playerTotal(state) * 100) / 100)));
     summary.appendChild(row('最后行情', state.lastDay || '未结算'));
-    summary.appendChild(row('当前模式', (MODES.find(m => m.key === state.mode) || MODES[0]).label));
+    const mr = modeRule(state);
+    summary.appendChild(row('当前模式', `${(MODES.find(m => m.key === state.mode) || MODES[0]).label}｜价格冲击 ×${mr.impact}｜手续费 ${mr.fee ? `${((Number(state.feeRate) || 0) * 100).toFixed(1)}%` : '免'}｜注意度 每日 +${mr.daily}`));
     body.appendChild(summary);
 
     // 模式切换：纯投资 / 做市商 / 交易所
@@ -506,6 +540,7 @@ export async function buildEconomyPanel(book, dateText = '') {
         btn.type = 'button';
         btn.className = 'nt-quick-btn-text' + (state.mode === m.key ? ' primary' : '');
         btn.textContent = m.label;
+        btn.title = MODE_RULES[m.key] ? MODE_RULES[m.key].hint : '';
         btn.addEventListener('click', async () => {
             state.mode = m.key;
             state.log = [...(state.log || []), `- 模式切换：${m.label}`].slice(-30);
@@ -670,7 +705,7 @@ export async function buildEconomyPanel(book, dateText = '') {
             const err = document.createElement('div');
             err.className = 'nt-trade-error';
             form.appendChild(err);
-            const fee = () => (state.mode === 'exchange' ? Number(state.feeRate) || 0 : 0);
+            const fee = () => (modeRule(state).fee ? Number(state.feeRate) || 0 : 0);
             const update = () => {
                 const n = Math.max(0, parseInt(input.value || '0', 10) || 0);
                 const buySide = mode === 'buy' || mode === 'margin' || mode === 'cover';
@@ -734,7 +769,7 @@ export async function buildEconomyPanel(book, dateText = '') {
                     asset.short = (Number(asset.short) || 0) - n;
                     asset.inflow = (Number(asset.inflow) || 0) - amount;
                 }
-                if (state.mode === 'exchange') state.cash += f;
+                if (modeRule(state).fee) state.cash += f;
                 const buySide = mode === 'buy' || mode === 'margin' || mode === 'cover';
                 const band = limitBand(state, asset.prevClose || asset.price);
                 const move = impactOn(state, asset, n, buySide ? 'buy' : 'sell');
@@ -748,7 +783,7 @@ export async function buildEconomyPanel(book, dateText = '') {
                 else flows.push({ day, amount: mode === 'sell' || mode === 'cover' ? -amount : amount });
                 asset.dayFlows = flows.slice(-10);
                 logFlow(state, state.lastDay || '', '我', labels[mode], buySide ? -amount : amount, `${asset.name} ×${n} @${asset.price}`);
-                if (f > 0) logFlow(state, state.lastDay || '', state.mode === 'exchange' ? '我(交易所)' : '市场', '手续费', f, `${asset.name} ×${n}`);
+                if (f > 0) logFlow(state, state.lastDay || '', modeRule(state).fee ? '我(交易所)' : '市场', '手续费', f, `${asset.name} ×${n}`);
                 await save(book, state);
                 body.replaceWith(await buildEconomyPanel(book, dateText));
             });
