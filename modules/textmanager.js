@@ -35,7 +35,8 @@ function escapeRegExp(s) {
 const NT_STATUS_MARKER = '[[NT_STATUS]]';
 
 function buildStatusBar(raw) {
-    const parts = String(raw).split(/[|｜]/).map(s => s.trim()).filter(Boolean);
+    // 字段可能以竖线或换行分隔（新版提示词改成一行一个字段，避免竖线漏进正文）
+    const parts = String(raw).split(/[|｜\n]/).map(s => s.trim()).filter(Boolean);
     if (!parts.length) return null;
 
     const bar = document.createElement('div');

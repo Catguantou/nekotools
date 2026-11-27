@@ -823,7 +823,9 @@ function buildReputationPrompt() {
 function buildStatusPrompt() {
     const tagOpen = '<ws_' + 'status>';
     const tagClose = '</ws_' + 'status>';
-    let p = `<nekotools:status>\n【状态栏终端】必须在本轮正文末尾输出：\n${tagOpen}时间: XXXX年XX月XX日 HH:MM | 地点: XXX | 天气: XXX | 温度: XX℃${tagClose}\n时间必须写到时:分（例 2015年04月11日 08:30），只写日期会丢时间感\n</nekotools:status>`;
+    const fieldLines = ['时间: XXXX年XX月XX日 HH:MM', '地点: XXX', '天气: XXX', '温度: XX℃'].join('\n');
+    let p = `<nekotools:status>\n【状态栏终端】必须在本轮正文末尾输出：\n${tagOpen}\n${fieldLines}\n${tagClose}\n时间必须写到时:分（例 2015年04月11日 08:30），只写日期会丢时间感\n</nekotools:status>`
+        + `\n<nekotools:layout>\n【正文排版】正文分段只用空行，一行一段；正文里不要出现竖线 | 或 ｜，竖线只属于后台标签里的字段。\n</nekotools:layout>`;
     return applyPromptMode('status', p);
 }
 

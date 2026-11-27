@@ -9,6 +9,7 @@ import './modules/worldsim.js';
 import './modules/worldstate.js';
 import './modules/playerstate.js';
 import './modules/textmanager.js';
+import './core/pipegard.js';
 
 let booted = false;
 
@@ -18,7 +19,7 @@ function boot() {
     if (booted) return;
     booted = true;
 
-    console.log('[nekotools] 正在启动... build 2026-11-27B / v2.0.55');
+    console.log('[nekotools] 正在启动... build 2026-11-28A / v2.0.56');
     settings.load();
 
     for (const mod of registry.list()) {
