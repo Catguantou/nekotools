@@ -31,6 +31,7 @@ function defaultState() {
         platform: null,
         rules: '',
         parties: [],
+        flows: [],
     };
 }
 
@@ -87,11 +88,13 @@ async function load(book) {
     }));
     const base = out.platform && typeof out.platform === 'object' ? out.platform : {};
     out.rules = String(out.rules || '');
+    out.flows = Array.isArray(out.flows) ? out.flows.slice(-500) : [];
     out.parties = Array.isArray(out.parties) ? out.parties.map(x => ({
         name: String(x.name || ''),
         cash: Number(x.cash) || 0,
         debt: Number(x.debt) || 0,
         note: String(x.note || ''),
+        insolvent: x.insolvent === true,
     })).filter(x => x.name) : [];
     out.platform = {
         name: String(base.name || ''),
@@ -175,12 +178,76 @@ async function settle(book, state, dateText) {
         }
         if (interest) {
             state.log = [...(state.log || []), `- 本月对他人放贷利息累计 ${interest}（记在对方欠债里）`].slice(-30);
+            logFlow(state, today, '利息', '放贷收息', interest, '记进对方欠债');
         }
+        settleInsolvency(state, today);
         state.log = [...(state.log || []), `- ${month} 店铺结算：+${profit}｜派息：+${dividend.toFixed(2)}`].slice(-30);
     }
     state.lastDay = today;
     state.log = [...(state.log || []), `- ${today} 行情更新${disaster ? '（天灾影响）' : ''}`].slice(-30);
     return state;
+}
+
+/** 一笔钱动了就记一行，谁、什么时候、什么名目、多少钱 */
+function logFlow(state, day, who, kind, amount, note) {
+    const list = Array.isArray(state.flows) ? state.flows : [];
+    list.push({ day: String(day || ''), who: String(who || ''), kind: String(kind || ''), amount: Math.round((Number(amount) || 0) * 100) / 100, note: String(note || '') });
+    state.flows = list.slice(-500);
+}
+
+/** 期末爆仓检查：欠的钱超过现钱加持仓，就当场强平；玩家自己一样要挨这一刀 */
+function settleInsolvency(state, dayText) {
+    const log = [];
+    const priceOf = name => {
+        const a = state.assets.find(x => String(x.name || '') === String(name || ''));
+        return a ? Number(a.price) || 0 : 0;
+    };
+    const liquidate = (owner, holder) => {
+        let recovered = 0;
+        for (const a of state.assets) {
+            if (String(a.owner || '').trim() !== String(owner || '').trim()) continue;
+            const qty = Math.max(0, Number(a.qty) || 0);
+            if (!qty) continue;
+            const px = Number(a.price) || 0;
+            recovered += qty * px * 0.9;
+            a.qty = 0;
+            a.cost = 0;
+            a.short = 0;
+        }
+        return recovered;
+    };
+    for (const p2 of state.parties) {
+        const holds = state.assets
+            .filter(a => String(a.owner || '').trim() === p2.name)
+            .reduce((sum, a) => sum + (Number(a.price) || 0) * Math.max(0, Number(a.qty) || 0), 0);
+        const worth = (Number(p2.cash) || 0) + holds;
+        const debt = Number(p2.debt) || 0;
+        if (debt <= 0 || p2.insolvent) continue;
+        if (worth < debt) {
+            const got = liquidate(p2.name, p2);
+            p2.cash = (Number(p2.cash) || 0) + got;
+            state.cash += got;
+            p2.debt = 0;
+            p2.insolvent = true;
+            state.platform.exposure = Math.min(100, (Number(state.platform.exposure) || 0) + 8);
+            logFlow(state, dayText, p2.name, '爆仓强平', got, `欠 ${debt}，持仓折价九成变卖`);
+            log.push(`- ${p2.name} 爆仓：欠 ${debt}，强平回收 ${got.toFixed(2)}`);
+        }
+    }
+    // 玩家自己
+    const myHolds = state.assets
+        .filter(a => isPlayer(a.owner))
+        .reduce((sum, a) => sum + (Number(a.price) || 0) * Math.max(0, Number(a.qty) || 0), 0);
+    const myDebt = Number(state.debt) || 0;
+    if (myDebt > 0 && (Number(state.cash) || 0) + myHolds < myDebt) {
+        const got = liquidate('', null);
+        state.cash += got;
+        state.debt = Math.max(0, myDebt - got);
+        logFlow(state, dayText, '我', '爆仓强平', got, `被强平，偿债 ${got.toFixed(2)}`);
+        log.push(`- 你被强平：回收 ${got.toFixed(2)}，剩余欠债 ${state.debt}`);
+    }
+    if (log.length) state.log = [...(state.log || []), ...log].slice(-30);
+    return log;
 }
 
 function playerTotal(state) {
@@ -585,6 +652,8 @@ export async function buildEconomyPanel(book, dateText = '') {
                 if (last && last.day === day) last.amount += (mode === 'sell' || mode === 'cover' ? -amount : amount);
                 else flows.push({ day, amount: mode === 'sell' || mode === 'cover' ? -amount : amount });
                 asset.dayFlows = flows.slice(-10);
+                logFlow(state, state.lastDay || '', '我', labels[mode], buySide ? -amount : amount, `${asset.name} ×${n} @${asset.price}`);
+                if (f > 0) logFlow(state, state.lastDay || '', state.mode === 'exchange' ? '我(交易所)' : '市场', '手续费', f, `${asset.name} ×${n}`);
                 await save(book, state);
                 body.replaceWith(await buildEconomyPanel(book, dateText));
             });
@@ -698,6 +767,7 @@ export async function buildEconomyPanel(book, dateText = '') {
                 state.cash += v;
                 pf.exposure = Math.min(100, (Number(pf.exposure) || 0) + 2);
                 state.log = [...(state.log || []), `- ${m.name} 入金 ${v}`].slice(-30);
+                logFlow(state, state.lastDay || '', m.name, '入金', v, pf.name || '场子');
                 await save(book, state);
                 body.replaceWith(await buildEconomyPanel(book, dateText));
             });
@@ -712,6 +782,7 @@ export async function buildEconomyPanel(book, dateText = '') {
                 state.cash += take;
                 pf.exposure = Math.min(100, (Number(pf.exposure) || 0) + 3);
                 state.log = [...(state.log || []), `- 从 ${m.name} 抽水 ${take}`].slice(-30);
+                logFlow(state, state.lastDay || '', m.name, '抽水', -take, pf.name || '场子');
                 await save(book, state);
                 body.replaceWith(await buildEconomyPanel(book, dateText));
             });
@@ -785,7 +856,7 @@ export async function buildEconomyPanel(book, dateText = '') {
             item.className = 'nt-quest-read-item';
             const n = document.createElement('div');
             n.className = 'nt-quest-read-name';
-            n.textContent = p2.name + (p2.note ? `｜${p2.note}` : '');
+            n.textContent = p2.name + (p2.note ? `｜${p2.note}` : '') + (p2.insolvent ? '｜已爆仓' : '');
             const d = document.createElement('div');
             d.className = 'nt-quest-read-detail';
             d.textContent = `现金 ${p2.cash}｜持仓 ${holdValue.toFixed(2)}｜欠债 ${p2.debt}`
@@ -803,6 +874,7 @@ export async function buildEconomyPanel(book, dateText = '') {
                 p2.cash -= v;
                 state.cash += v;
                 state.log = [...(state.log || []), `- ${p2.name} 交了 ${v}`].slice(-30);
+                logFlow(state, state.lastDay || '', p2.name, '交钱', v, '');
                 await save(book, state);
                 body.replaceWith(await buildEconomyPanel(book, dateText));
             });
@@ -816,6 +888,7 @@ export async function buildEconomyPanel(book, dateText = '') {
                 p2.debt = (Number(p2.debt) || 0) + v;
                 p2.cash += v;
                 state.log = [...(state.log || []), `- 放给 ${p2.name} ${v}（记债）`].slice(-30);
+                logFlow(state, state.lastDay || '', p2.name, '放贷', -v, '记成债权');
                 await save(book, state);
                 body.replaceWith(await buildEconomyPanel(book, dateText));
             });
@@ -833,6 +906,7 @@ export async function buildEconomyPanel(book, dateText = '') {
                 if (p2.cash < 0) { state.debt = (Number(state.debt) || 0) + (-p2.cash); p2.cash = 0; }
                 state.cash += real;
                 state.log = [...(state.log || []), `- ${p2.name} 还债 ${real}`].slice(-30);
+                logFlow(state, state.lastDay || '', p2.name, '还债', real, '');
                 await save(book, state);
                 body.replaceWith(await buildEconomyPanel(book, dateText));
             });
@@ -840,6 +914,44 @@ export async function buildEconomyPanel(book, dateText = '') {
             item.append(n, d, act);
             body.appendChild(item);
         }
+    }
+
+    // ── 流水明细 ───────────────────────────────────────────
+    {
+        body.appendChild(section('流水明细'));
+        const flows = Array.isArray(state.flows) ? state.flows.slice(-12).reverse() : [];
+        if (!flows.length) {
+            body.appendChild(note('还没有流水。第一笔入金、第一单成交之后，这里会一条条记下来。'));
+        } else {
+            for (const f of flows) {
+                body.appendChild(row(`${f.day || '—'}｜${f.who || '—'}｜${f.kind}`, `${f.amount >= 0 ? '+' : ''}${f.amount}`));
+            }
+        }
+        const bar2 = document.createElement('div');
+        bar2.className = 'nt-quick-char-actions';
+        const exportBtn = document.createElement('button');
+        exportBtn.type = 'button';
+        exportBtn.className = 'nt-trade-act';
+        exportBtn.textContent = '导出全部明细';
+        exportBtn.addEventListener('click', async () => {
+            const all = Array.isArray(state.flows) ? state.flows : [];
+            const tsv = ['日期\t谁\t名目\t金额\t备注']
+                .concat(all.map(f => [f.day, f.who, f.kind, f.amount, f.note].join('\t')))
+                .join('\n');
+            let copied = false;
+            try { await navigator.clipboard.writeText(tsv); copied = true; } catch (_) {}
+            const box = document.createElement('textarea');
+            box.value = tsv || '（没有流水）';
+            box.rows = 12;
+            box.className = 'nt-trade-input';
+            box.style.fontSize = '10px';
+            body.appendChild(row('已复制到剪贴板', copied ? '是' : '否（请手动全选复制）'));
+            body.appendChild(box);
+            box.focus();
+            box.select();
+        });
+        bar2.appendChild(exportBtn);
+        body.appendChild(bar2);
     }
 
     body.appendChild(section('店铺 / 产业'));
