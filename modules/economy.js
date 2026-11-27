@@ -56,8 +56,10 @@ function defaultState() {
 function parseState(text) {
     try {
         const data = JSON.parse(String(text || ''));
-        if (!data || !Array.isArray(data.assets)) return null;
-        return { ...defaultState(), ...data };
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+        const out = { ...defaultState(), ...data };
+        if (!Array.isArray(out.assets)) out.assets = [];
+        return out;
     } catch (_) {
         return null;
     }
@@ -87,7 +89,10 @@ async function load(book) {
     const data = await stBridge.loadWorldInfoAsync(book, true);
     const entry = Object.values(data?.entries || {}).find(e => e && e.comment === TITLE);
     const state = entry ? parseState(entry.content) : null;
+    // 条目在、但内容读不出来：这算「坏账」，绝不能拿默认值回写覆盖
+    const broken = !!entry && !state;
     const out = state || defaultState();
+    out.__broken = broken;
     out.assets = (out.assets || []).map(normAsset);
     out.mode = MODES.some(m => m.key === out.mode) ? out.mode : 'trader';
     out.feeRate = Number(out.feeRate) > 0 ? Number(out.feeRate) : 0.003;
@@ -597,8 +602,11 @@ export async function buildEconomyPanel(book, dateText = '') {
     body.className = 'nt-economy-panel';
     const bookData = await stBridge.loadWorldInfoAsync(book, true);
     const open = marketOpen(bookData);
-    const state = await settle(book, await load(book), dateText);
-    await save(book, state);
+    const loaded = await load(book);
+    const broken = loaded.__broken === true;
+    delete loaded.__broken;
+    const state = await settle(book, loaded, dateText);
+    if (!broken) await save(book, state);
 
     const summary = document.createElement('div');
     summary.className = 'nt-quest-main';
@@ -617,6 +625,9 @@ export async function buildEconomyPanel(book, dateText = '') {
     const mr = modeRule(state);
     summary.appendChild(row('当前模式', `${(MODES.find(m => m.key === state.mode) || MODES[0]).label}｜价格冲击 ×${mr.impact}｜手续费 ${mr.fee ? `${((Number(state.feeRate) || 0) * 100).toFixed(1)}%` : '免'}｜注意度 每日 +${mr.daily}`));
     body.appendChild(summary);
+    if (broken) {
+        body.appendChild(note('这本世界的「经营资产」条目读不出来（大概被写坏了）。我没有覆盖它，也没有按空账显示；去世界书里看一眼原文，或者把它交给我改。'));
+    }
 
     // 模式切换：纯投资 / 做市商 / 交易所
     const modeBar = document.createElement('div');
