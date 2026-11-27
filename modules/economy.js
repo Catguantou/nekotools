@@ -55,8 +55,14 @@ function defaultState() {
 }
 
 function parseState(text) {
+    let s = String(text || '').trim();
+    if (!s) return null;
+    // AI 有时会在 JSON 前面加一行【以下为经营资产】这种标签，先把正文抠出来
+    const head = s.indexOf('{');
+    const tail = s.lastIndexOf('}');
+    if (head > 0 && tail > head) s = s.slice(head, tail + 1);
     try {
-        const data = JSON.parse(String(text || ''));
+        const data = JSON.parse(s);
         if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
         const out = { ...defaultState(), ...data };
         if (!Array.isArray(out.assets)) out.assets = [];
@@ -654,10 +660,10 @@ export async function buildEconomyPanel(book, dateText = '') {
     summary.appendChild(row('当前模式', `${(MODES.find(m => m.key === state.mode) || MODES[0]).label}｜价格冲击 ×${mr.impact}｜手续费 ${mr.fee ? `${((Number(state.feeRate) || 0) * 100).toFixed(1)}%` : '免'}｜注意度 每日 +${mr.daily}`));
     body.appendChild(summary);
     if (broken) {
-        body.appendChild(note('这本世界的「经营资产」条目读不出来（大概被写坏了）。我没有覆盖它，也没有按空账显示；去世界书里看一眼原文，或者把它交给我改。'));
+        body.appendChild(note('账本格式读不出来，这里显示的是上次保存的快照；原文没有被改动。'));
     }
     if (restored) {
-        body.appendChild(note(`账本被整段改写时少了「${restored}」，我已经按镜像版补回来了。要是你本来就想删掉它们，跟我说一声，我把镜像也跟着删。`));
+        body.appendChild(note(`账本里少了这些标的：${restored}。已按快照补回；如果本来就该删，删掉再保存即可同步。`));
     }
 
     // 模式切换：纯投资 / 做市商 / 交易所
