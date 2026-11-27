@@ -5707,3 +5707,207 @@ body {
 
 
 
+
+/* ── 经济面板：买卖美化（雪心灯加的） ───────────────────────── */
+#nt-quick-modal .nt-economy-panel {
+    --ntq-up: #6fd6a8;
+    --ntq-down: #e47a86;
+    --ntq-accent: #6f8cff;
+}
+
+#nt-quick-modal .nt-trade-act {
+    padding: 5px 10px;
+    border: 1px solid var(--ntq-line);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, .04);
+    color: var(--ntq-text);
+    font-size: 11px;
+    letter-spacing: .5px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, transform .1s;
+}
+
+#nt-quick-modal .nt-trade-act:hover { transform: translateY(-1px); }
+
+#nt-quick-modal .nt-trade-act.buy {
+    border-color: rgba(111, 214, 168, .45);
+    background: rgba(111, 214, 168, .10);
+    color: #b6f0d3;
+}
+
+#nt-quick-modal .nt-trade-act.sell {
+    border-color: rgba(228, 122, 134, .45);
+    background: rgba(228, 122, 134, .10);
+    color: #f6c6cc;
+}
+
+#nt-quick-modal .nt-trade-form {
+    margin-top: 10px;
+    padding: 10px 11px;
+    border: 1px solid rgba(111, 140, 255, .45);
+    border-left: 2px solid var(--ntq-accent);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(111, 140, 255, .10), rgba(111, 140, 255, .03));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+#nt-quick-modal .nt-trade-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--ntq-text);
+    margin-bottom: 6px;
+}
+
+#nt-quick-modal .nt-trade-badge {
+    padding: 1px 7px;
+    border-radius: 99px;
+    border: 1px solid rgba(111, 140, 255, .5);
+    background: rgba(111, 140, 255, .14);
+    color: #c3d0ff;
+    font-size: 10px;
+    letter-spacing: .3px;
+}
+
+#nt-quick-modal .nt-trade-chips {
+    display: flex;
+    gap: 6px;
+    margin: 2px 0 6px;
+}
+
+#nt-quick-modal .nt-trade-chip {
+    flex: 1;
+    padding: 3px 0;
+    border: 1px dashed var(--ntq-line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ntq-dim);
+    font-size: 10px;
+    cursor: pointer;
+}
+
+#nt-quick-modal .nt-trade-chip:hover {
+    border-color: rgba(111, 140, 255, .6);
+    color: var(--ntq-text);
+}
+
+#nt-quick-modal .nt-trade-preview {
+    margin: 2px 0 6px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, .22);
+}
+
+#nt-quick-modal .nt-trade-kv {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 10px;
+    line-height: 1.75;
+    color: var(--ntq-dim);
+}
+
+#nt-quick-modal .nt-trade-kv.up > span:last-child { color: var(--ntq-up); }
+#nt-quick-modal .nt-trade-kv.down > span:last-child { color: var(--ntq-down); }
+#nt-quick-modal .nt-trade-kv.dim > span:last-child { color: #8b98c4; }
+
+#nt-quick-modal .nt-trade-confirm {
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    font-size: 11px;
+    cursor: pointer;
+    color: #0d1220;
+    font-weight: 600;
+}
+
+#nt-quick-modal .nt-trade-confirm.buy {
+    background: linear-gradient(180deg, #8ff0c6, #4bbd90);
+    border-color: #6fd6a8;
+}
+
+#nt-quick-modal .nt-trade-confirm.sell {
+    background: linear-gradient(180deg, #ffb3bb, #d9636f);
+    border-color: #e47a86;
+}
+
+#nt-quick-modal .nt-trade-confirm:hover { filter: brightness(1.06); }
+
+/* ── 经济面板：行情列表（一行一只，点开才下单） ──────────────── */
+#nt-quick-modal .nt-quote-head {
+    display: grid;
+    grid-template-columns: 1.55fr .8fr .75fr .6fr .6fr;
+    gap: 6px;
+    padding: 4px 10px 6px;
+    color: var(--ntq-dim);
+    font-size: 10px;
+    letter-spacing: .4px;
+    opacity: .8;
+}
+
+#nt-quick-modal .nt-quote-row {
+    display: grid;
+    grid-template-columns: 1.55fr .8fr .75fr .6fr .6fr;
+    gap: 6px;
+    align-items: center;
+    padding: 7px 10px;
+    margin-bottom: 4px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .025);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+}
+
+#nt-quick-modal .nt-quote-row:hover {
+    background: rgba(111, 140, 255, .09);
+    border-color: rgba(111, 140, 255, .35);
+}
+
+#nt-quick-modal .nt-quote-row.open {
+    background: rgba(111, 140, 255, .13);
+    border-color: rgba(111, 140, 255, .55);
+    border-left: 2px solid var(--ntq-accent);
+    border-bottom-left-radius: 2px;
+    border-bottom-right-radius: 2px;
+}
+
+#nt-quick-modal .nt-quote-name {
+    color: var(--ntq-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#nt-quick-modal .nt-quote-tag {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: rgba(111, 140, 255, .28);
+    color: #cdd8ff;
+    font-size: 9px;
+    font-style: normal;
+    vertical-align: 1px;
+}
+
+#nt-quick-modal .nt-quote-price { color: var(--ntq-text); }
+#nt-quick-modal .nt-quote-chg.up { color: var(--ntq-up); }
+#nt-quick-modal .nt-quote-chg.down { color: var(--ntq-down); }
+#nt-quick-modal .nt-quote-chg.flat { color: #9aa7cc; }
+#nt-quick-modal .nt-quote-qty,
+#nt-quick-modal .nt-quote-share { color: var(--ntq-dim); }
+
+#nt-quick-modal .nt-quote-detail {
+    padding: 2px 10px 10px;
+    margin: -4px 0 8px;
+    border-left: 1px solid rgba(111, 140, 255, .35);
+    border-right: 1px solid rgba(111, 140, 255, .35);
+    border-bottom: 1px solid rgba(111, 140, 255, .35);
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    background: rgba(111, 140, 255, .05);
+}

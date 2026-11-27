@@ -1,4 +1,5 @@
 import { registry } from '../core/registry.js';
+import { PLAYERSTATE_SECTIONS, playerstatePreviewPrompt } from './playerstate.js';
 import { stBridge } from '../core/st_bridge.js';
 import { settings as coreSettings } from '../core/settings.js';
 import { touchSlot, getSlotClock, setSlotClock, appendSlotLog, getSlotMeta, setSlotMeta } from '../core/slots.js';
@@ -30,6 +31,10 @@ const defaultSettings = {
     enableCognition: false,
     enableReputation: false,
     enablePlayerPanel: false,
+    // 用户信息里的三块面板：只控制入口显隐，不影响生成
+    enableEconomy: true,
+    enableFaction: true,
+    enableCulture: true,
     enableForeshadow: true,
     enableSummary: true,
     enableBigSummary: true,
@@ -49,13 +54,14 @@ const defaultSettings = {
     customPrompts: {
         status: '', preview: '', chars: '', items: '', plot: '',
         world: '', foreshadow: '', summary: '', bigSummary: '', roster: '', tick: '', map: '', quest: '', cognition: '',
-        player: '', reputation: '',
+        player: '', reputation: '', faction: '', economy: '', culture: '',
     },
     promptModes: {
         status: 'append', preview: 'append', chars: 'append', items: 'append', plot: 'append',
         world: 'append', foreshadow: 'append', summary: 'append', bigSummary: 'append', roster: 'append',
         tick: 'append', map: 'append', quest: 'append', cognition: 'append',
         player: 'append', reputation: 'append',
+        faction: 'append', economy: 'append', culture: 'append',
     }
 };
 
@@ -2119,6 +2125,9 @@ export function getDefaultPrompts() {
             cognition: buildCognitionPrompt(),
             player: buildPlayerPrompt(),
             reputation: buildReputationPrompt(),
+            faction: PLAYERSTATE_SECTIONS.faction,
+            economy: PLAYERSTATE_SECTIONS.economy,
+            culture: PLAYERSTATE_SECTIONS.culture,
         };
     } finally {
         settings.customPrompts = savedCustom;
@@ -2140,9 +2149,14 @@ export function getSystemPromptPreview(customPrompts = {}, promptModes = {}, fla
     }
     try {
         const book = stBridge.currentTrackerName() || '';
-        return buildSystemMessages(false, true, book, false, false)
+        const list = buildSystemMessages(false, true, book, false, false)
             .map(m => String(m && m.content || ''))
             .filter(Boolean);
+        try {
+            const extra = playerstatePreviewPrompt();
+            if (extra) list.push(extra);
+        } catch (err) { console.warn('[worldsim] 预览拼接玩家状态失败', err); }
+        return list;
     } finally {
         settings.customPrompts = savedCustom;
         settings.promptModes = savedModes;

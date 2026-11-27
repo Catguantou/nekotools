@@ -3513,8 +3513,16 @@ function reputationOn() {
 function applyPlayerMenuFlags(pop) {
     if (!pop) return;
     const show = playerPanelOn() || reputationOn();
+    const cfg = settings.get('worldsim') || {};
+    const panelFlags = {
+        economy: cfg.enableEconomy !== false,
+        faction: cfg.enableFaction !== false,
+        culture: cfg.enableCulture !== false,
+    };
     for (const row of pop.querySelectorAll('.nt-quick-item')) {
         if (row.dataset.key === 'player') row.style.display = show ? '' : 'none';
+        const k = row.dataset.key;
+        if (k && k in panelFlags) row.style.display = panelFlags[k] ? '' : 'none';
     }
 }
 
@@ -3815,12 +3823,13 @@ async function showUserInfoModal(activeTab = 'basic') {
     }
     const body = document.createElement('div');
     body.className = 'nt-user-info';
-    body.appendChild(buildSubTabs([
-        { key: 'basic', label: '基础信息' },
-        { key: 'economy', label: '经营资产' },
-        { key: 'faction', label: '组织势力' },
-        { key: 'culture', label: '文娱创作' },
-    ], activeTab, (key) => { closeModal(); setTimeout(() => showUserInfoModal(key).catch(e => toast(String(e?.message || e), 'error')), 0); }));
+    const ucfg = settings.get('worldsim') || {};
+    const tabs = [{ key: 'basic', label: '基础信息' }];
+    if (ucfg.enableEconomy !== false) tabs.push({ key: 'economy', label: '经营资产' });
+    if (ucfg.enableFaction !== false) tabs.push({ key: 'faction', label: '组织势力' });
+    if (ucfg.enableCulture !== false) tabs.push({ key: 'culture', label: '文娱创作' });
+    if (!tabs.some(t => t.key === activeTab)) activeTab = 'basic';
+    body.appendChild(buildSubTabs(tabs, activeTab, (key) => { closeModal(); setTimeout(() => showUserInfoModal(key).catch(e => toast(String(e?.message || e), 'error')), 0); }));
 
     if (activeTab === 'basic') {
         const loaded = await stBridge.loadPlayerProfile(book);
@@ -4264,6 +4273,19 @@ function buildPop() {
             ],
         },
     ];
+
+    try {
+        const mcfg = settings.get('worldsim') || {};
+        const ugroup = menuGroups.find(g => g && g.key === 'user');
+        if (ugroup && Array.isArray(ugroup.children)) {
+            ugroup.children = ugroup.children.filter(c =>
+                c.key === 'economy' ? mcfg.enableEconomy !== false
+                    : c.key === 'faction' ? mcfg.enableFaction !== false
+                        : c.key === 'culture' ? mcfg.enableCulture !== false
+                            : true);
+            ugroup.hint = ugroup.children.map(c => c.label).join(' / ');
+        }
+    } catch (err) { console.warn('[nekotools] 过滤用户信息菜单失败', err); }
 
     const runMenuKey = (key, label) => {
         closePop();

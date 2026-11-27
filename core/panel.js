@@ -135,6 +135,9 @@ export function mountPanel() {
             ['cognition', 'P_15', '信息隔离'],
             ['player', 'P_16', '个人信息声明'],
             ['reputation', 'P_17', '声望声明'],
+            ['faction', 'P_18', '组织势力声明'],
+            ['economy', 'P_19', '经营资产声明'],
+            ['culture', 'P_20', '文娱作品声明'],
         ];
         return map.map(([key, code, name]) => {
             const custom = (s.customPrompts && s.customPrompts[key]) || '';
@@ -370,6 +373,9 @@ export function mountPanel() {
                             <label class="nt-grid-item" title="时间/在场/到期/死亡角色/数值钳制"><input type="checkbox" id="nt-ws-statecheck" class="nt-hidden-cb" ${s.enableStateCheck ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">状态核查</span><span class="nt-code">T_13</span></label>
                             <label class="nt-grid-item" title="成就与名声，TOOL 用户信息里看"><input type="checkbox" id="nt-ws-reputation" class="nt-hidden-cb" ${s.enableReputation ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">声望系统</span><span class="nt-code">T_14</span></label>
                             <label class="nt-grid-item" title="TOOL 用户信息（只读，底部可手动编辑）"><input type="checkbox" id="nt-ws-playerpanel" class="nt-hidden-cb" ${s.enablePlayerPanel ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">用户信息</span><span class="nt-code">T_15</span></label>
+                            <label class="nt-grid-item" title="经营资产面板，TOOL 用户信息里看"><input type="checkbox" id="nt-ws-economy" class="nt-hidden-cb" ${s.enableEconomy !== false ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">经营资产</span><span class="nt-code">T_16</span></label>
+                            <label class="nt-grid-item" title="组织势力面板，TOOL 用户信息里看"><input type="checkbox" id="nt-ws-faction" class="nt-hidden-cb" ${s.enableFaction !== false ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">组织势力</span><span class="nt-code">T_17</span></label>
+                            <label class="nt-grid-item" title="文娱创作面板，TOOL 用户信息里看"><input type="checkbox" id="nt-ws-culture" class="nt-hidden-cb" ${s.enableCulture !== false ? 'checked' : ''}><span class="nt-box"></span><span class="nt-text">文娱创作</span><span class="nt-code">T_18</span></label>
                         </div>
                     </div>
 
@@ -1850,6 +1856,9 @@ export function mountPanel() {
             enableStateCheck: '#nt-ws-statecheck',
             enableReputation: '#nt-ws-reputation',
             enablePlayerPanel: '#nt-ws-playerpanel',
+            enableEconomy: '#nt-ws-economy',
+            enableFaction: '#nt-ws-faction',
+            enableCulture: '#nt-ws-culture',
             enableForeshadow: '#nt-ws-foreshadow',
             enableSummary: '#nt-ws-summary',
             enableBigSummary: '#nt-ws-bigsummary',
@@ -1941,6 +1950,9 @@ export function mountPanel() {
         '#nt-ws-statecheck': 'enableStateCheck',
         '#nt-ws-reputation': 'enableReputation',
         '#nt-ws-playerpanel': 'enablePlayerPanel',
+        '#nt-ws-economy': 'enableEconomy',
+        '#nt-ws-faction': 'enableFaction',
+        '#nt-ws-culture': 'enableCulture',
         '#nt-ws-foreshadow': 'enableForeshadow',
         '#nt-ws-summary': 'enableSummary',
         '#nt-ws-bigsummary': 'enableBigSummary',
@@ -1991,6 +2003,9 @@ export function mountPanel() {
         s.enableStateCheck = wrap.querySelector('#nt-ws-statecheck').checked;
         s.enableReputation = wrap.querySelector('#nt-ws-reputation').checked;
         s.enablePlayerPanel = wrap.querySelector('#nt-ws-playerpanel').checked;
+        s.enableEconomy = wrap.querySelector('#nt-ws-economy').checked;
+        s.enableFaction = wrap.querySelector('#nt-ws-faction').checked;
+        s.enableCulture = wrap.querySelector('#nt-ws-culture').checked;
         s.enableForeshadow = wrap.querySelector('#nt-ws-foreshadow').checked;
         s.enableSummary = wrap.querySelector('#nt-ws-summary').checked;
         s.enableBigSummary = wrap.querySelector('#nt-ws-bigsummary').checked;
