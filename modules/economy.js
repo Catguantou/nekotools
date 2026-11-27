@@ -92,8 +92,19 @@ function normAsset(a) {
     return a;
 }
 
-async function load(book) {
+let BOOKCACHE = { book: '', at: 0, data: null };
+/** 同一本书在很短时间里被读好几次（面板构建 + 保存），用缓存省掉重复请求 */
+async function loadBook(book) {
+    const now = Date.now();
+    if (BOOKCACHE.data && BOOKCACHE.book === book && now - BOOKCACHE.at < 3000) return BOOKCACHE.data;
     const data = await stBridge.loadWorldInfoAsync(book, true);
+    BOOKCACHE = { book, at: now, data };
+    return data;
+}
+function dropBookCache() { BOOKCACHE = { book: '', at: 0, data: null }; }
+
+async function load(book) {
+    const data = await loadBook(book);
     const entries = Object.values(data?.entries || {});
     const entry = entries.find(e => e && e.comment === TITLE);
     const mirrorEntry = entries.find(e => e && e.comment === MIRROR);
@@ -175,7 +186,7 @@ function hasSubstance(s) {
 async function save(book, state) {
     // 防清空：要写进去的是空的、盘上那份却有内容，就先把旧的整段存进备份条目再覆盖
     try {
-        const data = await stBridge.loadWorldInfoAsync(book, true);
+        const data = await loadBook(book);
         const cur = Object.values(data?.entries || {}).find(e => e && e.comment === TITLE);
         if (cur) {
             const old = parseState(cur.content);
@@ -185,17 +196,29 @@ async function save(book, state) {
                 });
                 state.log = [...(state.log || []), '- 差点写成空账：上一份数据已存进「经营资产·备份」'].slice(-30);
             }
+            // 账目顺序归程序：旧的行一条都不许被 AI 重排或删掉，只接新增的尾巴
+            if (Array.isArray(old.log) && old.log.length) {
+                const incoming = Array.isArray(state.log) ? state.log : [];
+                const oldSet = new Set(old.log);
+                const missing = old.log.some(x => !incoming.includes(x));
+                if (missing) {
+                    const fresh = incoming.filter(x => !oldSet.has(x));
+                    state.log = [...old.log, ...fresh].slice(-40);
+                }
+            }
         }
     } catch (_) { /* 备份失败不能挡住正常保存 */ }
     await stBridge.updateEntry(book, TITLE, JSON.stringify(state, null, 2), true, [], {
         position: 0, depth: 0, order: 872,
     });
+    dropBookCache();
     // 自己留一份镜像：AI 整段重写时，缺的标的能按这份补回来
     try {
         const snap = { ...state, __mirrorAt: new Date().toISOString() };
         await stBridge.updateEntry(book, MIRROR, JSON.stringify(snap, null, 2), false, [], {
             position: 0, depth: 0, order: 874,
         });
+        dropBookCache();
     } catch (_) { /* 镜像写不进去不影响主账本 */ }
 }
 
@@ -285,6 +308,7 @@ function fillOrders(state, dayText) {
             logFlow(state, dayText, isMe ? '我(交易所)' : '市场', '手续费', fee, `${name} ×${qty}`);
         }
         target.price = fillPrice;
+        squashPrice(state, name, fillPrice, target.prevClose || price);
         target.dayVolume = (Number(target.dayVolume) || 0) + qty;
         logFlow(state, dayText, who, side === 'buy' ? '买入' : '卖出', side === 'buy' ? -amount : amount, `${name} ×${qty} @${fillPrice}`);
         filled.push(`${who} ${side === 'buy' ? '买' : '卖'} ${name}×${qty} @${fillPrice}`);
@@ -529,6 +553,18 @@ function marketOpen(bookData) {
     if (/状态：开放/.test(text)) return true;
     if (/状态：筹备|状态：关闭|状态：不存在/.test(text)) return false;
     return /交易所/.test(text);
+}
+
+/** 同一标的的价格只有一份：谁成交或谁被结算，所有同名行一起改，免得各人看到不同的价 */
+function squashPrice(state, name, price, prevClose) {
+    const key = String(name || '').trim();
+    if (!key) return;
+    for (const a of state.assets) {
+        if (String(a.name || '').trim() !== key) continue;
+        a.price = price;
+        if (prevClose != null) a.prevClose = prevClose;
+        else if (!Number(a.prevClose)) a.prevClose = price;
+    }
 }
 
 /** 同名标的的流通盘：取所有条目里最大的 supply，没有就按持仓合计兜底 */
@@ -1014,6 +1050,7 @@ export async function buildEconomyPanel(book, dateText = '') {
                 const move = impactOn(state, asset, n, buySide ? 'buy' : 'sell');
                 const pushed = clampPrice(asset.price * (1 + move));
                 asset.price = Math.min(band.up, Math.max(band.down, pushed));
+                squashPrice(state, asset.name, asset.price, asset.prevClose || asset.price);
                 asset.dayVolume = (Number(asset.dayVolume) || 0) + n;
                 const day = state.lastDay || '未结算';
                 const flows = Array.isArray(asset.dayFlows) ? asset.dayFlows : [];
