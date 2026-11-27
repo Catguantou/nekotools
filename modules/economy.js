@@ -1,5 +1,5 @@
 import { stBridge } from '../core/st_bridge.js';
-import { ntAsk, ntForm, ntAlert, ntConfirm, ntToast } from '../core/dialog.js';
+import { ntAsk, ntForm, ntAlert, ntToast } from '../core/dialog.js';
 
 const TITLE = '经营资产';
 const MIRROR = '经营资产·镜像';
@@ -618,6 +618,18 @@ function ipoRaise(state, asset, floatQty, dayText) {
         raised += amount;
         sold += qty;
         remain -= qty;
+        // 认购方要真的拿到持仓，不然钱扣了、票没到手
+        const nm = String(asset.name || '').trim();
+        let row = state.assets.find(a => String(a.name || '').trim() === nm && String(a.owner || '').trim() === p.name);
+        if (!row) {
+            row = Object.assign({}, asset, { owner: p.name, qty: 0, cost: 0, short: 0, inflow: 0, dayFlows: [], supply: 0 });
+            delete row._synthetic;
+            state.assets.push(row);
+        }
+        const held = Number(row.qty) || 0;
+        row.cost = Math.round((((Number(row.cost) || 0) * held + amount) / (held + qty)) * 100) / 100;
+        row.qty = held + qty;
+        row.inflow = (Number(row.inflow) || 0) + amount;
         logFlow(state, dayText, p.name, '认购', -amount, `${asset.name} ×${qty} @${price}`);
         if (remain <= 0) break;
     }

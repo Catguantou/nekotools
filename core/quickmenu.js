@@ -37,7 +37,7 @@ import { buildCulturePanel } from '../modules/culture.js';
 import { buildFactionPanel } from '../modules/faction.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
-import { ntAsk, ntConfirm, ntAlert, ntForm } from './dialog.js';
+import { ntConfirm, ntForm } from './dialog.js';
 import { getSecret } from './apivault.js';
 
 const BTN_ID = 'nt-quick-btn';

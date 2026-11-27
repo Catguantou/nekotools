@@ -2,7 +2,7 @@
 // 依赖 st_bridge 的世界书接口；档名规则与存档格式在 worldfmt.js。
 
 import { stBridge } from './st_bridge.js';
-import { ntAsk, ntConfirm, ntAlert } from './dialog.js';
+import { ntConfirm } from './dialog.js';
 import { settings } from './settings.js';
 import { invalidateConfig } from './worldcfg.js';
 import { readIndex, addChar as addIndexChar, removeChar as removeIndexChar } from './worldindex.js';

@@ -161,6 +161,7 @@ export function ntToast(text, ms = 1800) {
     tip.style.backdropFilter = 'none';
     tip.style.alignItems = 'flex-end';
     tip.style.zIndex = '10049';
+    tip.style.pointerEvents = 'none';
     const card = el('div', 'nt-dlg-card', text);
     card.style.maxWidth = '360px';
     card.style.textAlign = 'center';

@@ -1,7 +1,7 @@
 import { registry } from './registry.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
-import { ntAsk, ntConfirm, ntAlert, ntForm } from './dialog.js';
+import { ntAsk, ntConfirm } from './dialog.js';
 import { saveSecret, getSecret, deleteSecret } from './apivault.js';
 import { getDefaultPrompts, getSystemPromptPreview, refreshIndexHeader } from '../modules/worldsim.js';
 import { mountOnboarding } from './onboarding.js';
