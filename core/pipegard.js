@@ -26,10 +26,42 @@ function bodySpans(text) {
     return spans;
 }
 
+/**
+ * 修漏出来的状态标签：模型把 <ws_status> 写进正文、又忘了闭合时，
+ * 屏幕上就会明晃晃地显示一行标签。这里把它换成状态栏能认的机器标记，
+ * 字段之间统一用竖线，交给 textmanager 升级成样式条。
+ */
+export function repairStatusTag(text) {
+  let s = String(text ?? '');
+  if (!s || s.indexOf('<ws_status>') === -1) return s;
+  const re = /<ws_status>([\s\S]*?)(?:<\/ws_status>|$)/i;
+  const m = s.match(re);
+  if (!m) return s;
+  const fields = m[1]
+    .replace(/<\/?content>/gi, ' ')
+    .split(/[|｜\n]/)
+    .map(x => x.trim())
+    .filter(Boolean);
+  const marker = fields.length ? `\n\n[[NT_STATUS]]${fields.join(' | ')}\n` : '';
+  s = s.replace(re, marker);
+  return s.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** content 只是模型自己的包裹标记，酒馆不显示也不认，留着就会在正文里露出「 | </content>」 */
+export function stripBrokenContentTags(text) {
+  const s = String(text ?? '');
+  if (!/<\/?content>/i.test(s)) return s;
+  return s
+    .replace(/[ \t]*\|?[ \t]*<\/?content>[ \t]*\|?[ \t]*/gi, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\s+|\s+$/g, '');
+}
+
 /** 把正文里的「 | 」还原成空行；表格、日程这类本来就该有竖线的不动 */
 export function fixPipes(text) {
-    const s = String(text ?? '');
+    let s = String(text ?? '');
     if (!s) return s;
+    s = repairStatusTag(stripBrokenContentTags(s));
     const spans = bodySpans(s);
     if (!spans.length) return s;
 
