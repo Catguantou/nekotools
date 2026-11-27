@@ -2,6 +2,7 @@ import { stBridge } from '../core/st_bridge.js';
 import { ntAsk, ntForm, ntAlert, ntConfirm, ntToast } from '../core/dialog.js';
 
 const TITLE = '经营资产';
+const MIRROR = '经营资产·镜像';
 let expandedKey = '';
 const MODES = [
     { key: 'trader', label: '纯投资' },
@@ -87,11 +88,29 @@ function normAsset(a) {
 
 async function load(book) {
     const data = await stBridge.loadWorldInfoAsync(book, true);
-    const entry = Object.values(data?.entries || {}).find(e => e && e.comment === TITLE);
+    const entries = Object.values(data?.entries || {});
+    const entry = entries.find(e => e && e.comment === TITLE);
+    const mirrorEntry = entries.find(e => e && e.comment === MIRROR);
     const state = entry ? parseState(entry.content) : null;
+    const mirror = mirrorEntry ? parseState(mirrorEntry.content) : null;
     // 条目在、但内容读不出来：这算「坏账」，绝不能拿默认值回写覆盖
     const broken = !!entry && !state;
-    const out = state || defaultState();
+    // 那个写账本的 AI 会整段重写，缺了的标的按镜像补回来
+    let out = state || mirror || defaultState();
+    let restored = '';
+    if (state && mirror) {
+        const namesOf = s => new Set((s.assets || []).map(a => String(a.name || '').trim()).filter(Boolean));
+        const now = namesOf(state);
+        const lost = [...namesOf(mirror)].filter(n => !now.has(n));
+        if (lost.length) {
+            const back = (mirror.assets || []).filter(a => lost.includes(String(a.name || '').trim()));
+            out = { ...state, assets: [...(state.assets || []), ...back] };
+            out.log = [...(state.log || []), `- 账本被改写少了标的（${lost.join('、')}），已按镜像版补回`].slice(-30);
+            restored = lost.join('、');
+        }
+    }
+    delete out.__mirrorAt;
+    out.__restored = restored;
     out.__broken = broken;
     out.assets = (out.assets || []).map(normAsset);
     out.mode = MODES.some(m => m.key === out.mode) ? out.mode : 'trader';
@@ -165,6 +184,13 @@ async function save(book, state) {
     await stBridge.updateEntry(book, TITLE, JSON.stringify(state, null, 2), true, [], {
         position: 0, depth: 0, order: 872,
     });
+    // 自己留一份镜像：AI 整段重写时，缺的标的能按这份补回来
+    try {
+        const snap = { ...state, __mirrorAt: new Date().toISOString() };
+        await stBridge.updateEntry(book, MIRROR, JSON.stringify(snap, null, 2), false, [], {
+            position: 0, depth: 0, order: 874,
+        });
+    } catch (_) { /* 镜像写不进去不影响主账本 */ }
 }
 
 function clampPrice(n) {
@@ -604,7 +630,9 @@ export async function buildEconomyPanel(book, dateText = '') {
     const open = marketOpen(bookData);
     const loaded = await load(book);
     const broken = loaded.__broken === true;
+    const restored = String(loaded.__restored || '');
     delete loaded.__broken;
+    delete loaded.__restored;
     const state = await settle(book, loaded, dateText);
     if (!broken) await save(book, state);
 
@@ -627,6 +655,9 @@ export async function buildEconomyPanel(book, dateText = '') {
     body.appendChild(summary);
     if (broken) {
         body.appendChild(note('这本世界的「经营资产」条目读不出来（大概被写坏了）。我没有覆盖它，也没有按空账显示；去世界书里看一眼原文，或者把它交给我改。'));
+    }
+    if (restored) {
+        body.appendChild(note(`账本被整段改写时少了「${restored}」，我已经按镜像版补回来了。要是你本来就想删掉它们，跟我说一声，我把镜像也跟着删。`));
     }
 
     // 模式切换：纯投资 / 做市商 / 交易所
