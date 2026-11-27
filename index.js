@@ -1,4 +1,4 @@
-﻿import { installFetchHook } from './core/hooks.js';
+﻿import { installFetchHook, installSalvageHook } from './core/hooks.js';
 import { settings } from './core/settings.js';
 import { registry } from './core/registry.js';
 import { mountPanel } from './core/panel.js';
@@ -18,7 +18,7 @@ function boot() {
     if (booted) return;
     booted = true;
 
-    console.log('[nekotools] 正在启动... build 2026-11-25J / v2.0.52');
+    console.log('[nekotools] 正在启动... build 2026-11-27A / v2.0.54');
     settings.load();
 
     for (const mod of registry.list()) {
@@ -30,6 +30,15 @@ function boot() {
     }
 
     installFetchHook(true);
+
+    // 兜底清理：eventSource 不一定已经备好，逮不到就隔一会儿再试，别一次失败就永远放弃
+    installSalvageHook();
+    let salvageTries = 0;
+    const salvageTimer = setInterval(() => {
+        salvageTries += 1;
+        if (window.__nekotool_salvage || salvageTries > 15) { clearInterval(salvageTimer); return; }
+        installSalvageHook();
+    }, 2000);
 
     // 延迟挂载面板，确保酒馆 DOM 完全加载
     setTimeout(() => {

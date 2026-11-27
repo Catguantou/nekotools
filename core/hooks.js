@@ -349,3 +349,93 @@ export function installFetchHook(verbose = false) {
         return _f.call(this, input, init);
     };
 }
+// ========== 兜底：流钩子被别的扩展绕开时，事后把标签收走 ==========
+/**
+ * 有些扩展在自己模块加载时就把 window.fetch 存了一份常量，之后它发请求走的是那一份，
+ * 我们的闸门完全看不到，整段 <ws_update>…</ws_update> 就原样留在正文里。
+ * 这里不去跟谁抢 fetch，而是等消息真的落进聊天记录之后再扫一遍：
+ * 标签内容照样喂给各模块结算，然后把标签从正文里删掉并重绘。
+ */
+function salvageTags(raw, tags) {
+    let text = String(raw || '');
+    const captured = {};
+    let hit = false;
+    for (const t of tags) {
+        const closed = new RegExp('<' + t + '>([\\s\\S]*?)</' + t + '>', 'g');
+        text = text.replace(closed, (_m, body) => {
+            hit = true;
+            captured[t] = (captured[t] || '') + body;
+            return '';
+        });
+        const openTail = new RegExp('<' + t + '>([\\s\\S]*)$');
+        const m = text.match(openTail);
+        if (m) {
+            hit = true;
+            captured[t] = (captured[t] || '') + m[1];
+            text = text.replace(openTail, '');
+        }
+    }
+    if (!hit) return null;
+    for (const t of tags) text = text.replace(new RegExp('</?' + t + '>', 'g'), '');
+    text = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    return { text, captured };
+}
+
+async function salvageLastMessage() {
+    const tags = getActiveTags();
+    if (!tags.length) return;
+    const stCtx = getCtx();
+    const chat = stCtx.chat;
+    if (!Array.isArray(chat) || !chat.length) return;
+    const idx = chat.length - 1;
+    const msg = chat[idx];
+    if (!msg || msg.is_user || msg.is_system) return;
+    const found = salvageTags(msg.mes, tags);
+    if (!found) return;
+
+    console.warn('[nekotools:salvage] 流钩子被绕开，事后收回标签:', Object.keys(found.captured).join(','));
+    msg.mes = found.text;
+
+    try {
+        if (typeof stCtx.updateMessageBlock === 'function') stCtx.updateMessageBlock(idx, found.text);
+        else {
+            const el = document.querySelector('#chat .mes[mesid="' + idx + '"] .mes_text');
+            if (el) el.innerHTML = '';
+        }
+    } catch (e) { console.error('[nekotools:salvage:ui]', e); }
+    try {
+        if (typeof stCtx.saveChat === 'function') await stCtx.saveChat();
+    } catch (e) { console.error('[nekotools:salvage:save]', e); }
+
+    // 标签照样结算，别让状态白丢
+    try {
+        finish({
+            chat,
+            messages: [],
+            lastUserIndex: -1,
+            lastUserText: '',
+            meta: {},
+            __nt_pendingSystems: [],
+            setLastUserText() {},
+        }, { captured: found.captured });
+    } catch (e) { console.error('[nekotools:salvage:finish]', e); }
+}
+
+export function installSalvageHook() {
+    if (window.__nekotool_salvage) return;
+    try {
+        const stCtx = getCtx();
+        const es = stCtx.eventSource;
+        const et = stCtx.event_types;
+        if (!es || !et) {
+            // 酒馆还没把 eventSource 备好：不打标记，等下一次重试
+            return;
+        }
+        window.__nekotool_salvage = true;
+        const run = () => { salvageLastMessage().catch(e => console.error('[nekotools:salvage]', e)); };
+        for (const name of ['MESSAGE_RECEIVED', 'GENERATION_ENDED', 'CHARACTER_MESSAGE_RENDERED']) {
+            if (et[name]) es.on(et[name], run);
+        }
+        console.log('[nekotools:salvage] 兜底清理已安装');
+    } catch (e) { console.warn('[nekotools:salvage]', e); }
+}
