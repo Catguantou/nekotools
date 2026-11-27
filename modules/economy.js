@@ -132,7 +132,31 @@ async function load(book) {
     return out;
 }
 
+/** 有实质内容？现金、标的、店铺、成员、主体任意一样非空就算 */
+function hasSubstance(s) {
+    if (!s) return false;
+    return (s.assets || []).length > 0
+        || (s.businesses || []).length > 0
+        || (s.members || []).length > 0
+        || (s.parties || []).length > 0
+        || Number(s.cash) !== 0;
+}
+
 async function save(book, state) {
+    // 防清空：要写进去的是空的、盘上那份却有内容，就先把旧的整段存进备份条目再覆盖
+    try {
+        const data = await stBridge.loadWorldInfoAsync(book, true);
+        const cur = Object.values(data?.entries || {}).find(e => e && e.comment === TITLE);
+        if (cur) {
+            const old = parseState(cur.content);
+            if (old && hasSubstance(old) && !hasSubstance(state)) {
+                await stBridge.updateEntry(book, '经营资产·备份', `${new Date().toISOString()}\n${cur.content}`, false, [], {
+                    position: 0, depth: 0, order: 873,
+                });
+                state.log = [...(state.log || []), '- 差点写成空账：上一份数据已存进「经营资产·备份」'].slice(-30);
+            }
+        }
+    } catch (_) { /* 备份失败不能挡住正常保存 */ }
     await stBridge.updateEntry(book, TITLE, JSON.stringify(state, null, 2), true, [], {
         position: 0, depth: 0, order: 872,
     });
