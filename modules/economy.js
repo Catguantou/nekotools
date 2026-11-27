@@ -196,6 +196,23 @@ async function save(book, state) {
                 });
                 state.log = [...(state.log || []), '- 差点写成空账：上一份数据已存进「经营资产·备份」'].slice(-30);
             }
+            // 主体 / 会员 / 店铺 / 规矩也归程序保底：AI 整段重写时这些常被漏掉
+            if (old) {
+                for (const key of ['parties', 'members', 'businesses']) {
+                    const hadList = Array.isArray(old[key]) && old[key].length > 0;
+                    const nowList = Array.isArray(state[key]) && state[key].length > 0;
+                    if (hadList && !nowList) {
+                        state[key] = old[key];
+                        state.log = [...(state.log || []), `- 差点丢掉「${key === 'parties' ? '经济主体' : key === 'members' ? '会员名册' : '店铺产业'}」，已按上一版补回`].slice(-40);
+                    }
+                }
+                if (!String(state.rules || '').trim() && String(old.rules || '').trim()) {
+                    state.rules = old.rules;
+                }
+                if (!String((state.platform || {}).name || '').trim() && String((old.platform || {}).name || '').trim()) {
+                    state.platform = { ...(old.platform || {}), ...(state.platform || {}) };
+                }
+            }
             // 账目顺序归程序：旧的行一条都不许被 AI 重排或删掉，只接新增的尾巴
             if (Array.isArray(old.log) && old.log.length) {
                 const incoming = Array.isArray(state.log) ? state.log : [];
