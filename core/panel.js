@@ -1,6 +1,7 @@
 import { registry } from './registry.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
+import { ntAsk, ntConfirm, ntAlert, ntForm } from './dialog.js';
 import { saveSecret, getSecret, deleteSecret } from './apivault.js';
 import { getDefaultPrompts, getSystemPromptPreview, refreshIndexHeader } from '../modules/worldsim.js';
 import { mountOnboarding } from './onboarding.js';
@@ -879,7 +880,7 @@ export function mountPanel() {
     wrap.querySelector('#nt-ws-new').onclick = async () => {
         // 默认名必须和存档位规则一致；不能手拼，否则会和第 1 档同名
         const defaultName = stBridge.trackerBaseName() || '【NEKOTOOL新建世界书】';
-        const targetName = prompt('请输入新世界书名称：', defaultName);
+        const targetName = await ntAsk('新建世界书', { label: '名字', value: defaultName, ok: '创建' });
         if (!targetName) return;
 
         const name = targetName.trim();
@@ -917,7 +918,7 @@ export function mountPanel() {
             if (window.toastr) toastr.warning('请先勾选要删除的世界书');
             return;
         }
-        if (!confirm(`确定要彻底删除选中的 ${selected.length} 本世界书吗？此操作不可恢复！`)) return;
+        if (!(await ntConfirm(`确定要彻底删除选中的 ${selected.length} 本世界书吗？此操作不可恢复！`, { danger: true, ok: '删除' }))) return;
 
         // 书 → 角色卡：删书时询问是否连绑定角色一起删（追踪书不参与）
         const ctx = stBridge.getContext();
@@ -927,10 +928,11 @@ export function mountPanel() {
         let deleteLinkedChar = false;
         if (stBridge.getLoreManagerConfig().syncCharLifecycle && boundChars.length) {
             const withChats = stBridge.getLoreManagerConfig().deleteChatsWithChar;
-            deleteLinkedChar = confirm(
+            deleteLinkedChar = await ntConfirm(
                 `检测到 ${boundChars.length} 张角色卡绑定了所选世界书。\n\n` +
                 `点【确定】：连同角色卡一起删除${withChats ? '（含聊天记录）' : '（保留聊天记录）'}\n` +
-                `点【取消】：只删世界书并解绑角色卡`
+                `点【取消】：只删世界书并解绑角色卡`,
+                { ok: '连角色卡一起删', cancel: '只删世界书', danger: true }
             );
         }
 
@@ -954,7 +956,7 @@ export function mountPanel() {
             return;
         }
         if (target === '__NEW__') {
-            target = prompt('请输入合并后的新世界书名称：', '【合并世界书】');
+            target = await ntAsk('合并成一本新世界书', { label: '名字', value: '【合并世界书】', ok: '合并' });
             if (!target) return;
             target = target.trim();
         }
@@ -975,7 +977,7 @@ export function mountPanel() {
             if (window.toastr) toastr.warning('请先勾选要删除的条目');
             return;
         }
-        if (!confirm(`确定要删除这 ${selected.length} 个条目吗？`)) return;
+        if (!(await ntConfirm(`确定要删除这 ${selected.length} 个条目吗？`, { ok: '删除', danger: true }))) return;
 
         await stBridge.deleteEntries(currentEditingBook, selected);
         await openEntriesView(currentEditingBook, stBridge.getWorldNames());
@@ -996,7 +998,7 @@ export function mountPanel() {
             return;
         }
         if (target === '__NEW__') {
-            target = prompt('请输入新建目标世界书名称：', '【提取条目合集】');
+            target = await ntAsk('提取到一个新世界书', { label: '名字', value: '【提取条目合集】', ok: '提取' });
             if (!target) return;
             target = target.trim();
         }
@@ -1227,8 +1229,8 @@ export function mountPanel() {
         };
     }
 
-    wrap.querySelector('#nt-tm-reset-rules').onclick = () => {
-        if (!tmMod || !confirm('确定恢复默认八股词库吗？')) return;
+    wrap.querySelector('#nt-tm-reset-rules').onclick = async () => {
+        if (!tmMod || !(await ntConfirm('确定恢复默认八股词库吗？'))) return;
         const defText = tmMod.DEFAULT_SLOP_RULES.join('\n');
         wrap.querySelector('#nt-tm-slop-rules').value = defText;
         syncTextManagerInputs();
@@ -1923,8 +1925,8 @@ export function mountPanel() {
         ta.addEventListener('change', sync);
     });
 
-    wrap.querySelector('#nt-prompt-clear-custom').onclick = () => {
-        if (!confirm('清空所有自定义提示词，恢复使用默认？')) return;
+    wrap.querySelector('#nt-prompt-clear-custom').onclick = async () => {
+        if (!(await ntConfirm('清空所有自定义提示词，恢复使用默认？', { ok: '清空', danger: true }))) return;
         wrap.querySelectorAll('.nt-prompt-textarea[data-prompt-key]').forEach(ta => {
             const key = ta.dataset.promptKey;
             ta.value = ta.dataset.default || '';
@@ -2068,7 +2070,7 @@ export function mountPanel() {
     }
 
     wrap.querySelector('#nt-ws-reset').onclick = async () => {
-        if (!confirm('确定清除本会话的剧情推演记录吗？（世界书里的「剧情推演」条目会被删除）')) return;
+        if (!(await ntConfirm('确定清除本会话的剧情推演记录吗？世界书里的「剧情推演」条目会被删除。', { ok: '清除', danger: true }))) return;
         const name = stBridge.trackerBookName();
         if (name) await stBridge.removeEntryByComment(name, '剧情推演');
         localStorage.removeItem('nt_preview_cache');

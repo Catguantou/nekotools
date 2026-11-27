@@ -2,6 +2,7 @@
 // 依赖 st_bridge 的世界书接口；档名规则与存档格式在 worldfmt.js。
 
 import { stBridge } from './st_bridge.js';
+import { ntAsk, ntConfirm, ntAlert } from './dialog.js';
 import { settings } from './settings.js';
 import { invalidateConfig } from './worldcfg.js';
 import { readIndex, addChar as addIndexChar, removeChar as removeIndexChar } from './worldindex.js';
@@ -301,7 +302,7 @@ export async function importCurrent(file) {
     const exists = await stBridge.bookExists(targetName);
 
     if (exists) {
-        const ok = window.confirm(`第 ${parsed.slot} 档已有内容，导入会整本覆盖（会先自动备份一份）。继续？`);
+        const ok = await ntConfirm(`第 ${parsed.slot} 档已有内容，导入会整本覆盖（会先自动备份一份）。继续？`, { ok: '覆盖导入', danger: true });
         if (!ok) throw new Error('已取消导入');
         const before = await stBridge.loadWorldInfoAsync(targetName, true);
         if (before && before.entries) {

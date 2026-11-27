@@ -1,4 +1,5 @@
 import { stBridge } from '../core/st_bridge.js';
+import { ntAsk, ntForm, ntAlert, ntConfirm, ntToast } from '../core/dialog.js';
 
 const TITLE = '经营资产';
 let expandedKey = '';
@@ -505,6 +506,68 @@ function rankLists(state) {
     return { inflow: cut(inflow, 5), share: cut(share, 5), recent: cut(recent, 5) };
 }
 
+/**
+ * 行情板：按标的名聚合成一行，谁是持有人都算同一个标的。
+ * 她名下没有这只的行时，先用市场行做一份只读的视图（_synthetic 指向原行），
+ * 等她真的展开下单才落成她自己的那一行，不提前往账本里塞空行。
+ */
+function marketBoard(state) {
+    const byName = new Map();
+    for (const a of state.assets) {
+        const name = String(a.name || '').trim();
+        if (!name) continue;
+        if (!byName.has(name)) byName.set(name, []);
+        byName.get(name).push(a);
+    }
+    const out = [];
+    for (const [name, rows] of byName) {
+        const mineRow = rows.find(r => isPlayer(r.owner));
+        if (mineRow) { out.push(mineRow); continue; }
+        const rep = rows.find(r => Number(r.price) > 0 && (Number(r.supply) || 0) > 0)
+            || rows.find(r => Number(r.price) > 0)
+            || rows[0];
+        const view = Object.assign({}, rep, { name, owner: '', qty: 0, cost: 0, short: 0, inflow: 0, dayFlows: [] });
+        view._synthetic = rep;
+        out.push(view);
+    }
+    return out;
+}
+
+/**
+ * 上股募资：世界里的经济主体真的掏钱认购，钱从他们账上转进发行人账上。
+ * 每个主体最多拿出自己现金的一成，按现金比例分摊，卖不完的留在流通盘里。
+ */
+function ipoRaise(state, asset, floatQty, dayText) {
+    const price = Number(asset.price) || 0;
+    let remain = Math.max(0, Math.round(Number(floatQty) || 0));
+    const parties = (state.parties || []).filter(p => Number(p.cash) > 0 && p.name);
+    let raised = 0;
+    let sold = 0;
+    if (!price || !remain || !parties.length) return { raised, sold, remain };
+    const wants = parties.map(p => Math.min(Number(p.cash) * 0.1, remain * price));
+    const total = wants.reduce((a, b) => a + b, 0);
+    if (total <= 0) return { raised, sold, remain };
+    const scale = Math.min(1, (remain * price) / total);
+    for (let i = 0; i < parties.length; i++) {
+        const p = parties[i];
+        const qty = Math.min(remain, Math.floor((wants[i] * scale) / price));
+        if (qty <= 0) continue;
+        const amount = qty * price;
+        p.cash = Number(p.cash) - amount;
+        raised += amount;
+        sold += qty;
+        remain -= qty;
+        logFlow(state, dayText, p.name, '认购', -amount, `${asset.name} ×${qty} @${price}`);
+        if (remain <= 0) break;
+    }
+    if (sold > 0) {
+        state.cash = (Number(state.cash) || 0) + raised;
+        logFlow(state, dayText, '我(发行)', '募资', raised, `${asset.name} 发售 ${sold} 股`);
+        state.log = [...(state.log || []), `- 上股募资：${asset.name} 发售 ${sold} 股，募到 ${Math.round(raised)}`].slice(-30);
+    }
+    return { raised, sold, remain };
+}
+
 export async function buildEconomyPanel(book, dateText = '') {
     const body = document.createElement('div');
     body.className = 'nt-economy-panel';
@@ -575,10 +638,91 @@ export async function buildEconomyPanel(book, dateText = '') {
     if (!open) {
         body.appendChild(note('本世界还没有证券交易所。想炒股，需要先在剧情里让交易所、商号股份和交易规则出现。'));
     } else {
-        body.appendChild(section('我的持仓 / 市场'));
+        body.appendChild(section('市场 / 我的持仓'));
     }
 
-    const mine = open ? state.assets.filter(a => isPlayer(a.owner)) : [];
+    // 自己当交易所：登记一只新标的，发行价和流通盘都由她定
+    if (open) {
+        const ipoBar = document.createElement('div');
+        ipoBar.className = 'nt-quick-char-actions';
+        const ipoBtn = document.createElement('button');
+        ipoBtn.type = 'button';
+        ipoBtn.className = 'nt-quick-btn-text';
+        ipoBtn.textContent = '上股 · 新标的';
+        ipoBtn.addEventListener('click', () => {
+            if (ipoBar.querySelector('.nt-trade-form')) return;
+            const form = document.createElement('div');
+            form.className = 'nt-trade-form';
+            const t = document.createElement('div');
+            t.className = 'nt-trade-title';
+            t.textContent = '自己上股 · 登记新标的';
+            form.appendChild(t);
+            const mk = (label, value, ph) => {
+                const wrap = document.createElement('div');
+                wrap.className = 'nt-trade-meta';
+                wrap.textContent = label + ' ';
+                const inp = document.createElement('input');
+                inp.className = 'nt-trade-input';
+                inp.value = value;
+                if (ph) inp.placeholder = ph;
+                wrap.appendChild(inp);
+                form.appendChild(wrap);
+                return inp;
+            };
+            const nameI = mk('名称', '', '例：D班黑马指数');
+            const priceI = mk('发行价', '10');
+            const supplyI = mk('流通盘', '10000');
+            const floatI = mk('公开发售', '10000', '挂牌时立刻卖给世界里的经济主体，写 0 就是不募资');
+            const err = document.createElement('div');
+            err.className = 'nt-trade-error';
+            form.appendChild(err);
+            const bar = document.createElement('div');
+            bar.className = 'nt-quick-char-actions';
+            const ok = document.createElement('button');
+            ok.type = 'button';
+            ok.className = 'nt-trade-confirm buy';
+            ok.textContent = '挂牌';
+            ok.addEventListener('click', async () => {
+                const name = String(nameI.value || '').trim();
+                const price = Number(priceI.value) || 0;
+                const supply = Math.max(0, Math.round(Number(supplyI.value) || 0));
+                if (!name) { err.textContent = '名字不能空着'; return; }
+                if (!(price > 0)) { err.textContent = '发行价要大于 0'; return; }
+                if (state.assets.some(a => String(a.name || '').trim() === name && isPlayer(a.owner))) {
+                    err.textContent = '这个名字已经挂过了';
+                    return;
+                }
+                const asset = {
+                    id: name, owner: '', name, type: '股票', qty: 0, cost: 0,
+                    price, prevClose: price, trend: 0, short: 0, supply,
+                    candles: [{ o: price, h: price, l: price, c: price, v: supply }],
+                };
+                state.assets.push(asset);
+                state.log = [...(state.log || []), `- 上股：${name} 发行价 ${price}，流通盘 ${supply}`].slice(-30);
+                const raised = ipoRaise(state, asset, Math.min(supply, Number(floatI.value) || 0), dateText);
+                if (raised.sold > 0) {
+                    ntToast(`挂牌成功：卖出 ${raised.sold} 股，募到 ${Math.round(raised.raised)}`);
+                } else if (Number(floatI.value) > 0) {
+                    state.log = [...(state.log || []), '- 上股提示：场里的经济主体手上没钱，认购为 0。先在场子里给他们发钱，或者等 AI 结算时补上现金'].slice(-30);
+                    ntToast('挂牌了，但没人买得起：场里主体现金都是 0');
+                }
+                await save(book, state);
+                body.replaceWith(await buildEconomyPanel(book, dateText));
+            });
+            const no = document.createElement('button');
+            no.type = 'button';
+            no.className = 'nt-quick-btn-text';
+            no.textContent = '取消';
+            no.addEventListener('click', () => form.remove());
+            bar.append(ok, no);
+            form.appendChild(bar);
+            ipoBar.appendChild(form);
+        });
+        ipoBar.appendChild(ipoBtn);
+        body.appendChild(ipoBar);
+    }
+
+    const mine = open ? marketBoard(state) : [];
     const rowId = a => String(a.id || a.name || '');
     const expanded = expandedKey;
 
@@ -600,6 +744,17 @@ export async function buildEconomyPanel(book, dateText = '') {
         row.className = 'nt-quote-row' + (isOpen ? ' open' : '');
         row.addEventListener('click', async (ev) => {
             if (ev.target.closest('.nt-trade-form') || ev.target.closest('button')) return;
+            if (asset._synthetic) {
+                const own = Object.assign({}, asset._synthetic, {
+                    owner: '', qty: 0, cost: 0, short: 0, inflow: 0, dayFlows: [],
+                });
+                delete own._synthetic;
+                state.assets.push(own);
+                await save(book, state);
+                expandedKey = rowId(own);
+                body.replaceWith(await buildEconomyPanel(book, dateText));
+                return;
+            }
             expandedKey = isOpen ? '' : rowId(asset);
             body.replaceWith(await buildEconomyPanel(book, dateText));
         });
@@ -856,11 +1011,17 @@ export async function buildEconomyPanel(book, dateText = '') {
         setup.className = 'nt-trade-act';
         setup.textContent = '设置场子';
         setup.addEventListener('click', async () => {
-            const name = window.prompt('这场子叫什么名字？', pf.name || '');
-            if (name === null) return;
-            const kind = window.prompt('类型随便写：casino / exchange / shop / 学校社团群 / 什么都行', pf.kind || 'casino');
-            const gate = window.prompt('入场规矩自己写，写空就是不设限（例：交押金 / 要有熟人带 / 拍正面照 / 背出社规）', pf.gate || '');
-            const edge = Number(window.prompt('抽水率（0.05 就是 5%，0 就是不抽）', String(pf.edge || 0.05)) || pf.edge);
+            const f = await ntForm('设置场子', [
+                { key: 'name', label: '名字', value: pf.name || '', placeholder: '这场子叫什么' },
+                { key: 'kind', label: '类型', value: pf.kind || 'casino', placeholder: 'casino / exchange / shop / 随便写' },
+                { key: 'gate', label: '入场规矩', value: pf.gate || '', placeholder: '交押金 / 要有熟人带 / 拍正面照，留空就是不设限' },
+                { key: 'edge', label: '抽水率', value: String(pf.edge || 0.05), placeholder: '0.05 就是 5%，0 就是不抽' },
+            ], { note: '类型填 exchange，这里就是你自己开的交易所。' });
+            if (!f) return;
+            const name = f.name;
+            const kind = f.kind;
+            const gate = f.gate;
+            const edge = Number(f.edge) || pf.edge;
             pf.name = String(name || '');
             pf.kind = String(kind || 'casino');
             pf.gate = String(gate || '');
@@ -890,7 +1051,7 @@ export async function buildEconomyPanel(book, dateText = '') {
             inBtn.className = 'nt-trade-act buy';
             inBtn.textContent = '收款入金';
             inBtn.addEventListener('click', async () => {
-                const v = Number(window.prompt(`收 ${m.name} 多少钱？`, '1000') || 0);
+                const v = Number(await ntAsk(`收 ${m.name} 多少钱`, { value: '1000', ok: '入账' }) || 0);
                 if (!v) return;
                 m.deposit = (Number(m.deposit) || 0) + v;
                 m.balance = (Number(m.balance) || 0) + v;
@@ -931,7 +1092,7 @@ export async function buildEconomyPanel(book, dateText = '') {
         ruleBtn.className = 'nt-trade-act';
         ruleBtn.textContent = '写规矩';
         ruleBtn.addEventListener('click', async () => {
-            const r = window.prompt('这场子的规矩你自己定，写什么都行（程序不解读，只按这句话记账和结算）', state.rules || '');
+            const r = await ntAsk('这场子的规矩你自己定', { label: '写什么都行，程序只按这句话记账和结算', value: state.rules || '' });
             if (r === null) return;
             state.rules = String(r || '');
             await save(book, state);
@@ -998,9 +1159,9 @@ export async function buildEconomyPanel(book, dateText = '') {
             pay.className = 'nt-trade-act buy';
             pay.textContent = '给我钱';
             pay.addEventListener('click', async () => {
-                const v = Number(window.prompt(`向 ${p2.name} 收多少？`, '0') || 0);
+                const v = Number(await ntAsk(`向 ${p2.name} 收多少`, { value: '0', ok: '收钱' }) || 0);
                 if (v <= 0) return;
-                if (p2.cash < v) { window.alert(`${p2.name} 拿不出来这么多`); return; }
+                if (p2.cash < v) { await ntAlert(`${p2.name} 拿不出来这么多，他手上只有 ${Math.round(Number(p2.cash) || 0)}`); return; }
                 p2.cash -= v;
                 state.cash += v;
                 state.log = [...(state.log || []), `- ${p2.name} 交了 ${v}`].slice(-30);
@@ -1013,7 +1174,7 @@ export async function buildEconomyPanel(book, dateText = '') {
             lend.className = 'nt-trade-act sell';
             lend.textContent = '给我欠债';
             lend.addEventListener('click', async () => {
-                const v = Number(window.prompt(`让 ${p2.name} 欠你多少？`, '0') || 0);
+                const v = Number(await ntAsk(`让 ${p2.name} 欠你多少`, { value: '0', ok: '记债' }) || 0);
                 if (v <= 0) return;
                 p2.debt = (Number(p2.debt) || 0) + v;
                 p2.cash += v;
@@ -1027,7 +1188,7 @@ export async function buildEconomyPanel(book, dateText = '') {
             repay.className = 'nt-trade-act';
             repay.textContent = '还债';
             repay.addEventListener('click', async () => {
-                const v = Number(window.prompt(`${p2.name} 还多少？（现欠 ${p2.debt || 0}）`, String(Math.min(Number(p2.debt) || 0, 1000))) || 0);
+                const v = Number(await ntAsk(`${p2.name} 还多少`, { label: `现欠 ${p2.debt || 0}`, value: String(Math.min(Number(p2.debt) || 0, 1000)), ok: '收款' }) || 0);
                 if (v <= 0) return;
                 const real = Math.min(v, Number(p2.debt) || 0);
                 if (!real) return;

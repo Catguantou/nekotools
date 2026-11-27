@@ -37,6 +37,7 @@ import { buildCulturePanel } from '../modules/culture.js';
 import { buildFactionPanel } from '../modules/faction.js';
 import { settings } from './settings.js';
 import { stBridge } from './st_bridge.js';
+import { ntAsk, ntConfirm, ntAlert, ntForm } from './dialog.js';
 import { getSecret } from './apivault.js';
 
 const BTN_ID = 'nt-quick-btn';
@@ -278,7 +279,7 @@ function renderSlots(container) {
             del.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 if (del.disabled) return;
-                if (!window.confirm(`确定删除${s.label}？这一档的进度会消失（建议先快速存档）。`)) return;
+                if (!(await ntConfirm(`确定删除${s.label}？这一档的进度会消失（建议先快速存档）。`, { ok: '删除', danger: true }))) return;
                 del.disabled = true;
                 try {
                     await deleteSlot(s.n);
@@ -863,7 +864,7 @@ async function showRosterModal(preselectName = '') {
     };
 
     const blockChar = async (name) => {
-        if (!window.confirm(`把「${name}」加入黑名单？之后不再记录它、从索引移除，并删掉它的档案。`)) return;
+        if (!(await ntConfirm(`把「${name}」加入黑名单？之后不再记录它、从索引移除，并删掉它的档案。`, { ok: '加入黑名单', danger: true }))) return;
         const saved = await saveConfig(book, {
             blocked: [...new Set([...cfg.blocked, name])],
             pinned: cfg.pinned.filter(n => n !== name),
@@ -4015,11 +4016,18 @@ async function showDisasterModal() {
     custom.className = 'nt-quick-btn-text';
     custom.textContent = '自定义天灾';
     custom.addEventListener('click', async () => {
-        const name = window.prompt('天灾名称');
+        const f = await ntForm('自定义天灾', [
+            { key: 'name', label: '天灾名称', placeholder: '例：永夜' },
+            { key: 'rules', label: '世界规则', value: '世界进入灾变状态。', placeholder: '一句话就够' },
+            { key: 'environment', label: '当前环境', value: '灾变刚刚开始。' },
+            { key: 'survival', label: '生存重点', value: '活下去。' },
+        ], { note: '写多长都行，程序只按这几句话记账。' });
+        if (!f) return;
+        const name = String(f.name || '').trim();
         if (!name) return;
-        const rules = window.prompt('世界规则（一句话）') || '世界进入灾变状态。';
-        const environment = window.prompt('当前环境（一句话）') || '灾变刚刚开始。';
-        const survival = window.prompt('生存重点（一句话）') || '活下去。';
+        const rules = String(f.rules || '').trim() || '世界进入灾变状态。';
+        const environment = String(f.environment || '').trim() || '灾变刚刚开始。';
+        const survival = String(f.survival || '').trim() || '活下去。';
         await startDisaster(null, {
             name, rules, environment, survival,
             stages: '爆发：灾变出现；扩散：影响扩大；恶化：资源紧缺；长期化：新秩序；灾后：重建。',
