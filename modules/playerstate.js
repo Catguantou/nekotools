@@ -28,7 +28,8 @@ export const PLAYERSTATE_SECTIONS = {
 控制者：
 【经营资产】
 只写玩家真正开始经营或资产发生变化时；内容用 JSON：
-{"cash":0,"debt":0,"mode":"trader","feeRate":0.003,"limitRate":0.1,"impact":0.02,"assets":[{"id":"唯一短id","owner":"","name":"资产名","type":"股票/商品/物品","qty":0,"cost":0,"price":10,"prevClose":10,"trend":0,"short":0,"supply":0,"candles":[{"o":10,"h":10,"l":10,"c":10,"v":1000}]}],"businesses":[{"name":"店铺/产业","status":"营业","profit":0}]}
+{"cash":0,"debt":0,"mode":"trader","feeRate":0.003,"limitRate":0.1,"impact":0.02,"assets":[{"id":"唯一短id","owner":"","name":"资产名","type":"股票/商品/物品","qty":0,"cost":0,"price":10,"prevClose":10,"trend":0,"short":0,"supply":0,"candles":[{"o":10,"h":10,"l":10,"c":10,"v":1000}]}],"businesses":[{"name":"店铺/产业","status":"营业","profit":0}],"orders":[{"who":"谁在买/卖","side":"buy/sell","qty":0,"memo":"标的名称"}]}
+- orders 是「待成交订单」，你只写谁、买还是卖、多少股、买什么标的（memo 写标的名称）；成交价、滑点、手续费、现金与持仓的夹紧全部由程序算，你不要写价格也不要写现金变化。
 - owner 写持有人：玩家自己留空字符串，别人写具体名字（同一个人固定同一个写法）。同一个标的给不同人各写一条，价格只写在该标的第一条即可，程序会按名字统一结算。
 - supply 是这只标的的流通盘股数，只有玩家做市或经营交易所时才需要填；填了面板会算出各人的持仓占比。
 - mode 三选一：trader 纯投资 / maker 做市商 / exchange 交易所。做市商可以靠 trend 直接影响次日涨跌；交易所模式每笔交易抽 feeRate 的手续费，归玩家所有。

@@ -32,6 +32,7 @@ function defaultState() {
         rules: '',
         parties: [],
         flows: [],
+        orders: [],
     };
 }
 
@@ -89,6 +90,13 @@ async function load(book) {
     const base = out.platform && typeof out.platform === 'object' ? out.platform : {};
     out.rules = String(out.rules || '');
     out.flows = Array.isArray(out.flows) ? out.flows.slice(-500) : [];
+    out.orders = Array.isArray(out.orders) ? out.orders.map(o => ({
+        who: String(o.who || ''),
+        side: String(o.side || 'buy'),
+        qty: Math.max(0, Math.round(Number(o.qty) || 0)),
+        memo: String(o.memo || ''),
+        day: String(o.day || ''),
+    })).filter(o => o.who && o.qty > 0) : [];
     out.parties = Array.isArray(out.parties) ? out.parties.map(x => ({
         name: String(x.name || ''),
         cash: Number(x.cash) || 0,
@@ -123,12 +131,99 @@ function disasterActive(bookData) {
 }
 
 /** 同名的多条持仓共享一根行情：按名字算一次价，回写给所有持有人 */
+function findOwnerAsset(state, who, name) {
+    const key = String(name || '').trim();
+    let a = state.assets.find(x => String(x.owner || '').trim() === who && String(x.name || '').trim() === key);
+    if (a) return a;
+    const price = (state.assets.find(x => String(x.name || '').trim() === key) || {}).price || 10;
+    a = {
+        id: `${who}-${key}`.slice(0, 24),
+        owner: who,
+        name: key,
+        type: '股票',
+        qty: 0,
+        cost: 0,
+        price,
+        prevClose: price,
+        trend: 0,
+        short: 0,
+        supply: 0,
+        inflow: 0,
+        dayFlows: [],
+        candles: [],
+    };
+    state.assets.push(normAsset(a));
+    return a;
+}
+
+/** 把 AI 写的订单一张张吃掉：谁、买还是卖、多少股；价格、滑点、手续费、现金与持仓的夹紧都在这儿算 */
+function fillOrders(state, dayText) {
+    const filled = [];
+    if (!Array.isArray(state.orders) || !state.orders.length) return filled;
+    for (const o of state.orders) {
+        const who = String(o.who || '').trim();
+        const side = o.side === 'sell' ? 'sell' : 'buy';
+        const name = String(o.memo || '').trim();
+        if (!who || !name) continue;
+        const target = findOwnerAsset(state, who, name);
+        const price = Number(target.price) || 10;
+        const isMe = isPlayer(who);
+        const holder = isMe ? state : null;
+        let qty = Math.max(0, Math.round(Number(o.qty) || 0));
+        // 夹紧：卖不能超过持仓，买不能超过现金
+        if (side === 'sell') qty = Math.min(qty, Math.max(0, Number(target.qty) || 0));
+        else {
+            const cash = isMe ? Number(state.cash) || 0 : (Number(state.parties.find(p2 => p2.name === who)?.cash) || 0);
+            const afford = price > 0 ? Math.floor(cash / price) : 0;
+            qty = Math.min(qty, Math.max(0, afford));
+        }
+        if (!qty) continue;
+        const move = impactOn(state, target, qty, side);
+        const band = limitBand(state, target.prevClose || price);
+        const fillPrice = Math.min(band.up, Math.max(band.down, clampPrice(price * (1 + move))));
+        const amount = qty * fillPrice;
+        const feeRate = state.mode === 'exchange' ? (Number(state.feeRate) || 0) : 0;
+        const fee = amount * feeRate;
+        if (side === 'buy') {
+            target.qty += qty;
+            target.cost = Math.round(((target.cost * (target.qty - qty) + amount) / target.qty) * 100) / 100;
+            target.inflow = (Number(target.inflow) || 0) + amount;
+            if (isMe) state.cash -= amount + fee;
+            else {
+                const p2 = state.parties.find(x => x.name === who);
+                if (p2) p2.cash = (Number(p2.cash) || 0) - amount - fee;
+            }
+        } else {
+            target.qty -= qty;
+            target.inflow = (Number(target.inflow) || 0) - amount;
+            if (isMe) state.cash += amount - fee;
+            else {
+                const p2 = state.parties.find(x => x.name === who);
+                if (p2) p2.cash = (Number(p2.cash) || 0) + amount - fee;
+            }
+        }
+        if (feeRate > 0) {
+            if (state.mode === 'exchange') state.cash += fee;
+            logFlow(state, dayText, isMe ? '我(交易所)' : '市场', '手续费', fee, `${name} ×${qty}`);
+        }
+        target.price = fillPrice;
+        target.dayVolume = (Number(target.dayVolume) || 0) + qty;
+        logFlow(state, dayText, who, side === 'buy' ? '买入' : '卖出', side === 'buy' ? -amount : amount, `${name} ×${qty} @${fillPrice}`);
+        filled.push(`${who} ${side === 'buy' ? '买' : '卖'} ${name}×${qty} @${fillPrice}`);
+    }
+    if (filled.length) state.log = [...(state.log || []), ...filled.map(x => `- 成交：${x}`)].slice(-30);
+    state.orders = [];
+    return filled;
+}
+
 async function settle(book, state, dateText) {
     const today = String(dateText || '').match(/\d{4}年\d{1,2}月\d{1,2}日/)?.[0] || '';
     if (!today || today === state.lastDay) return state;
     const day = Number(today.replace(/[^\d]/g, '')) || 1;
     const data = await stBridge.loadWorldInfoAsync(book, true);
     const disaster = disasterActive(data);
+
+    fillOrders(state, today);
 
     const groups = new Map();
     for (const a of state.assets) {
